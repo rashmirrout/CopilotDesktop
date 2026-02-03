@@ -46,8 +46,11 @@ public class CopilotService : ICopilotService, IDisposable
     /// Feature flag to enable persistent session mode.
     /// Set to true for conversation context support.
     /// Set to false to revert to legacy per-message process mode.
+    /// 
+    /// NOTE: Currently disabled due to issues with reading Copilot CLI response.
+    /// The interactive mode prompt detection needs refinement.
     /// </summary>
-    private const bool USE_PERSISTENT_SESSION = true;
+    private const bool USE_PERSISTENT_SESSION = false;
 
     /// <summary>
     /// Tracks active Copilot CLI processes per session.
