@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>CopilotAgent</AssemblyName>
+    <RootNamespace>CopilotAgent.App</RootNamespace>
+    
+    <!-- Single file publishing options -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <SelfContained>true</SelfContained>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <!-- Disable trimming for WPF - not supported -->
+    <PublishTrimmed>false</PublishTrimmed>
+    
+    <!-- Assembly info -->
+    <Version>1.0.0</Version>
+    <Authors>Rashmi Ranjan Rout</Authors>
+    <Description>Copilot Agent Desktop - A Claude-like agent UI over GitHub Copilot SDK</Description>
+    <Product>Copilot Agent Desktop</Product>
+    
+    <!-- Application icon -->
+    <ApplicationIcon>Resources\app.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- WPF-UI for modern Fluent Design -->
+    <PackageReference Include="MdXaml" Version="1.27.0" />
+    <PackageReference Include="Wpf.Ui" Version="3.0.5" />
+    
+    <!-- MVVM Toolkit -->
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.2" />
+    
+    <!-- Dependency Injection -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging" Version="8.0.0" />
+    
+    <!-- Logging -->
+    <PackageReference Include="Serilog.Extensions.Hosting" Version="8.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
+    <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
+    
+    <!-- Markdown rendering -->
+    <PackageReference Include="Markdig" Version="0.37.0" />
+    
+    <!-- Code syntax highlighting -->
+    <PackageReference Include="AvalonEdit" Version="6.3.0.90" />
+    
+    <!-- Terminal - using available preview version -->
+    <PackageReference Include="Pty.Net" Version="0.1.16-pre" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CopilotAgent.Core\CopilotAgent.Core.csproj" />
+    <ProjectReference Include="..\CopilotAgent.Persistence\CopilotAgent.Persistence.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Resources\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <Resource Include="Resources\app.ico" />
+  </ItemGroup>
+
+</Project>

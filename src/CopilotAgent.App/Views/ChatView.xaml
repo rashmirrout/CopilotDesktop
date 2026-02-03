@@ -1,0 +1,433 @@
+<UserControl x:Class="CopilotAgent.App.Views.ChatView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:CopilotAgent.App.ViewModels"
+             xmlns:views="clr-namespace:CopilotAgent.App.Views"
+             xmlns:mdxaml="clr-namespace:MdXaml;assembly=MdXaml"
+             mc:Ignorable="d"
+             d:DesignHeight="600" d:DesignWidth="800"
+             d:DataContext="{d:DesignInstance Type=vm:ChatViewModel}">
+    
+    <UserControl.Resources>
+        <!-- Message Templates -->
+        <DataTemplate x:Key="UserMessageTemplate">
+            <Border Background="#E3F2FD" 
+                    CornerRadius="8" 
+                    Padding="12"
+                    Margin="40,5,10,5"
+                    HorizontalAlignment="Right"
+                    MaxWidth="600">
+                <StackPanel>
+                    <TextBlock Text="You" 
+                               FontWeight="SemiBold" 
+                               FontSize="11"
+                               Foreground="#1976D2"
+                               Margin="0,0,0,4"/>
+                    <TextBlock Text="{Binding Content}" 
+                               TextWrapping="Wrap"
+                               FontSize="14"/>
+                    <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:HH:mm}'}" 
+                               FontSize="10"
+                               Foreground="#666"
+                               HorizontalAlignment="Right"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="AssistantMessageTemplate">
+            <Border Background="#F5F5F5" 
+                    CornerRadius="8" 
+                    Padding="12"
+                    Margin="10,5,40,5"
+                    HorizontalAlignment="Left"
+                    MaxWidth="700">
+                <StackPanel>
+                    <TextBlock Text="Copilot" 
+                               FontWeight="SemiBold" 
+                               FontSize="11"
+                               Foreground="#00796B"
+                               Margin="0,0,0,4"/>
+                    <mdxaml:MarkdownScrollViewer Markdown="{Binding Content}"
+                                                 VerticalScrollBarVisibility="Disabled"
+                                                 Background="Transparent"
+                                                 FontSize="14"/>
+                    <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:HH:mm}'}" 
+                               FontSize="10"
+                               Foreground="#666"
+                               HorizontalAlignment="Right"
+                               Margin="0,4,0,0"/>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="SystemMessageTemplate">
+            <Border Background="#FFF9C4" 
+                    CornerRadius="8" 
+                    Padding="10"
+                    Margin="60,5,60,5"
+                    HorizontalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="ℹ️" 
+                               FontSize="12"
+                               Margin="0,0,6,0"/>
+                    <TextBlock Text="{Binding Content}" 
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               Foreground="#F57F17"/>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <DataTemplate x:Key="ToolCallMessageTemplate">
+            <Border Background="#E8EAF6" 
+                    CornerRadius="8" 
+                    Padding="10"
+                    Margin="60,5,60,5"
+                    HorizontalAlignment="Stretch">
+                <StackPanel>
+                    <TextBlock Text="🔧 Tool Execution" 
+                               FontWeight="SemiBold" 
+                               FontSize="11"
+                               Foreground="#3F51B5"
+                               Margin="0,0,0,4"/>
+                    <TextBlock Text="{Binding Content}" 
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               Foreground="#5C6BC0"/>
+                </StackPanel>
+            </Border>
+        </DataTemplate>
+
+        <!-- Message Template Selector -->
+        <DataTemplate x:Key="MessageTemplate">
+            <ContentControl Content="{Binding}">
+                <ContentControl.Style>
+                    <Style TargetType="ContentControl">
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Role}" Value="User">
+                                <Setter Property="ContentTemplate" Value="{StaticResource UserMessageTemplate}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Role}" Value="Assistant">
+                                <Setter Property="ContentTemplate" Value="{StaticResource AssistantMessageTemplate}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Role}" Value="System">
+                                <Setter Property="ContentTemplate" Value="{StaticResource SystemMessageTemplate}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Role}" Value="Tool">
+                                <Setter Property="ContentTemplate" Value="{StaticResource ToolCallMessageTemplate}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </ContentControl.Style>
+            </ContentControl>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*" MinHeight="100"/>
+            <RowDefinition Height="Auto" MinHeight="130"/>
+            <RowDefinition Height="5"/>
+            <RowDefinition Height="150" MinHeight="80" MaxHeight="400"/>
+        </Grid.RowDefinitions>
+
+        <!-- Session Info Header -->
+        <Border Grid.Row="0" 
+                Background="#263238" 
+                Padding="16,12">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Grid.Column="0">
+                    <TextBlock Text="{Binding Session.DisplayName}" 
+                               FontSize="16" 
+                               FontWeight="SemiBold"
+                               Foreground="White"/>
+                    <TextBlock FontSize="11" Foreground="#B0BEC5">
+                        <Run Text="Messages:"/>
+                        <Run Text="{Binding Messages.Count, Mode=OneWay}"/>
+                        <Run Text=" | Tokens:"/>
+                        <Run Text="{Binding Session.TokenBudget.TokensUsed, Mode=OneWay}"/>
+                        <Run Text="/"/>
+                        <Run Text="{Binding Session.TokenBudget.MaxTokens, Mode=OneWay}"/>
+                    </TextBlock>
+                </StackPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Content="🔄 Reset" 
+                            Command="{Binding ClearHistoryCommand}"
+                            Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}"
+                            Foreground="White"
+                            Margin="0,0,8,0"
+                            Padding="10,6"/>
+                    <Button Content="💾 Save" 
+                            Command="{Binding SaveSessionCommand}"
+                            Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}"
+                            Foreground="White"
+                            Padding="10,6"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Messages List -->
+        <ScrollViewer Grid.Row="1" 
+                      x:Name="MessageScrollViewer"
+                      VerticalScrollBarVisibility="Auto"
+                      Background="White"
+                      Padding="10">
+            <ItemsControl ItemsSource="{Binding Messages}" 
+                          ItemTemplate="{StaticResource MessageTemplate}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <StackPanel/>
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- Input Area -->
+        <Border Grid.Row="2" 
+                Background="#FAFAFA" 
+                BorderBrush="#E0E0E0" 
+                BorderThickness="0,1,0,0"
+                Padding="16">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Input Row -->
+                <Grid Grid.Row="0" VerticalAlignment="Center">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBox x:Name="MessageInput"
+                             Grid.Column="0"
+                             MinHeight="48"
+                             MaxHeight="120"
+                             Padding="12"
+                             FontSize="14"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="True"
+                             VerticalScrollBarVisibility="Auto"
+                             BorderBrush="#BDBDBD"
+                             BorderThickness="1"
+                             Text="{Binding MessageInput, UpdateSourceTrigger=PropertyChanged}"
+                             PreviewKeyDown="MessageInput_PreviewKeyDown">
+                        <TextBox.Style>
+                            <Style TargetType="TextBox">
+                                <Setter Property="Background" Value="White"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                                        <Setter Property="IsEnabled" Value="False"/>
+                                        <Setter Property="Background" Value="#E0E0E0"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBox.Style>
+                    </TextBox>
+
+                    <!-- Send Button - visible when not busy -->
+                    <Button x:Name="SendButton"
+                            Grid.Column="1"
+                            Content="Send"
+                            Width="100"
+                            Height="48"
+                            Margin="12,0,0,0"
+                            FontSize="14"
+                            FontWeight="SemiBold"
+                            Background="#2196F3"
+                            Foreground="White"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            Command="{Binding SendMessageCommand}"
+                            IsEnabled="{Binding CanSendMessage}">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    CornerRadius="4">
+                                                <ContentPresenter HorizontalAlignment="Center"
+                                                                  VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter Property="Visibility" Value="Visible"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#1976D2"/>
+                                    </Trigger>
+                                    <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+
+                    <!-- Stop Button - visible when busy -->
+                    <Button x:Name="StopButton"
+                            Grid.Column="1"
+                            Content="⏹ Stop"
+                            Width="100"
+                            Height="48"
+                            Margin="12,0,0,0"
+                            FontSize="14"
+                            FontWeight="SemiBold"
+                            Background="#D32F2F"
+                            Foreground="White"
+                            BorderThickness="0"
+                            Cursor="Hand"
+                            Command="{Binding StopCommand}"
+                            ToolTip="Stop the current operation">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    CornerRadius="4">
+                                                <ContentPresenter HorizontalAlignment="Center"
+                                                                  VerticalAlignment="Center"/>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#B71C1C"/>
+                                    </Trigger>
+                                    <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </Grid>
+
+                <!-- Status Text / Processing Indicator -->
+                <StackPanel Grid.Row="1" Margin="0,8,0,0">
+                    <TextBlock x:Name="StatusText"
+                               Text="Ctrl+Enter to send" 
+                               FontSize="11" 
+                               Foreground="#757575">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    <Border x:Name="ProcessingIndicator"
+                            Background="#FFF3E0"
+                            CornerRadius="4"
+                            Padding="10,6">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <Border.Triggers>
+                            <EventTrigger RoutedEvent="Border.Loaded">
+                                <BeginStoryboard>
+                                    <Storyboard RepeatBehavior="Forever">
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                         From="1.0" To="0.5" Duration="0:0:0.6"
+                                                         AutoReverse="True"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Border.Triggers>
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <TextBlock x:Name="ThinkingEmoji" Text="🤔" FontSize="16" Margin="0,0,8,0">
+                                    <TextBlock.RenderTransform>
+                                        <RotateTransform CenterX="8" CenterY="8"/>
+                                    </TextBlock.RenderTransform>
+                                    <TextBlock.Triggers>
+                                        <EventTrigger RoutedEvent="TextBlock.Loaded">
+                                            <BeginStoryboard>
+                                                <Storyboard RepeatBehavior="Forever">
+                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                                     From="-10" To="10" Duration="0:0:0.3"
+                                                                     AutoReverse="True"/>
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </EventTrigger>
+                                    </TextBlock.Triggers>
+                                </TextBlock>
+                                <TextBlock Text="Thinking" 
+                                           FontSize="12" 
+                                           Foreground="#E65100"
+                                           FontWeight="SemiBold"
+                                           VerticalAlignment="Center"/>
+                                <TextBlock x:Name="ThinkingDots" Text="..." 
+                                           FontSize="12" 
+                                           Foreground="#E65100"
+                                           FontWeight="Bold"
+                                           VerticalAlignment="Center">
+                                    <TextBlock.Triggers>
+                                        <EventTrigger RoutedEvent="TextBlock.Loaded">
+                                            <BeginStoryboard>
+                                                <Storyboard RepeatBehavior="Forever">
+                                                    <StringAnimationUsingKeyFrames Storyboard.TargetProperty="Text" Duration="0:0:1.2">
+                                                        <DiscreteStringKeyFrame KeyTime="0:0:0" Value="."/>
+                                                        <DiscreteStringKeyFrame KeyTime="0:0:0.3" Value=".."/>
+                                                        <DiscreteStringKeyFrame KeyTime="0:0:0.6" Value="..."/>
+                                                        <DiscreteStringKeyFrame KeyTime="0:0:0.9" Value=""/>
+                                                    </StringAnimationUsingKeyFrames>
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </EventTrigger>
+                                    </TextBlock.Triggers>
+                                </TextBlock>
+                            </StackPanel>
+                            <ProgressBar IsIndeterminate="True"
+                                         Height="4"
+                                         Foreground="#FF9800"
+                                         Background="#FFE0B2"/>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- Splitter -->
+        <GridSplitter Grid.Row="3"
+                      Height="5"
+                      HorizontalAlignment="Stretch"
+                      Background="#E0E0E0"
+                      ShowsPreview="True"
+                      Cursor="SizeNS"/>
+
+        <!-- Terminal -->
+        <Border Grid.Row="4"
+                BorderBrush="#E0E0E0"
+                BorderThickness="0,1,0,0">
+            <views:TerminalView DataContext="{Binding TerminalViewModel}"/>
+        </Border>
+    </Grid>
+</UserControl>

@@ -1,0 +1,186 @@
+<Window x:Class="CopilotAgent.App.Views.NewWorktreeSessionDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Create Worktree Session from GitHub Issue" 
+        Height="300" 
+        Width="600"
+        WindowStartupLocation="CenterOwner"
+        Background="White"
+        ResizeMode="NoResize">
+    
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,20">
+            <TextBlock Text="🌿 Create Worktree Session" 
+                       FontSize="20" 
+                       FontWeight="SemiBold"
+                       Foreground="#212121"/>
+            <TextBlock Text="Create a new session from a GitHub issue with an isolated git worktree" 
+                       FontSize="12" 
+                       Foreground="#757575"
+                       Margin="0,4,0,0"
+                       TextWrapping="Wrap"/>
+        </StackPanel>
+
+        <!-- Issue URL Input -->
+        <StackPanel Grid.Row="1" Margin="0,0,0,16">
+            <TextBlock Text="GitHub Issue URL" 
+                       FontSize="13" 
+                       FontWeight="SemiBold"
+                       Foreground="#424242"
+                       Margin="0,0,0,6"/>
+            <TextBox x:Name="IssueUrlTextBox"
+                     FontSize="13"
+                     Padding="10"
+                     BorderBrush="#BDBDBD"
+                     BorderThickness="1"
+                     Text="{Binding IssueUrl, UpdateSourceTrigger=PropertyChanged}">
+                <TextBox.Style>
+                    <Style TargetType="TextBox">
+                        <Setter Property="Background" Value="White"/>
+                        <Style.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter Property="BorderBrush" Value="#2196F3"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBox.Style>
+            </TextBox>
+            <TextBlock Text="Example: https://github.com/owner/repo/issues/123" 
+                       FontSize="11" 
+                       Foreground="#9E9E9E"
+                       Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <!-- Working Directory -->
+        <StackPanel Grid.Row="2" Margin="0,0,0,16">
+            <TextBlock Text="Repository Directory" 
+                       FontSize="13" 
+                       FontWeight="SemiBold"
+                       Foreground="#424242"
+                       Margin="0,0,0,6"/>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <TextBox x:Name="WorkingDirTextBox"
+                         Grid.Column="0"
+                         FontSize="13"
+                         Padding="10"
+                         BorderBrush="#BDBDBD"
+                         BorderThickness="1"
+                         Text="{Binding WorkingDirectory, UpdateSourceTrigger=PropertyChanged}"
+                         IsReadOnly="True"/>
+                
+                <Button Grid.Column="1"
+                        Content="Browse..."
+                        Click="BrowseButton_Click"
+                        Padding="12,8"
+                        Margin="8,0,0,0"
+                        Background="#E0E0E0"
+                        BorderThickness="0"
+                        Cursor="Hand">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#BDBDBD"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </Grid>
+        </StackPanel>
+
+        <!-- Status Message -->
+        <Border Grid.Row="3" 
+                Background="#E3F2FD" 
+                Padding="12"
+                CornerRadius="4"
+                Visibility="{Binding IsLoading, Converter={StaticResource BoolToVisibilityConverter}}">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="⏳" FontSize="16" Margin="0,0,8,0"/>
+                <TextBlock Text="{Binding StatusMessage}" 
+                           FontSize="12"
+                           Foreground="#1976D2"
+                           VerticalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Buttons -->
+        <StackPanel Grid.Row="4" 
+                    Orientation="Horizontal" 
+                    HorizontalAlignment="Right"
+                    Margin="0,16,0,0">
+            <Button Content="Cancel" 
+                    Click="CancelButton_Click"
+                    Padding="20,10"
+                    MinWidth="100"
+                    Background="Transparent"
+                    BorderBrush="#BDBDBD"
+                    BorderThickness="1"
+                    Margin="0,0,8,0"
+                    Cursor="Hand">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="#F5F5F5"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+            
+            <Button Content="Create Session" 
+                    Click="CreateButton_Click"
+                    Padding="20,10"
+                    MinWidth="140"
+                    Background="{StaticResource PrimaryBrush}"
+                    Foreground="White"
+                    BorderThickness="0"
+                    IsEnabled="{Binding CanCreate}"
+                    Cursor="Hand">
+                <Button.Style>
+                    <Style TargetType="Button">
+                        <Setter Property="Template">
+                            <Setter.Value>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}"
+                                            CornerRadius="4"
+                                            Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Setter.Value>
+                        </Setter>
+                        <Style.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Background" Value="{StaticResource PrimaryDarkBrush}"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Background" Value="#BDBDBD"/>
+                                <Setter Property="Foreground" Value="#757575"/>
+                            </Trigger>
+                        </Style.Triggers>
+                    </Style>
+                </Button.Style>
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>
