@@ -14,6 +14,8 @@ public class JsonPersistenceService : IPersistenceService
     private readonly string _dataDirectory;
     private readonly string _sessionsDirectory;
     private readonly string _settingsFile;
+    private readonly string _commandPolicyFile;
+    private readonly string _mcpServersFile;
     
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -30,6 +32,8 @@ public class JsonPersistenceService : IPersistenceService
         _dataDirectory = Path.Combine(appData, "CopilotAgent");
         _sessionsDirectory = Path.Combine(_dataDirectory, "Sessions");
         _settingsFile = Path.Combine(_dataDirectory, "settings.json");
+        _commandPolicyFile = Path.Combine(_dataDirectory, "command-policy.json");
+        _mcpServersFile = Path.Combine(_dataDirectory, "mcp-servers.json");
         
         // Ensure directories exist
         Directory.CreateDirectory(_dataDirectory);
@@ -168,6 +172,80 @@ public class JsonPersistenceService : IPersistenceService
         {
             _logger.LogError(ex, "Failed to delete session {SessionId}", sessionId);
             throw;
+        }
+    }
+
+    public async Task SaveCommandPolicyAsync(CommandPolicy policy)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(policy, JsonOptions);
+            await File.WriteAllTextAsync(_commandPolicyFile, json);
+            _logger.LogInformation("Command policy saved successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save command policy");
+            throw;
+        }
+    }
+
+    public async Task<CommandPolicy?> LoadCommandPolicyAsync()
+    {
+        try
+        {
+            if (!File.Exists(_commandPolicyFile))
+            {
+                _logger.LogInformation("Command policy file not found, using defaults");
+                return null;
+            }
+
+            var json = await File.ReadAllTextAsync(_commandPolicyFile);
+            var policy = JsonSerializer.Deserialize<CommandPolicy>(json, JsonOptions);
+            _logger.LogInformation("Command policy loaded successfully");
+            return policy;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load command policy, using defaults");
+            return null;
+        }
+    }
+
+    public async Task SaveMcpServersAsync(List<McpServerConfig> servers)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(servers, JsonOptions);
+            await File.WriteAllTextAsync(_mcpServersFile, json);
+            _logger.LogInformation("MCP servers saved successfully ({Count} servers)", servers.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save MCP servers");
+            throw;
+        }
+    }
+
+    public async Task<List<McpServerConfig>?> LoadMcpServersAsync()
+    {
+        try
+        {
+            if (!File.Exists(_mcpServersFile))
+            {
+                _logger.LogInformation("MCP servers file not found, using empty list");
+                return null;
+            }
+
+            var json = await File.ReadAllTextAsync(_mcpServersFile);
+            var servers = JsonSerializer.Deserialize<List<McpServerConfig>>(json, JsonOptions);
+            _logger.LogInformation("MCP servers loaded successfully ({Count} servers)", servers?.Count ?? 0);
+            return servers;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load MCP servers, using empty list");
+            return null;
         }
     }
 }

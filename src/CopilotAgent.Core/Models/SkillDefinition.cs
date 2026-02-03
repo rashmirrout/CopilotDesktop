@@ -7,6 +7,10 @@ namespace CopilotAgent.Core.Models;
 /// </summary>
 public class SkillDefinition
 {
+    /// <summary>Unique identifier for this skill (hash of file path)</summary>
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = string.Empty;
+
     /// <summary>Unique name for this skill</summary>
     [JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;

@@ -6,11 +6,14 @@
              xmlns:vm="clr-namespace:CopilotAgent.App.ViewModels"
              xmlns:views="clr-namespace:CopilotAgent.App.Views"
              xmlns:mdxaml="clr-namespace:MdXaml;assembly=MdXaml"
+             xmlns:converters="clr-namespace:CopilotAgent.App.Converters"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="800"
              d:DataContext="{d:DesignInstance Type=vm:ChatViewModel}">
     
     <UserControl.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
+        
         <!-- Message Templates -->
         <DataTemplate x:Key="UserMessageTemplate">
             <Border Background="#E3F2FD" 
@@ -129,10 +132,8 @@
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*" MinHeight="100"/>
-            <RowDefinition Height="Auto" MinHeight="130"/>
-            <RowDefinition Height="5"/>
-            <RowDefinition Height="150" MinHeight="80" MaxHeight="400"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
 
         <!-- Session Info Header -->
@@ -176,8 +177,77 @@
             </Grid>
         </Border>
 
-        <!-- Messages List -->
-        <ScrollViewer Grid.Row="1" 
+        <!-- Content Tab Bar -->
+        <Border Grid.Row="1" 
+                Background="#F5F5F5" 
+                BorderBrush="#E0E0E0" 
+                BorderThickness="0,0,0,1"
+                Padding="8,0">
+            <StackPanel Orientation="Horizontal">
+                <RadioButton x:Name="ChatTab"
+                             Content="💬 Chat"
+                             IsChecked="True"
+                             GroupName="ContentTabs"
+                             Style="{StaticResource {x:Type ToggleButton}}"
+                             Padding="12,8"
+                             Margin="0,0,4,0"
+                             Cursor="Hand"
+                             Background="Transparent"
+                             BorderThickness="0,0,0,2"
+                             Foreground="#424242"/>
+                <RadioButton x:Name="TerminalTab"
+                             Content="💻 Terminal"
+                             GroupName="ContentTabs"
+                             Style="{StaticResource {x:Type ToggleButton}}"
+                             Padding="12,8"
+                             Margin="0,0,4,0"
+                             Cursor="Hand"
+                             Background="Transparent"
+                             BorderThickness="0,0,0,2"
+                             Foreground="#424242"/>
+                <RadioButton x:Name="SkillsTab"
+                             Content="🎯 Skills"
+                             GroupName="ContentTabs"
+                             Style="{StaticResource {x:Type ToggleButton}}"
+                             Padding="12,8"
+                             Margin="0,0,4,0"
+                             Cursor="Hand"
+                             Background="Transparent"
+                             BorderThickness="0,0,0,2"
+                             Foreground="#424242"/>
+                <RadioButton x:Name="McpTab"
+                             Content="🔌 MCP"
+                             GroupName="ContentTabs"
+                             Style="{StaticResource {x:Type ToggleButton}}"
+                             Padding="12,8"
+                             Margin="0,0,4,0"
+                             Cursor="Hand"
+                             Background="Transparent"
+                             BorderThickness="0,0,0,2"
+                             Foreground="#424242"/>
+                <RadioButton x:Name="AgentTab"
+                             Content="🤖 Agent"
+                             GroupName="ContentTabs"
+                             Style="{StaticResource {x:Type ToggleButton}}"
+                             Padding="12,8"
+                             Cursor="Hand"
+                             Background="Transparent"
+                             BorderThickness="0,0,0,2"
+                             Foreground="#424242"/>
+            </StackPanel>
+        </Border>
+
+        <!-- Tab Content Area -->
+        <Grid Grid.Row="2">
+            <!-- Chat Content -->
+            <Grid Visibility="{Binding IsChecked, ElementName=ChatTab, Converter={StaticResource BoolToVisibility}}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" MinHeight="100"/>
+                    <RowDefinition Height="Auto" MinHeight="130"/>
+                </Grid.RowDefinitions>
+
+                <!-- Messages List -->
+                <ScrollViewer Grid.Row="0" 
                       x:Name="MessageScrollViewer"
                       VerticalScrollBarVisibility="Auto"
                       Background="White"
@@ -190,10 +260,10 @@
                     </ItemsPanelTemplate>
                 </ItemsControl.ItemsPanel>
             </ItemsControl>
-        </ScrollViewer>
+                </ScrollViewer>
 
-        <!-- Input Area -->
-        <Border Grid.Row="2" 
+                <!-- Input Area -->
+                <Border Grid.Row="1" 
                 Background="#FAFAFA" 
                 BorderBrush="#E0E0E0" 
                 BorderThickness="0,1,0,0"
@@ -413,21 +483,24 @@
                     </Border>
                 </StackPanel>
             </Grid>
-        </Border>
+                </Border>
+            </Grid>
 
-        <!-- Splitter -->
-        <GridSplitter Grid.Row="3"
-                      Height="5"
-                      HorizontalAlignment="Stretch"
-                      Background="#E0E0E0"
-                      ShowsPreview="True"
-                      Cursor="SizeNS"/>
+            <!-- Terminal Content -->
+            <views:TerminalView DataContext="{Binding TerminalViewModel}"
+                                Visibility="{Binding IsChecked, ElementName=TerminalTab, Converter={StaticResource BoolToVisibility}}"/>
 
-        <!-- Terminal -->
-        <Border Grid.Row="4"
-                BorderBrush="#E0E0E0"
-                BorderThickness="0,1,0,0">
-            <views:TerminalView DataContext="{Binding TerminalViewModel}"/>
-        </Border>
+            <!-- Skills Content -->
+            <views:SkillsView DataContext="{Binding SkillsViewModel}"
+                              Visibility="{Binding IsChecked, ElementName=SkillsTab, Converter={StaticResource BoolToVisibility}}"/>
+
+            <!-- MCP Content -->
+            <views:McpConfigView DataContext="{Binding McpConfigViewModel}"
+                                 Visibility="{Binding IsChecked, ElementName=McpTab, Converter={StaticResource BoolToVisibility}}"/>
+
+            <!-- Agent Content -->
+            <views:IterativeTaskView DataContext="{Binding IterativeTaskViewModel}"
+                                     Visibility="{Binding IsChecked, ElementName=AgentTab, Converter={StaticResource BoolToVisibility}}"/>
+        </Grid>
     </Grid>
 </UserControl>
