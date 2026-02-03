@@ -1,6 +1,8 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
+using CopilotAgent.App.Helpers;
 
 namespace CopilotAgent.App.Views;
 
@@ -38,11 +40,30 @@ public partial class TerminalView : UserControl
                 {
                     Dispatcher.InvokeAsync(() =>
                     {
-                        TerminalScrollViewer.ScrollToEnd();
+                        UpdateTerminalDocument(viewModel.TerminalOutput);
                     });
                 }
             };
         }
+    }
+
+    /// <summary>
+    /// Update the RichTextBox with ANSI-parsed content
+    /// </summary>
+    private void UpdateTerminalDocument(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            TerminalRichTextBox.Document.Blocks.Clear();
+            return;
+        }
+
+        // Create new document with ANSI parsing
+        var document = AnsiParser.CreateDocument(text);
+        TerminalRichTextBox.Document = document;
+        
+        // Scroll to end
+        TerminalRichTextBox.ScrollToEnd();
     }
 
     /// <summary>
@@ -94,7 +115,7 @@ public partial class TerminalView : UserControl
     /// <summary>
     /// Focus the command input when clicking on the terminal output area
     /// </summary>
-    private void TerminalScrollViewer_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    private void TerminalRichTextBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         // Focus the command input when user clicks anywhere in the terminal
         CommandInput.Focus();
