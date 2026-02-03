@@ -47,12 +47,19 @@ public partial class App : Application
                     services.AddSingleton<IPersistenceService, JsonPersistenceService>();
                     services.AddSingleton<ICopilotService, CopilotService>();
                     services.AddSingleton<ISessionManager, SessionManager>();
+                    services.AddSingleton<ICommandPolicyService, CommandPolicyService>();
+                    services.AddSingleton<IMcpService, McpService>();
+                    services.AddSingleton<ISkillsService, SkillsService>();
+                    services.AddSingleton<IIterativeTaskService, IterativeTaskService>();
 
                     // ViewModels
                     services.AddTransient<MainWindowViewModel>();
                     services.AddTransient<ChatViewModel>();
                     services.AddTransient<NewWorktreeSessionDialogViewModel>();
                     services.AddTransient<TerminalViewModel>();
+                    services.AddTransient<McpConfigViewModel>();
+                    services.AddTransient<SkillsViewModel>();
+                    services.AddTransient<IterativeTaskViewModel>();
 
                     // Main Window
                     services.AddSingleton<MainWindow>();
@@ -67,6 +74,15 @@ public partial class App : Application
             // Initialize services
             var sessionManager = _host.Services.GetRequiredService<ISessionManager>();
             await sessionManager.LoadSessionsAsync();
+
+            var commandPolicyService = _host.Services.GetRequiredService<ICommandPolicyService>();
+            await commandPolicyService.LoadPolicyAsync();
+
+            var mcpService = _host.Services.GetRequiredService<IMcpService>();
+            await mcpService.LoadServersAsync();
+
+            var skillsService = _host.Services.GetRequiredService<ISkillsService>();
+            await skillsService.ScanSkillsAsync();
 
             // If no sessions exist, create a default one
             if (!sessionManager.Sessions.Any())
@@ -104,6 +120,18 @@ public partial class App : Application
                 // Save active session before exit
                 var sessionManager = _host.Services.GetRequiredService<ISessionManager>();
                 await sessionManager.SaveActiveSessionAsync();
+
+                // Save command policy
+                var commandPolicyService = _host.Services.GetRequiredService<ICommandPolicyService>();
+                await commandPolicyService.SavePolicyAsync();
+
+                // Save MCP servers and dispose
+                var mcpService = _host.Services.GetRequiredService<IMcpService>();
+                await mcpService.SaveServersAsync();
+                if (mcpService is IDisposable disposableMcp)
+                {
+                    disposableMcp.Dispose();
+                }
 
                 await _host.StopAsync(TimeSpan.FromSeconds(5));
                 _host.Dispose();

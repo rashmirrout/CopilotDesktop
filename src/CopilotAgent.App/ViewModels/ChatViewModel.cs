@@ -36,16 +36,54 @@ public partial class ChatViewModel : ViewModelBase
     [ObservableProperty]
     private TerminalViewModel _terminalViewModel = null!;
 
+    [ObservableProperty]
+    private SkillsViewModel _skillsViewModel = null!;
+
+    [ObservableProperty]
+    private McpConfigViewModel _mcpConfigViewModel = null!;
+
+    [ObservableProperty]
+    private IterativeTaskViewModel _iterativeTaskViewModel = null!;
+
     public ChatViewModel(
         ICopilotService copilotService,
         ISessionManager sessionManager,
         ILogger<ChatViewModel> logger,
-        TerminalViewModel terminalViewModel)
+        TerminalViewModel terminalViewModel,
+        SkillsViewModel skillsViewModel,
+        McpConfigViewModel mcpConfigViewModel,
+        IterativeTaskViewModel iterativeTaskViewModel)
     {
         _copilotService = copilotService;
         _sessionManager = sessionManager;
         _logger = logger;
         _terminalViewModel = terminalViewModel;
+        _skillsViewModel = skillsViewModel;
+        _mcpConfigViewModel = mcpConfigViewModel;
+        _iterativeTaskViewModel = iterativeTaskViewModel;
+        
+        // Subscribe to terminal "Add to message" events
+        _terminalViewModel.AddToMessageRequested += OnTerminalAddToMessage;
+    }
+
+    private void OnTerminalAddToMessage(object? sender, string terminalOutput)
+    {
+        if (string.IsNullOrWhiteSpace(terminalOutput))
+            return;
+        
+        // Format the terminal output as a code block and append to message input
+        var formattedOutput = $"\n```terminal\n{terminalOutput}\n```\n";
+        
+        if (string.IsNullOrWhiteSpace(MessageInput))
+        {
+            MessageInput = formattedOutput;
+        }
+        else
+        {
+            MessageInput += formattedOutput;
+        }
+        
+        _logger.LogInformation("Added terminal output to message input ({Length} chars)", terminalOutput.Length);
     }
 
     partial void OnMessageInputChanged(string value)
@@ -91,6 +129,9 @@ public partial class ChatViewModel : ViewModelBase
         {
             TerminalViewModel.SetWorkingDirectory(session.GitWorktreeInfo.WorktreePath);
         }
+
+        // Initialize iterative task view model with session
+        IterativeTaskViewModel.SetSession(session.SessionId);
         
         _logger.LogInformation("Chat initialized for session {SessionId} with {Count} messages", 
             session.SessionId, session.MessageHistory.Count);

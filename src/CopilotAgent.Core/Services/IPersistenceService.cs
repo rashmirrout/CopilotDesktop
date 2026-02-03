@@ -41,4 +41,24 @@ public interface IPersistenceService
     /// Gets the data directory path
     /// </summary>
     string GetDataDirectory();
+
+    /// <summary>
+    /// Saves command policy
+    /// </summary>
+    Task SaveCommandPolicyAsync(CommandPolicy policy);
+
+    /// <summary>
+    /// Loads command policy
+    /// </summary>
+    Task<CommandPolicy?> LoadCommandPolicyAsync();
+
+    /// <summary>
+    /// Saves MCP server configurations
+    /// </summary>
+    Task SaveMcpServersAsync(List<McpServerConfig> servers);
+
+    /// <summary>
+    /// Loads MCP server configurations
+    /// </summary>
+    Task<List<McpServerConfig>?> LoadMcpServersAsync();
 }

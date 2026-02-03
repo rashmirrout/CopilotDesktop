@@ -23,6 +23,11 @@ public partial class TerminalViewModel : ViewModelBase
     private readonly List<string> _commandHistory = new();
     private int _historyIndex = -1;
     private string _currentInput = string.Empty;
+    
+    /// <summary>
+    /// Event raised when user wants to add terminal output to chat message
+    /// </summary>
+    public event EventHandler<string>? AddToMessageRequested;
 
     [ObservableProperty]
     private string _terminalOutput = string.Empty;
@@ -321,6 +326,48 @@ public partial class TerminalViewModel : ViewModelBase
         
         // Keep command history across restarts
         StartPowerShell();
+    }
+
+    /// <summary>
+    /// Add the last command and its output to the chat message
+    /// </summary>
+    [RelayCommand]
+    private void AddToMessage()
+    {
+        var outputToAdd = GetRecentOutput();
+        if (!string.IsNullOrWhiteSpace(outputToAdd))
+        {
+            AddToMessageRequested?.Invoke(this, outputToAdd);
+            _logger.LogInformation("Added terminal output to message ({Length} chars)", outputToAdd.Length);
+        }
+    }
+
+    /// <summary>
+    /// Gets the recent terminal output (last ~50 lines or 4KB, whichever is smaller)
+    /// </summary>
+    public string GetRecentOutput()
+    {
+        lock (_outputLock)
+        {
+            var output = _outputBuffer.ToString();
+            if (string.IsNullOrWhiteSpace(output))
+                return string.Empty;
+
+            // Split into lines and take the last 50 lines max
+            var lines = output.Split(new[] { "\r\n", "\n" }, StringSplitOptions.None);
+            var startIndex = Math.Max(0, lines.Length - 50);
+            var recentLines = lines.Skip(startIndex).Take(50);
+            
+            var result = string.Join(Environment.NewLine, recentLines);
+            
+            // Limit to 4KB to avoid overwhelming the chat
+            if (result.Length > 4096)
+            {
+                result = "..." + result.Substring(result.Length - 4000);
+            }
+            
+            return result.Trim();
+        }
     }
 
     private void StopShell()
