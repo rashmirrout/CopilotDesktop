@@ -46,7 +46,8 @@
                     Padding="12"
                     Margin="10,5,40,5"
                     HorizontalAlignment="Left"
-                    MaxWidth="700">
+                    MaxWidth="700"
+                    x:Name="AssistantMessageBorder">
                 <StackPanel>
                     <TextBlock Text="Copilot" 
                                FontWeight="SemiBold" 
@@ -57,11 +58,66 @@
                                                  VerticalScrollBarVisibility="Disabled"
                                                  Background="Transparent"
                                                  FontSize="14"/>
-                    <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:HH:mm}'}" 
-                               FontSize="10"
-                               Foreground="#666"
-                               HorizontalAlignment="Right"
-                               Margin="0,4,0,0"/>
+                    <!-- Bottom row with timestamp and copy button -->
+                    <Grid Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding Timestamp, StringFormat='{}{0:HH:mm}'}" 
+                                   FontSize="10"
+                                   Foreground="#666"
+                                   HorizontalAlignment="Right"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,8,0"/>
+                        
+                        <!-- Copy button with industry-standard icon and checkmark feedback -->
+                        <Button Grid.Column="1"
+                                ToolTip="Copy to clipboard"
+                                Click="CopyButton_Click"
+                                Tag="{Binding Content}"
+                                Cursor="Hand"
+                                Padding="4"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Opacity="0.5">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Opacity" Value="1.0"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Grid Width="14" Height="14">
+                                <!-- Copy icon: two overlapping squares (industry standard) -->
+                                <Canvas x:Name="CopyIcon">
+                                    <!-- Back rectangle -->
+                                    <Rectangle Canvas.Left="3" Canvas.Top="0" 
+                                               Width="11" Height="11" 
+                                               Stroke="#666" StrokeThickness="1.5" 
+                                               Fill="Transparent" RadiusX="1" RadiusY="1"/>
+                                    <!-- Front rectangle -->
+                                    <Rectangle Canvas.Left="0" Canvas.Top="3" 
+                                               Width="11" Height="11" 
+                                               Stroke="#666" StrokeThickness="1.5" 
+                                               Fill="#F5F5F5" RadiusX="1" RadiusY="1"/>
+                                </Canvas>
+                                <!-- Checkmark icon (initially hidden) -->
+                                <Canvas x:Name="CheckIcon" Visibility="Collapsed">
+                                    <Polyline Points="2,7 6,11 12,3"
+                                              Stroke="#4CAF50" 
+                                              StrokeThickness="2"
+                                              StrokeLineJoin="Round"
+                                              StrokeStartLineCap="Round"
+                                              StrokeEndLineCap="Round"/>
+                                </Canvas>
+                            </Grid>
+                        </Button>
+                    </Grid>
                 </StackPanel>
             </Border>
         </DataTemplate>
