@@ -59,6 +59,15 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Button Content="📋 Add to Chat" 
+                            Command="{Binding AddToMessageCommand}"
+                            ToolTip="Add recent terminal output to chat message"
+                            Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}"
+                            Foreground="#56B6C2"
+                            Padding="8,3"
+                            Margin="0,0,8,0"
+                            FontSize="11"
+                            FontWeight="SemiBold"/>
                     <Button Content="⏹" 
                             Command="{Binding SendInterruptCommand}"
                             ToolTip="Send Ctrl+C (Interrupt)"
@@ -86,22 +95,26 @@
             </Grid>
         </Border>
 
-        <!-- Terminal Output -->
-        <ScrollViewer Grid.Row="1" 
-                      x:Name="TerminalScrollViewer"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Auto"
-                      Background="#0C0C0C"
-                      Padding="8,4"
-                      PreviewMouseLeftButtonDown="TerminalScrollViewer_PreviewMouseLeftButtonDown">
-            <TextBlock x:Name="TerminalOutput"
-                       Text="{Binding TerminalOutput}"
-                       FontFamily="Cascadia Code, Consolas, Courier New"
-                       FontSize="12"
-                       Foreground="#CCCCCC"
-                       TextWrapping="NoWrap"
-                       xml:space="preserve"/>
-        </ScrollViewer>
+        <!-- Terminal Output with ANSI Color Support -->
+        <RichTextBox Grid.Row="1" 
+                     x:Name="TerminalRichTextBox"
+                     IsReadOnly="True"
+                     IsReadOnlyCaretVisible="False"
+                     Background="#0C0C0C"
+                     Foreground="#CCCCCC"
+                     FontFamily="Cascadia Code, Consolas, Courier New"
+                     FontSize="12"
+                     BorderThickness="0"
+                     Padding="8,4"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     PreviewMouseLeftButtonDown="TerminalRichTextBox_PreviewMouseLeftButtonDown">
+            <RichTextBox.Resources>
+                <Style TargetType="Paragraph">
+                    <Setter Property="Margin" Value="0"/>
+                </Style>
+            </RichTextBox.Resources>
+        </RichTextBox>
 
         <!-- Terminal Input - Integrated Command Line -->
         <Border Grid.Row="2"
