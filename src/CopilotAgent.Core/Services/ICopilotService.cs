@@ -3,9 +3,10 @@ using CopilotAgent.Core.Models;
 namespace CopilotAgent.Core.Services;
 
 /// <summary>
-/// Service for interacting with GitHub Copilot
+/// Service for interacting with GitHub Copilot.
+/// Supports both legacy per-message processes and persistent session mode.
 /// </summary>
-public interface ICopilotService
+public interface ICopilotService : IDisposable
 {
     /// <summary>
     /// Checks if Copilot CLI is available
@@ -40,4 +41,16 @@ public interface ICopilotService
         string command,
         string workingDirectory,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Terminates the Copilot process for a specific session.
+    /// Used when switching sessions or when session is deleted.
+    /// </summary>
+    void TerminateSessionProcess(string sessionId);
+
+    /// <summary>
+    /// Terminates all active Copilot processes.
+    /// Call this when closing the application.
+    /// </summary>
+    void TerminateAllProcesses();
 }
