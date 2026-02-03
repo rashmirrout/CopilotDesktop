@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using CopilotAgent.Core.Models;
 using Microsoft.Extensions.Logging;
 
@@ -47,15 +48,25 @@ public class CopilotService : ICopilotService, IDisposable
     private const bool USE_SESSION_CONTINUATION = true;
 
     /// <summary>
-    /// Tracks whether a session has had its first message sent.
-    /// Key: SessionId, Value: true if first message was sent (so subsequent use --continue)
+    /// Tracks whether a session has had its first message sent (in current app run).
+    /// Key: SessionId, Value: true if first message was sent
     /// </summary>
     private readonly ConcurrentDictionary<string, bool> _sessionHasStarted = new();
+
+    /// <summary>
+    /// Path to Copilot CLI's session storage
+    /// </summary>
+    private readonly string _copilotSessionStatePath;
 
     public CopilotService(ILogger<CopilotService> logger)
     {
         _logger = logger;
         _copilotPath = FindCopilotExecutable();
+        _copilotSessionStatePath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            ".copilot",
+            "session-state"
+        );
         _logger.LogInformation("CopilotService initialized. SessionContinuationMode={Mode}", USE_SESSION_CONTINUATION);
     }
 
@@ -112,23 +123,38 @@ public class CopilotService : ICopilotService, IDisposable
 
         // Build command arguments
         string arguments;
+        bool shouldCaptureSessionId = false;
+        
         if (USE_SESSION_CONTINUATION)
         {
-            // Check if this session has already sent a message
-            var hasStarted = _sessionHasStarted.GetOrAdd(session.SessionId, false);
-            
-            if (hasStarted)
+            // Check if we have a stored Copilot session ID (from previous app run)
+            if (!string.IsNullOrEmpty(session.CopilotSessionId))
             {
-                // Subsequent message - use --continue to resume the session
-                arguments = $"--continue -p \"{EscapeArgument(userMessage)}\" -s --stream on";
-                _logger.LogDebug("Using --continue for session {SessionId}", session.SessionId);
+                // We have a stored Copilot session ID - use --resume to reconnect
+                arguments = $"--resume {session.CopilotSessionId} -p \"{EscapeArgument(userMessage)}\" -s --stream on";
+                _sessionHasStarted[session.SessionId] = true;
+                _logger.LogDebug("Resuming Copilot session {CopilotSessionId} for {SessionId}", 
+                    session.CopilotSessionId, session.SessionId);
             }
             else
             {
-                // First message - start new session
-                arguments = $"-p \"{EscapeArgument(userMessage)}\" -s --stream on";
-                _sessionHasStarted[session.SessionId] = true;
-                _logger.LogDebug("Starting new session for {SessionId}", session.SessionId);
+                // Check if this session has already sent a message (in this app run)
+                var hasStarted = _sessionHasStarted.GetOrAdd(session.SessionId, false);
+                
+                if (hasStarted)
+                {
+                    // Subsequent message - use --continue to resume the most recent session
+                    arguments = $"--continue -p \"{EscapeArgument(userMessage)}\" -s --stream on";
+                    _logger.LogDebug("Using --continue for session {SessionId}", session.SessionId);
+                }
+                else
+                {
+                    // First message - start new session, capture the session ID after
+                    arguments = $"-p \"{EscapeArgument(userMessage)}\" -s --stream on";
+                    _sessionHasStarted[session.SessionId] = true;
+                    shouldCaptureSessionId = true;
+                    _logger.LogDebug("Starting new Copilot session for {SessionId}", session.SessionId);
+                }
             }
         }
         else
@@ -202,6 +228,19 @@ public class CopilotService : ICopilotService, IDisposable
             yield return message;
 
             _logger.LogInformation("Response complete for session {SessionId}", session.SessionId);
+            
+            // Capture the Copilot session ID if this was the first message
+            if (shouldCaptureSessionId && string.IsNullOrEmpty(session.CopilotSessionId))
+            {
+                var copilotSessionId = await TryCaptureCopilotSessionIdAsync(
+                    session.WorkingDirectory ?? Environment.CurrentDirectory);
+                if (!string.IsNullOrEmpty(copilotSessionId))
+                {
+                    session.CopilotSessionId = copilotSessionId;
+                    _logger.LogInformation("Captured Copilot session ID {CopilotSessionId} for session {SessionId}", 
+                        copilotSessionId, session.SessionId);
+                }
+            }
         }
         finally
         {
@@ -372,6 +411,95 @@ public class CopilotService : ICopilotService, IDisposable
             .Replace("\"", "\\\"")
             .Replace("\n", " ")
             .Replace("\r", "");
+    }
+
+    /// <summary>
+    /// Attempts to find the Copilot CLI session ID that was just created.
+    /// Scans the session-state directory for the most recently created session
+    /// matching the working directory.
+    /// </summary>
+    private async Task<string?> TryCaptureCopilotSessionIdAsync(string workingDirectory)
+    {
+        try
+        {
+            if (!Directory.Exists(_copilotSessionStatePath))
+            {
+                _logger.LogWarning("Copilot session-state directory not found: {Path}", _copilotSessionStatePath);
+                return null;
+            }
+
+            // Get all session directories
+            var sessionDirs = Directory.GetDirectories(_copilotSessionStatePath)
+                .Where(d => Guid.TryParse(Path.GetFileName(d), out _)) // Only GUID-named folders
+                .Select(d => new DirectoryInfo(d))
+                .OrderByDescending(d => d.LastWriteTime) // Most recent first
+                .Take(10) // Only check recent sessions
+                .ToList();
+
+            foreach (var sessionDir in sessionDirs)
+            {
+                var workspaceYaml = Path.Combine(sessionDir.FullName, "workspace.yaml");
+                if (!File.Exists(workspaceYaml))
+                    continue;
+
+                try
+                {
+                    var yamlContent = await File.ReadAllTextAsync(workspaceYaml);
+                    
+                    // Simple YAML parsing for workspace.yaml (format: "key: value")
+                    var cwd = ParseYamlValue(yamlContent, "cwd");
+                    var createdAtStr = ParseYamlValue(yamlContent, "created_at");
+
+                    if (!string.IsNullOrEmpty(cwd))
+                    {
+                        // Normalize paths for comparison
+                        var normalizedCwd = Path.GetFullPath(cwd).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                        var normalizedWorkingDir = Path.GetFullPath(workingDirectory).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+                        if (string.Equals(normalizedCwd, normalizedWorkingDir, StringComparison.OrdinalIgnoreCase))
+                        {
+                            // Check if this session was created recently (within last 60 seconds)
+                            if (!string.IsNullOrEmpty(createdAtStr) && DateTime.TryParse(createdAtStr, out var createdAt))
+                            {
+                                var age = DateTime.UtcNow - createdAt;
+                                if (age.TotalSeconds < 60)
+                                {
+                                    return sessionDir.Name; // The GUID
+                                }
+                            }
+                            
+                            // Fallback: if directory was modified recently
+                            if ((DateTime.Now - sessionDir.LastWriteTime).TotalSeconds < 60)
+                            {
+                                return sessionDir.Name;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to parse workspace.yaml in {SessionDir}", sessionDir.FullName);
+                }
+            }
+
+            _logger.LogDebug("Could not find matching Copilot session for cwd: {WorkingDirectory}", workingDirectory);
+            return null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to capture Copilot session ID");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Simple YAML value parser for key: value format.
+    /// </summary>
+    private static string? ParseYamlValue(string yamlContent, string key)
+    {
+        var pattern = $@"^{Regex.Escape(key)}:\s*(.+?)\s*$";
+        var match = Regex.Match(yamlContent, pattern, RegexOptions.Multiline);
+        return match.Success ? match.Groups[1].Value.Trim() : null;
     }
 
     private static string CleanCopilotOutput(string output)

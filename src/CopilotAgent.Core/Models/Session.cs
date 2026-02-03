@@ -106,6 +106,14 @@ public class Session : INotifyPropertyChanged
     /// <summary>System prompt for this session</summary>
     [JsonPropertyName("systemPrompt")]
     public string? SystemPrompt { get; set; }
+
+    /// <summary>
+    /// Copilot CLI's internal session ID (GUID).
+    /// Used with --resume to reconnect to specific Copilot session after app restart.
+    /// This is different from our SessionId - it's Copilot's own session tracking.
+    /// </summary>
+    [JsonPropertyName("copilotSessionId")]
+    public string? CopilotSessionId { get; set; }
 }
 
 /// <summary>
