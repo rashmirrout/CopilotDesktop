@@ -36,17 +36,30 @@ CopilotAgent.sln
 
 ## Building
 
-### Command Line
+### Quick Start
+
+```bash
+# Clone and build
+git clone <repository-url>
+cd CopilotDesktop
+dotnet restore
+dotnet build
+```
+
+### Development Build
 
 ```bash
 # Restore dependencies
 dotnet restore
 
-# Build solution
-dotnet build
+# Build solution (Debug)
+dotnet build CopilotAgent.sln
 
 # Run application
 dotnet run --project src/CopilotAgent.App
+
+# Or use the batch file
+.\run-app.bat
 
 # Run tests
 dotnet test
@@ -58,14 +71,64 @@ dotnet test
 2. Build → Build Solution (Ctrl+Shift+B)
 3. Debug → Start Debugging (F5)
 
-## Publishing Single Executable
+## Publishing
+
+### Self-Contained Single Executable (Recommended)
+
+Creates a portable executable that includes the .NET runtime - no installation required on target machine.
 
 ```bash
-cd src/CopilotAgent.App
-dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+# Publish for Windows x64
+dotnet publish src/CopilotAgent.App/CopilotAgent.App.csproj \
+    -c Release \
+    -r win-x64 \
+    --self-contained true \
+    -o publish/win-x64
 ```
 
-Output: `bin\Release\net8.0-windows\win-x64\publish\CopilotAgent.exe`
+**Output:** `publish/win-x64/CopilotAgent.exe` (~70 MB)
+
+**Contents:**
+| File | Description |
+|------|-------------|
+| `CopilotAgent.exe` | Self-contained executable (includes .NET runtime) |
+| `*.pdb` | Debug symbols (optional, for stack traces) |
+| `Resources/` | Embedded resources |
+
+### Framework-Dependent (Smaller Size)
+
+Requires .NET 8.0 runtime to be installed on target machine.
+
+```bash
+# Publish (smaller, requires .NET runtime)
+dotnet publish src/CopilotAgent.App/CopilotAgent.App.csproj \
+    -c Release \
+    -r win-x64 \
+    --self-contained false \
+    -o publish/win-x64-fd
+```
+
+**Output:** `publish/win-x64-fd/CopilotAgent.exe` (~5 MB)
+
+### Publish Options Reference
+
+| Option | Description |
+|--------|-------------|
+| `-c Release` | Release configuration (optimized) |
+| `-r win-x64` | Target Windows x64 |
+| `--self-contained true` | Include .NET runtime |
+| `-p:PublishSingleFile=true` | Bundle into single executable |
+| `-p:PublishTrimmed=true` | Trim unused code (smaller, may break reflection) |
+| `-p:EnableCompressionInSingleFile=true` | Compress bundled files |
+
+### Other Platforms
+
+```bash
+# Windows ARM64
+dotnet publish src/CopilotAgent.App/CopilotAgent.App.csproj -c Release -r win-arm64 --self-contained true -o publish/win-arm64
+
+# Note: This is a WPF app, Windows-only
+```
 
 ## Project Structure
 
