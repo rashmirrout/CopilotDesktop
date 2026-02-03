@@ -265,6 +265,32 @@ public partial class ChatViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Copies message content to clipboard and provides visual feedback
+    /// </summary>
+    public void CopyToClipboard(string? content, Action? onCopied = null)
+    {
+        if (string.IsNullOrEmpty(content))
+            return;
+
+        try
+        {
+            System.Windows.Clipboard.SetText(content);
+            _logger.LogDebug("Copied message content to clipboard ({Length} chars)", content.Length);
+            onCopied?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to copy to clipboard");
+        }
+    }
+
+    [RelayCommand]
+    private void CopyMessage(string? content)
+    {
+        CopyToClipboard(content);
+    }
+
     [RelayCommand]
     private async Task SaveSessionAsync()
     {
