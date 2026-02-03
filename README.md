@@ -1,0 +1,2 @@
+# CopilotDesktop
+CopilotDesktop
