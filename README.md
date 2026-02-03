@@ -14,6 +14,7 @@ A production-grade Windows desktop application providing a Claude-like agent UI 
 - 🎨 **Modern UI** - Fluent Design with WPF-UI (Windows 11 style)
 - 💾 **Offline Capability** - View cached session history without connection
 - 📦 **Single Executable** - Self-contained deployment
+<img width="1184" height="790" alt="image" src="https://github.com/user-attachments/assets/bdbb3457-97d7-44ea-a9bc-dda50904650f" />
 
 ## Architecture
 
