@@ -309,11 +309,28 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
         // Store the app session for hook access
         _appSessions[session.SessionId] = session;
         
-        // TODO: MCP config passing currently causes serialization issues - needs investigation
-        // For now, disabled to restore basic chat functionality
-        // The SDK should inherit MCP config from CLI automatically, but if not, this needs to be fixed
+        // Load MCP servers from CLI config
+        // IMPORTANT: The SDK does NOT inherit MCP config from CLI automatically.
+        // We must pass mcpServers explicitly for MCP tools to work.
+        // The config values are serialized to JsonElement to avoid boxing issues.
         Dictionary<string, object>? mcpServers = null;
-        _logger.LogDebug("MCP server loading temporarily disabled - using SDK defaults");
+        try
+        {
+            mcpServers = await ReadCliMcpConfigAsync();
+            if (mcpServers != null && mcpServers.Count > 0)
+            {
+                _logger.LogInformation("Loaded {Count} MCP servers for session {SessionId}", 
+                    mcpServers.Count, session.SessionId);
+            }
+            else
+            {
+                _logger.LogDebug("No MCP servers configured for session {SessionId}", session.SessionId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load MCP config, continuing without MCP servers");
+        }
 
         // Check if we should resume an existing Copilot session
         if (!string.IsNullOrEmpty(session.CopilotSessionId))
@@ -548,7 +565,12 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
     /// Reads MCP server configuration from the Copilot CLI's config file.
     /// The CLI stores MCP config at ~/.copilot/mcp-config.json
     /// Returns a dictionary that can be passed to SessionConfig.McpServers
-    /// Uses the SDK's McpLocalServerConfig type for proper serialization.
+    /// 
+    /// IMPORTANT: When McpLocalServerConfig objects are boxed as 'object' in Dictionary&lt;string, object&gt;,
+    /// System.Text.Json doesn't serialize them correctly (it uses object type info instead of the concrete type).
+    /// 
+    /// Solution: Serialize each config to JsonElement first, which the SDK can serialize correctly.
+    /// This matches how JavaScript/TypeScript handles plain objects naturally.
     /// </summary>
     private async Task<Dictionary<string, object>?> ReadCliMcpConfigAsync()
     {
@@ -574,6 +596,13 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
             
             var result = new Dictionary<string, object>();
             
+            // JSON serializer options matching SDK's property naming
+            var jsonOptions = new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            };
+            
             foreach (var serverProp in mcpServersElement.EnumerateObject())
             {
                 var serverName = serverProp.Name;
@@ -581,12 +610,21 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
                 
                 try
                 {
-                    // Use the SDK's McpLocalServerConfig type for proper serialization
-                    var mcpServer = new McpLocalServerConfig
+                    // Build the config object with proper structure
+                    var mcpServer = new McpLocalServerConfig();
+                    
+                    // Read tools (defaults to "*" if not specified)
+                    if (serverConfig.TryGetProperty("tools", out var toolsEl) && toolsEl.ValueKind == JsonValueKind.Array)
+                    {
+                        mcpServer.Tools = toolsEl.EnumerateArray()
+                            .Select(t => t.GetString() ?? "*")
+                            .ToList();
+                    }
+                    else
                     {
                         // Default to allowing all tools from this server
-                        Tools = new List<string> { "*" }
-                    };
+                        mcpServer.Tools = new List<string> { "*" };
+                    }
                     
                     // Read command (for stdio/local servers)
                     if (serverConfig.TryGetProperty("command", out var commandEl))
@@ -630,7 +668,13 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
                         mcpServer.Timeout = timeout;
                     }
                     
-                    result[serverName] = mcpServer;
+                    // CRITICAL FIX: Serialize to JsonElement to avoid boxing issues
+                    // When McpLocalServerConfig is boxed as 'object', the serializer loses type info.
+                    // By converting to JsonElement first, we get proper JSON that the SDK can forward to CLI.
+                    var configJson = JsonSerializer.Serialize(mcpServer, jsonOptions);
+                    var configElement = JsonDocument.Parse(configJson).RootElement.Clone();
+                    
+                    result[serverName] = configElement;
                     _logger.LogDebug("Loaded MCP server '{ServerName}' from CLI config (command: {Command})", 
                         serverName, mcpServer.Command);
                 }
