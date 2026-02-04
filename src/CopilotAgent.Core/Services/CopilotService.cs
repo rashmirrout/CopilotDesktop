@@ -125,16 +125,20 @@ public class CopilotService : ICopilotService, IDisposable
         string arguments;
         bool shouldCaptureSessionId = false;
         
+        // Get autonomous mode arguments from session settings
+        var autonomousArgs = session.AutonomousMode.GetCliArguments();
+        var autonomousArgsWithSpace = string.IsNullOrEmpty(autonomousArgs) ? "" : $"{autonomousArgs} ";
+        
         if (USE_SESSION_CONTINUATION)
         {
             // Check if we have a stored Copilot session ID (from previous app run)
             if (!string.IsNullOrEmpty(session.CopilotSessionId))
             {
                 // We have a stored Copilot session ID - use --resume to reconnect
-                arguments = $"--resume {session.CopilotSessionId} -p \"{EscapeArgument(userMessage)}\" -s --stream on";
+                arguments = $"--resume {session.CopilotSessionId} {autonomousArgsWithSpace}-p \"{EscapeArgument(userMessage)}\" -s --stream on";
                 _sessionHasStarted[session.SessionId] = true;
-                _logger.LogDebug("Resuming Copilot session {CopilotSessionId} for {SessionId}", 
-                    session.CopilotSessionId, session.SessionId);
+                _logger.LogDebug("Resuming Copilot session {CopilotSessionId} for {SessionId} with autonomous args: {Args}", 
+                    session.CopilotSessionId, session.SessionId, autonomousArgs);
             }
             else
             {
@@ -144,23 +148,25 @@ public class CopilotService : ICopilotService, IDisposable
                 if (hasStarted)
                 {
                     // Subsequent message - use --continue to resume the most recent session
-                    arguments = $"--continue -p \"{EscapeArgument(userMessage)}\" -s --stream on";
-                    _logger.LogDebug("Using --continue for session {SessionId}", session.SessionId);
+                    arguments = $"--continue {autonomousArgsWithSpace}-p \"{EscapeArgument(userMessage)}\" -s --stream on";
+                    _logger.LogDebug("Using --continue for session {SessionId} with autonomous args: {Args}", 
+                        session.SessionId, autonomousArgs);
                 }
                 else
                 {
                     // First message - start new session, capture the session ID after
-                    arguments = $"-p \"{EscapeArgument(userMessage)}\" -s --stream on";
+                    arguments = $"{autonomousArgsWithSpace}-p \"{EscapeArgument(userMessage)}\" -s --stream on";
                     _sessionHasStarted[session.SessionId] = true;
                     shouldCaptureSessionId = true;
-                    _logger.LogDebug("Starting new Copilot session for {SessionId}", session.SessionId);
+                    _logger.LogDebug("Starting new Copilot session for {SessionId} with autonomous args: {Args}", 
+                        session.SessionId, autonomousArgs);
                 }
             }
         }
         else
         {
             // Legacy mode - no session continuation
-            arguments = $"-p \"{EscapeArgument(userMessage)}\" -s --stream on";
+            arguments = $"{autonomousArgsWithSpace}-p \"{EscapeArgument(userMessage)}\" -s --stream on";
         }
 
         var processInfo = new ProcessStartInfo

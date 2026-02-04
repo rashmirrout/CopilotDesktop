@@ -80,6 +80,22 @@ public partial class SessionInfoViewModel : ViewModelBase
     [ObservableProperty]
     private string _statusMessage = string.Empty;
 
+    // Autonomous Mode Properties
+    [ObservableProperty]
+    private bool _allowAll;
+
+    [ObservableProperty]
+    private bool _allowAllTools;
+
+    [ObservableProperty]
+    private bool _allowAllPaths;
+
+    [ObservableProperty]
+    private bool _allowAllUrls;
+
+    [ObservableProperty]
+    private string _autonomousModeStatus = "⚠️ Manual Approval Required";
+
     public SessionInfoViewModel(
         ICopilotService copilotService,
         ISessionManager sessionManager,
@@ -132,6 +148,13 @@ public partial class SessionInfoViewModel : ViewModelBase
         MessageCount = _session.MessageHistory.Count;
         CreatedAt = _session.CreatedAt.ToLocalTime().ToString("MMM dd, yyyy HH:mm");
         LastActiveAt = _session.LastActiveAt.ToLocalTime().ToString("MMM dd, yyyy HH:mm");
+
+        // Refresh autonomous mode settings
+        AllowAll = _session.AutonomousMode.AllowAll;
+        AllowAllTools = _session.AutonomousMode.AllowAllTools;
+        AllowAllPaths = _session.AutonomousMode.AllowAllPaths;
+        AllowAllUrls = _session.AutonomousMode.AllowAllUrls;
+        AutonomousModeStatus = _session.AutonomousMode.GetDisplayString();
 
         _logger.LogDebug("Refreshed local session info for {SessionId}", _session.SessionId);
     }
@@ -403,6 +426,99 @@ public partial class SessionInfoViewModel : ViewModelBase
             _logger.LogError(ex, "Failed to open explorer");
             MessageBox.Show($"Failed to open explorer: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    /// <summary>
+    /// Toggles full autonomous mode (YOLO mode).
+    /// Equivalent to --allow-all or --yolo flag.
+    /// </summary>
+    [RelayCommand]
+    private async Task ToggleAllowAllAsync()
+    {
+        if (_session == null) return;
+
+        AllowAll = !AllowAll;
+        _session.AutonomousMode.AllowAll = AllowAll;
+
+        // When AllowAll is enabled, it supersedes individual settings
+        if (AllowAll)
+        {
+            // Don't modify individual settings, AllowAll takes precedence
+            _logger.LogInformation("Enabled full autonomous mode (YOLO) for session {SessionId}", _session.SessionId);
+        }
+        else
+        {
+            _logger.LogInformation("Disabled full autonomous mode for session {SessionId}", _session.SessionId);
+        }
+
+        AutonomousModeStatus = _session.AutonomousMode.GetDisplayString();
+        await _sessionManager.SaveActiveSessionAsync();
+        
+        StatusMessage = AllowAll ? "🚀 YOLO Mode Enabled" : "YOLO Mode Disabled";
+        _ = ClearStatusAfterDelayAsync();
+    }
+
+    /// <summary>
+    /// Toggles allow all MCP tools permission.
+    /// </summary>
+    [RelayCommand]
+    private async Task ToggleAllowAllToolsAsync()
+    {
+        if (_session == null) return;
+
+        AllowAllTools = !AllowAllTools;
+        _session.AutonomousMode.AllowAllTools = AllowAllTools;
+
+        _logger.LogInformation("Set AllowAllTools={AllowAllTools} for session {SessionId}", 
+            AllowAllTools, _session.SessionId);
+
+        AutonomousModeStatus = _session.AutonomousMode.GetDisplayString();
+        await _sessionManager.SaveActiveSessionAsync();
+        
+        StatusMessage = AllowAllTools ? "✅ All Tools Allowed" : "Tools require approval";
+        _ = ClearStatusAfterDelayAsync();
+    }
+
+    /// <summary>
+    /// Toggles allow all file system paths permission.
+    /// </summary>
+    [RelayCommand]
+    private async Task ToggleAllowAllPathsAsync()
+    {
+        if (_session == null) return;
+
+        AllowAllPaths = !AllowAllPaths;
+        _session.AutonomousMode.AllowAllPaths = AllowAllPaths;
+
+        _logger.LogInformation("Set AllowAllPaths={AllowAllPaths} for session {SessionId}", 
+            AllowAllPaths, _session.SessionId);
+
+        AutonomousModeStatus = _session.AutonomousMode.GetDisplayString();
+        await _sessionManager.SaveActiveSessionAsync();
+        
+        StatusMessage = AllowAllPaths ? "✅ All Paths Allowed" : "Paths require approval";
+        _ = ClearStatusAfterDelayAsync();
+    }
+
+    /// <summary>
+    /// Toggles allow all URLs permission.
+    /// </summary>
+    [RelayCommand]
+    private async Task ToggleAllowAllUrlsAsync()
+    {
+        if (_session == null) return;
+
+        AllowAllUrls = !AllowAllUrls;
+        _session.AutonomousMode.AllowAllUrls = AllowAllUrls;
+
+        _logger.LogInformation("Set AllowAllUrls={AllowAllUrls} for session {SessionId}", 
+            AllowAllUrls, _session.SessionId);
+
+        AutonomousModeStatus = _session.AutonomousMode.GetDisplayString();
+        await _sessionManager.SaveActiveSessionAsync();
+        
+        StatusMessage = AllowAllUrls ? "✅ All URLs Allowed" : "URLs require approval";
+        _ = ClearStatusAfterDelayAsync();
     }
 
     /// <summary>

@@ -114,6 +114,88 @@ public class Session : INotifyPropertyChanged
     /// </summary>
     [JsonPropertyName("copilotSessionId")]
     public string? CopilotSessionId { get; set; }
+
+    /// <summary>
+    /// Autonomous mode settings for this session.
+    /// Controls what permissions are automatically granted to Copilot CLI.
+    /// </summary>
+    [JsonPropertyName("autonomousMode")]
+    public AutonomousModeSettings AutonomousMode { get; set; } = new();
+}
+
+/// <summary>
+/// Settings for autonomous mode (YOLO mode).
+/// Equivalent to --allow-all which enables --allow-all-tools --allow-all-paths --allow-all-urls
+/// </summary>
+public class AutonomousModeSettings
+{
+    /// <summary>
+    /// Enable full autonomous mode (--allow-all / --yolo).
+    /// When enabled, allows all tools, paths, and URLs.
+    /// </summary>
+    [JsonPropertyName("allowAll")]
+    public bool AllowAll { get; set; }
+
+    /// <summary>
+    /// Allow all MCP tools without approval (--allow-all-tools).
+    /// </summary>
+    [JsonPropertyName("allowAllTools")]
+    public bool AllowAllTools { get; set; }
+
+    /// <summary>
+    /// Allow all file system paths (--allow-all-paths).
+    /// </summary>
+    [JsonPropertyName("allowAllPaths")]
+    public bool AllowAllPaths { get; set; }
+
+    /// <summary>
+    /// Allow all URLs for web access (--allow-all-urls).
+    /// </summary>
+    [JsonPropertyName("allowAllUrls")]
+    public bool AllowAllUrls { get; set; }
+
+    /// <summary>
+    /// Gets the CLI arguments for the current autonomous mode settings.
+    /// </summary>
+    public string GetCliArguments()
+    {
+        if (AllowAll)
+        {
+            return "--allow-all";
+        }
+
+        var args = new List<string>();
+        
+        if (AllowAllTools)
+            args.Add("--allow-all-tools");
+        
+        if (AllowAllPaths)
+            args.Add("--allow-all-paths");
+        
+        if (AllowAllUrls)
+            args.Add("--allow-all-urls");
+        
+        return string.Join(" ", args);
+    }
+
+    /// <summary>
+    /// Gets a display string for the current settings.
+    /// </summary>
+    public string GetDisplayString()
+    {
+        if (AllowAll)
+            return "🚀 Full Autonomous (YOLO Mode)";
+        
+        var enabled = new List<string>();
+        if (AllowAllTools) enabled.Add("Tools");
+        if (AllowAllPaths) enabled.Add("Paths");
+        if (AllowAllUrls) enabled.Add("URLs");
+
+        if (enabled.Count == 0)
+            return "⚠️ Manual Approval Required";
+        
+        return $"✅ Auto-Allow: {string.Join(", ", enabled)}";
+    }
 }
 
 /// <summary>
