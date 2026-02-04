@@ -234,44 +234,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Working Directory Card -->
-                <Border Style="{StaticResource CardStyle}">
-                    <StackPanel>
-                        <Grid Margin="0,0,0,16">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="📁 Working Directory" Style="{StaticResource SectionHeaderStyle}" Margin="0"/>
-                            <Button Grid.Column="1" Style="{StaticResource IconButtonStyle}" Width="28" Height="28"
-                                    Command="{Binding OpenInExplorerCommand}" ToolTip="Open in Explorer" Margin="0,0,8,0">
-                                <TextBlock Text="📂" FontSize="12"/>
-                            </Button>
-                            <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}" Width="28" Height="28"
-                                    Command="{Binding BrowseDirectoryCommand}" ToolTip="Browse..." Margin="0,0,8,0"
-                                    IsEnabled="{Binding IsCommandRunning, Converter={StaticResource InverseBoolToVisibility}}">
-                                <TextBlock Text="📁" FontSize="12"/>
-                            </Button>
-                            <Button Grid.Column="3" Style="{StaticResource IconButtonStyle}" Width="28" Height="28"
-                                    Command="{Binding ChangeDirectoryCommand}" ToolTip="Apply /cwd"
-                                    Background="#4CAF50"
-                                    IsEnabled="{Binding IsCommandRunning, Converter={StaticResource InverseBoolToVisibility}}">
-                                <TextBlock Text="✓" FontSize="14" Foreground="White" FontWeight="Bold"/>
-                            </Button>
-                        </Grid>
-                        
-                        <Border Background="#F5F7FA" CornerRadius="8" Padding="12">
-                            <TextBox Text="{Binding NewDirectoryPath, UpdateSourceTrigger=PropertyChanged}"
-                                     FontFamily="Consolas" FontSize="12"
-                                     BorderThickness="0" Background="Transparent"
-                                     VerticalContentAlignment="Center"
-                                     IsEnabled="{Binding IsCommandRunning, Converter={StaticResource InverseBoolToVisibility}}"/>
-                        </Border>
-                    </StackPanel>
-                </Border>
-
                 <!-- Model Selection Card -->
                 <Border Style="{StaticResource CardStyle}">
                     <StackPanel>
@@ -323,6 +285,297 @@
                                 </Button.Template>
                             </Button>
                         </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- Working Directory Card -->
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="📁 Working Directory" Style="{StaticResource SectionHeaderStyle}" Margin="0"/>
+                            <Button Grid.Column="1" Style="{StaticResource IconButtonStyle}" Width="28" Height="28"
+                                    Command="{Binding OpenInExplorerCommand}" ToolTip="Open in Explorer" Margin="0,0,8,0">
+                                <TextBlock Text="📂" FontSize="12"/>
+                            </Button>
+                            <Button Grid.Column="2" Style="{StaticResource IconButtonStyle}" Width="28" Height="28"
+                                    Command="{Binding BrowseDirectoryCommand}" ToolTip="Browse..." Margin="0,0,8,0"
+                                    IsEnabled="{Binding IsCommandRunning, Converter={StaticResource InverseBoolToVisibility}}">
+                                <TextBlock Text="📁" FontSize="12"/>
+                            </Button>
+                            <Button Grid.Column="3" Style="{StaticResource IconButtonStyle}" Width="28" Height="28"
+                                    Command="{Binding ChangeDirectoryCommand}" ToolTip="Apply /cwd"
+                                    Background="#4CAF50"
+                                    IsEnabled="{Binding IsCommandRunning, Converter={StaticResource InverseBoolToVisibility}}">
+                                <TextBlock Text="✓" FontSize="14" Foreground="White" FontWeight="Bold"/>
+                            </Button>
+                        </Grid>
+                        
+                        <Border Background="#F5F7FA" CornerRadius="8" Padding="12">
+                            <TextBox Text="{Binding NewDirectoryPath, UpdateSourceTrigger=PropertyChanged}"
+                                     FontFamily="Consolas" FontSize="12"
+                                     BorderThickness="0" Background="Transparent"
+                                     VerticalContentAlignment="Center"
+                                     IsEnabled="{Binding IsCommandRunning, Converter={StaticResource InverseBoolToVisibility}}"/>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <!-- Autonomous Mode Card -->
+                <Border Style="{StaticResource CardStyle}">
+                    <StackPanel>
+                        <TextBlock Text="🚀 Autonomous Mode" Style="{StaticResource SectionHeaderStyle}"/>
+                        
+                        <!-- Current Status -->
+                        <Border Background="#F0F4F8" CornerRadius="8" Padding="12" Margin="0,0,0,16">
+                            <TextBlock Text="{Binding AutonomousModeStatus}" 
+                                       FontSize="13" FontWeight="SemiBold" 
+                                       Foreground="#333" TextWrapping="Wrap"/>
+                        </Border>
+                        
+                        <!-- YOLO Mode Toggle -->
+                        <Button Margin="0,0,0,12" Padding="12,10" Cursor="Hand"
+                                Command="{Binding ToggleAllowAllCommand}"
+                                HorizontalContentAlignment="Stretch">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="#FFF3E0"/>
+                                    <Setter Property="BorderBrush" Value="#FFB74D"/>
+                                    <Setter Property="BorderThickness" Value="2"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}" 
+                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                        CornerRadius="8" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Stretch"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AllowAll}" Value="True">
+                                            <Setter Property="Background" Value="#4CAF50"/>
+                                            <Setter Property="BorderBrush" Value="#388E3C"/>
+                                        </DataTrigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#FFE0B2"/>
+                                        </Trigger>
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding AllowAll}" Value="True"/>
+                                                <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Background" Value="#66BB6A"/>
+                                        </MultiDataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="🔥" FontSize="18" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock FontWeight="Bold" FontSize="13">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value="Enable YOLO Mode"/>
+                                                <Setter Property="Foreground" Value="#E65100"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding AllowAll}" Value="True">
+                                                        <Setter Property="Text" Value="YOLO Mode ACTIVE"/>
+                                                        <Setter Property="Foreground" Value="White"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                    <TextBlock FontSize="10">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Text" Value="--allow-all (tools + paths + URLs)"/>
+                                                <Setter Property="Foreground" Value="#999"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding AllowAll}" Value="True">
+                                                        <Setter Property="Foreground" Value="#C8E6C9"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                                <TextBlock Grid.Column="2" FontSize="16" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="○"/>
+                                            <Setter Property="Foreground" Value="#999"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding AllowAll}" Value="True">
+                                                    <Setter Property="Text" Value="✓"/>
+                                                    <Setter Property="Foreground" Value="White"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+                        </Button>
+                        
+                        <!-- Individual Toggles -->
+                        <TextBlock Text="Or enable individually:" FontSize="11" Foreground="#666" Margin="0,4,0,8"/>
+                        
+                        <!-- Allow All Tools -->
+                        <Button Margin="0,0,0,8" Padding="10,8" Cursor="Hand"
+                                Command="{Binding ToggleAllowAllToolsCommand}"
+                                HorizontalContentAlignment="Stretch">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="#FAFAFA"/>
+                                    <Setter Property="BorderBrush" Value="#E0E0E0"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}" 
+                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                        CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Stretch"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AllowAllTools}" Value="True">
+                                            <Setter Property="Background" Value="#E8F5E9"/>
+                                            <Setter Property="BorderBrush" Value="#4CAF50"/>
+                                        </DataTrigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#F5F5F5"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="🔧" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="Allow All Tools" FontWeight="SemiBold" FontSize="12" Foreground="#333"/>
+                                    <TextBlock Text="--allow-all-tools" FontSize="9" Foreground="#999"/>
+                                </StackPanel>
+                                <CheckBox Grid.Column="2" IsChecked="{Binding AllowAllTools, Mode=OneWay}" 
+                                          IsHitTestVisible="False" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Button>
+                        
+                        <!-- Allow All Paths -->
+                        <Button Margin="0,0,0,8" Padding="10,8" Cursor="Hand"
+                                Command="{Binding ToggleAllowAllPathsCommand}"
+                                HorizontalContentAlignment="Stretch">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="#FAFAFA"/>
+                                    <Setter Property="BorderBrush" Value="#E0E0E0"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}" 
+                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                        CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Stretch"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AllowAllPaths}" Value="True">
+                                            <Setter Property="Background" Value="#E8F5E9"/>
+                                            <Setter Property="BorderBrush" Value="#4CAF50"/>
+                                        </DataTrigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#F5F5F5"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="📂" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="Allow All Paths" FontWeight="SemiBold" FontSize="12" Foreground="#333"/>
+                                    <TextBlock Text="--allow-all-paths" FontSize="9" Foreground="#999"/>
+                                </StackPanel>
+                                <CheckBox Grid.Column="2" IsChecked="{Binding AllowAllPaths, Mode=OneWay}" 
+                                          IsHitTestVisible="False" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Button>
+                        
+                        <!-- Allow All URLs -->
+                        <Button Padding="10,8" Cursor="Hand"
+                                Command="{Binding ToggleAllowAllUrlsCommand}"
+                                HorizontalContentAlignment="Stretch">
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Setter Property="Background" Value="#FAFAFA"/>
+                                    <Setter Property="BorderBrush" Value="#E0E0E0"/>
+                                    <Setter Property="BorderThickness" Value="1"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}" 
+                                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                                        CornerRadius="6" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Stretch"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AllowAllUrls}" Value="True">
+                                            <Setter Property="Background" Value="#E8F5E9"/>
+                                            <Setter Property="BorderBrush" Value="#4CAF50"/>
+                                        </DataTrigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#F5F5F5"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="🌐" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                    <TextBlock Text="Allow All URLs" FontWeight="SemiBold" FontSize="12" Foreground="#333"/>
+                                    <TextBlock Text="--allow-all-urls" FontSize="9" Foreground="#999"/>
+                                </StackPanel>
+                                <CheckBox Grid.Column="2" IsChecked="{Binding AllowAllUrls, Mode=OneWay}" 
+                                          IsHitTestVisible="False" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Button>
                     </StackPanel>
                 </Border>
 
