@@ -9,7 +9,10 @@ using Microsoft.Extensions.Logging;
 namespace CopilotAgent.Core.Services;
 
 /// <summary>
-/// Service for interacting with GitHub Copilot via copilot CLI.
+/// Legacy CLI-based implementation for interacting with GitHub Copilot via copilot CLI.
+/// 
+/// This is the fallback implementation when SDK mode is disabled.
+/// Uses Process.Start() to spawn Copilot CLI processes.
 /// 
 /// Supports two modes of operation controlled by USE_SESSION_CONTINUATION:
 /// 
@@ -23,20 +26,10 @@ namespace CopilotAgent.Core.Services;
 ///    - First message: Creates a new Copilot session
 ///    - Subsequent messages: Uses --continue to resume the most recent session
 ///    - Conversation context preserved within Copilot's session storage
-///    
-/// FUTURE ENHANCEMENTS:
-/// 
-/// Option B - Conversation Summary on Restart:
-///   When app restarts and loads saved session, send a brief summary
-///   of previous conversation to Copilot as context.
-///   
-/// Option C - Full Context Replay:
-///   On process start, use BuildContextFromSession() to replay full
-///   conversation history.
 /// </summary>
-public class CopilotService : ICopilotService, IDisposable
+public class CopilotCliService : ICopilotService, IDisposable
 {
-    private readonly ILogger<CopilotService> _logger;
+    private readonly ILogger<CopilotCliService> _logger;
     private readonly string _copilotPath;
     private bool _disposed;
 
@@ -58,7 +51,7 @@ public class CopilotService : ICopilotService, IDisposable
     /// </summary>
     private readonly string _copilotSessionStatePath;
 
-    public CopilotService(ILogger<CopilotService> logger)
+    public CopilotCliService(ILogger<CopilotCliService> logger)
     {
         _logger = logger;
         _copilotPath = FindCopilotExecutable();
@@ -67,7 +60,7 @@ public class CopilotService : ICopilotService, IDisposable
             ".copilot",
             "session-state"
         );
-        _logger.LogInformation("CopilotService initialized. SessionContinuationMode={Mode}", USE_SESSION_CONTINUATION);
+        _logger.LogInformation("CopilotCliService initialized. SessionContinuationMode={Mode}", USE_SESSION_CONTINUATION);
     }
 
     public async Task<bool> IsCopilotAvailableAsync()
@@ -351,6 +344,13 @@ public class CopilotService : ICopilotService, IDisposable
         _logger.LogDebug("Cleared all session tracking");
     }
 
+    public Task AbortAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        // CLI mode doesn't support graceful abort - just terminate tracking
+        TerminateSessionProcess(sessionId);
+        return Task.CompletedTask;
+    }
+
     private async Task<(int ExitCode, string Output)> ExecuteCopilotCommandAsync(string arguments)
     {
         var processInfo = new ProcessStartInfo
@@ -515,7 +515,7 @@ public class CopilotService : ICopilotService, IDisposable
 
         // Remove ANSI escape codes
         var ansiPattern = @"\[[0-9;]*[a-zA-Z]";
-        output = System.Text.RegularExpressions.Regex.Replace(output, ansiPattern, "");
+        output = Regex.Replace(output, ansiPattern, "");
 
         // Remove spinner characters
         var spinnerChars = new[] { '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏', '⠋', '⣾', '⣽', '⣻', '⢿', '⡿', '⣟', '⣯', '⣷' };

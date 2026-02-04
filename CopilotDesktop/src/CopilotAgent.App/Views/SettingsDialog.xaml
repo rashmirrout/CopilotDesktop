@@ -1,0 +1,365 @@
+<Window x:Class="CopilotAgent.App.Views.SettingsDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        Title="Settings" 
+        Height="650" 
+        Width="550"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False"
+        Background="#F5F5F5">
+    
+    <Window.Resources>
+        <!-- Section Header Style -->
+        <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#1976D2"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+        
+        <!-- Section Border Style -->
+        <Style x:Key="SectionBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#E0E0E0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="16"/>
+            <Setter Property="Margin" Value="0,0,0,16"/>
+        </Style>
+        
+        <!-- Radio Button Style -->
+        <Style x:Key="SettingsRadioStyle" TargetType="RadioButton">
+            <Setter Property="Margin" Value="0,4"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="#424242"/>
+        </Style>
+        
+        <!-- CheckBox Style -->
+        <Style x:Key="SettingsCheckboxStyle" TargetType="CheckBox">
+            <Setter Property="Margin" Value="0,4"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="#424242"/>
+        </Style>
+        
+        <!-- Label Style -->
+        <Style x:Key="SettingsLabelStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="#424242"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+        </Style>
+        
+        <!-- Sublabel Style -->
+        <Style x:Key="SublabelStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="#757575"/>
+            <Setter Property="Margin" Value="20,0,0,8"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+    </Window.Resources>
+    
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Settings Content -->
+        <ScrollViewer Grid.Row="0" 
+                      VerticalScrollBarVisibility="Auto"
+                      Padding="24,24,24,8">
+            <StackPanel>
+                
+                <!-- Backend Mode Section -->
+                <TextBlock Text="⚙️ Backend Mode" Style="{StaticResource SectionHeaderStyle}"/>
+                <Border Style="{StaticResource SectionBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingsLabelStyle}"
+                                   Text="Choose how Copilot Agent communicates with GitHub Copilot:"/>
+                        
+                        <RadioButton Style="{StaticResource SettingsRadioStyle}"
+                                     IsChecked="{Binding UseSdkMode}"
+                                     GroupName="BackendMode">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="SDK Mode " FontWeight="SemiBold"/>
+                                <TextBlock Text="(recommended)" Foreground="#4CAF50"/>
+                            </StackPanel>
+                        </RadioButton>
+                        <TextBlock Style="{StaticResource SublabelStyle}"
+                                   Text="Uses GitHub Copilot SDK with JSON-RPC. Enables tool approval, streaming, and advanced features."/>
+                        
+                        <RadioButton Style="{StaticResource SettingsRadioStyle}"
+                                     IsChecked="{Binding UseCliMode}"
+                                     GroupName="BackendMode">
+                            <TextBlock Text="CLI Mode (legacy)"/>
+                        </RadioButton>
+                        <TextBlock Style="{StaticResource SublabelStyle}"
+                                   Text="Uses gh copilot CLI process. Limited features, no tool approval support."/>
+                    </StackPanel>
+                </Border>
+                
+                <!-- Tool Approval Section -->
+                <TextBlock Text="🔔 Tool Approval" Style="{StaticResource SectionHeaderStyle}"/>
+                <Border Style="{StaticResource SectionBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingsLabelStyle}"
+                                   Text="Approval UI Style:"/>
+                        
+                        <RadioButton Style="{StaticResource SettingsRadioStyle}"
+                                     IsChecked="{Binding ApprovalModeModal}"
+                                     GroupName="ApprovalMode">
+                            <TextBlock Text="Modal dialogs only"/>
+                        </RadioButton>
+                        
+                        <RadioButton Style="{StaticResource SettingsRadioStyle}"
+                                     IsChecked="{Binding ApprovalModeInline}"
+                                     GroupName="ApprovalMode">
+                            <TextBlock Text="Inline in chat only"/>
+                        </RadioButton>
+                        
+                        <RadioButton Style="{StaticResource SettingsRadioStyle}"
+                                     IsChecked="{Binding ApprovalModeBoth}"
+                                     GroupName="ApprovalMode">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Both " FontWeight="SemiBold"/>
+                                <TextBlock Text="(default)" Foreground="#757575"/>
+                            </StackPanel>
+                        </RadioButton>
+                        
+                        <Separator Margin="0,12"/>
+                        
+                        <CheckBox Style="{StaticResource SettingsCheckboxStyle}"
+                                  IsChecked="{Binding AutoApproveLowRisk}">
+                            <TextBlock Text="Auto-approve low-risk operations"/>
+                        </CheckBox>
+                        <TextBlock Style="{StaticResource SublabelStyle}"
+                                   Text="Automatically approve read-only operations like viewing files or listing directories."/>
+                    </StackPanel>
+                </Border>
+                
+                <!-- Default Permissions Section -->
+                <TextBlock Text="🛡️ Default Permissions (New Sessions)" Style="{StaticResource SectionHeaderStyle}"/>
+                <Border Style="{StaticResource SectionBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingsLabelStyle}"
+                                   Text="Default autonomous mode settings for new sessions:"/>
+                        
+                        <CheckBox Style="{StaticResource SettingsCheckboxStyle}"
+                                  IsChecked="{Binding DefaultAllowAll}"
+                                  Foreground="#D32F2F"
+                                  FontWeight="SemiBold">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="⚠️ Allow All (YOLO mode)"/>
+                            </StackPanel>
+                        </CheckBox>
+                        <TextBlock Style="{StaticResource SublabelStyle}"
+                                   Text="WARNING: Bypasses all approval dialogs. Use with extreme caution."/>
+                        
+                        <CheckBox Style="{StaticResource SettingsCheckboxStyle}"
+                                  IsChecked="{Binding DefaultAllowAllTools}"
+                                  IsEnabled="{Binding DefaultAllowAllNotChecked}">
+                            <TextBlock Text="Allow All Tools"/>
+                        </CheckBox>
+                        
+                        <CheckBox Style="{StaticResource SettingsCheckboxStyle}"
+                                  IsChecked="{Binding DefaultAllowAllPaths}"
+                                  IsEnabled="{Binding DefaultAllowAllNotChecked}">
+                            <TextBlock Text="Allow All Paths"/>
+                        </CheckBox>
+                        
+                        <CheckBox Style="{StaticResource SettingsCheckboxStyle}"
+                                  IsChecked="{Binding DefaultAllowAllUrls}"
+                                  IsEnabled="{Binding DefaultAllowAllNotChecked}">
+                            <TextBlock Text="Allow All URLs"/>
+                        </CheckBox>
+                    </StackPanel>
+                </Border>
+                
+                <!-- Saved Approvals Section -->
+                <TextBlock Text="📋 Saved Approvals" Style="{StaticResource SectionHeaderStyle}"/>
+                <Border Style="{StaticResource SectionBorderStyle}">
+                    <StackPanel>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Style="{StaticResource SettingsLabelStyle}"
+                                           Text="{Binding ApprovalRulesSummary}"
+                                           Margin="0"/>
+                            </StackPanel>
+                            
+                            <Button Grid.Column="1"
+                                    Content="Manage..."
+                                    Command="{Binding ManageApprovalsCommand}"
+                                    Background="#1976D2"
+                                    Foreground="White"
+                                    BorderThickness="0"
+                                    Padding="16,8"
+                                    Cursor="Hand">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}"
+                                                CornerRadius="4"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Button.Template>
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background" Value="#1565C0"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </Grid>
+                        
+                        <Separator Margin="0,12"/>
+                        
+                        <Button Content="Clear All Session Approvals"
+                                Command="{Binding ClearSessionApprovalsCommand}"
+                                HorizontalAlignment="Left"
+                                Background="Transparent"
+                                Foreground="#D32F2F"
+                                BorderBrush="#D32F2F"
+                                BorderThickness="1"
+                                Padding="12,6"
+                                Cursor="Hand">
+                            <Button.Template>
+                                <ControlTemplate TargetType="Button">
+                                    <Border Background="{TemplateBinding Background}"
+                                            BorderBrush="{TemplateBinding BorderBrush}"
+                                            BorderThickness="{TemplateBinding BorderThickness}"
+                                            CornerRadius="4"
+                                            Padding="{TemplateBinding Padding}">
+                                        <ContentPresenter HorizontalAlignment="Center"
+                                                          VerticalAlignment="Center"/>
+                                    </Border>
+                                </ControlTemplate>
+                            </Button.Template>
+                            <Button.Style>
+                                <Style TargetType="Button">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Background" Value="#FFEBEE"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </StackPanel>
+                </Border>
+                
+            </StackPanel>
+        </ScrollViewer>
+        
+        <!-- Footer Buttons -->
+        <Border Grid.Row="1" 
+                Background="White"
+                BorderBrush="#E0E0E0"
+                BorderThickness="0,1,0,0"
+                Padding="24,16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <Button Grid.Column="0"
+                        Content="Reset to Defaults"
+                        Command="{Binding ResetToDefaultsCommand}"
+                        Background="Transparent"
+                        Foreground="#757575"
+                        BorderThickness="0"
+                        Padding="12,8"
+                        Cursor="Hand">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Foreground" Value="#424242"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                
+                <Button Grid.Column="2"
+                        Content="Cancel"
+                        IsCancel="True"
+                        Command="{Binding CancelCommand}"
+                        Background="Transparent"
+                        Foreground="#424242"
+                        BorderBrush="#BDBDBD"
+                        BorderThickness="1"
+                        Padding="20,8"
+                        Margin="0,0,8,0"
+                        Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="4"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#F5F5F5"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                
+                <Button Grid.Column="3"
+                        Content="Save"
+                        IsDefault="True"
+                        Command="{Binding SaveCommand}"
+                        Background="#1976D2"
+                        Foreground="White"
+                        BorderThickness="0"
+                        Padding="24,8"
+                        Cursor="Hand">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}"
+                                    CornerRadius="4"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#1565C0"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

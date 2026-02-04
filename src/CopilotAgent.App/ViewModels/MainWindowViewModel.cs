@@ -16,6 +16,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly ISessionManager _sessionManager;
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<MainWindowViewModel> _logger;
+    private readonly AppSettings _appSettings;
+    private readonly IToolApprovalService _toolApprovalService;
+    private readonly IPersistenceService _persistenceService;
 
     [ObservableProperty]
     private ObservableCollection<Session> _sessions = new();
@@ -32,11 +35,17 @@ public partial class MainWindowViewModel : ViewModelBase
     public MainWindowViewModel(
         ISessionManager sessionManager,
         IServiceProvider serviceProvider,
-        ILogger<MainWindowViewModel> logger)
+        ILogger<MainWindowViewModel> logger,
+        AppSettings appSettings,
+        IToolApprovalService toolApprovalService,
+        IPersistenceService persistenceService)
     {
         _sessionManager = sessionManager;
         _serviceProvider = serviceProvider;
         _logger = logger;
+        _appSettings = appSettings;
+        _toolApprovalService = toolApprovalService;
+        _persistenceService = persistenceService;
     }
 
     public override async Task InitializeAsync()
@@ -144,12 +153,20 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void ShowSettings()
     {
-        _logger.LogInformation("Settings requested");
-        // TODO: Implement settings dialog (Phase 9)
-        System.Windows.MessageBox.Show(
-            "Settings dialog will be implemented in Phase 9",
-            "Coming Soon",
-            System.Windows.MessageBoxButton.OK,
-            System.Windows.MessageBoxImage.Information);
+        _logger.LogInformation("Opening settings dialog");
+        
+        var saved = Views.SettingsDialog.ShowSettings(
+            _appSettings,
+            _toolApprovalService,
+            _persistenceService,
+            System.Windows.Application.Current.MainWindow);
+        
+        if (saved)
+        {
+            _logger.LogInformation("Settings saved");
+            
+            // Note: Some settings (like UseSdkMode) require app restart to take effect
+            // because the ICopilotService is resolved at startup based on the feature flag
+        }
     }
 }

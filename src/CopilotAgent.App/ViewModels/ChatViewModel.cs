@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using GitHub.Copilot.SDK;
 using Microsoft.Extensions.Logging;
 using CopilotAgent.Core.Models;
 using CopilotAgent.Core.Services;
@@ -32,6 +33,12 @@ public partial class ChatViewModel : ViewModelBase
 
     [ObservableProperty]
     private bool _canSendMessage = true;
+
+    [ObservableProperty]
+    private bool _isToolExecuting;
+
+    [ObservableProperty]
+    private string _currentToolName = string.Empty;
 
     [ObservableProperty]
     private TerminalViewModel _terminalViewModel = null!;
@@ -104,18 +111,102 @@ public partial class ChatViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void Stop()
+    private async Task StopAsync()
     {
         if (_currentCts != null && !_currentCts.IsCancellationRequested)
         {
             _logger.LogInformation("Stop requested - cancelling current operation");
             _currentCts.Cancel();
             StatusMessage = "Stopping...";
+            
+            // Also call AbortAsync on the service for SDK mode
+            if (Session != null)
+            {
+                try
+                {
+                    await _copilotService.AbortAsync(Session.SessionId);
+                    _logger.LogInformation("Abort sent to Copilot service for session {SessionId}", Session.SessionId);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to abort Copilot service");
+                }
+            }
         }
     }
 
-    public async Task InitializeAsync(Session session)
+    /// <summary>
+    /// Subscribes to SDK events if the service supports them.
+    /// Called during initialization to receive tool execution progress.
+    /// </summary>
+    private void SubscribeToSdkEvents()
     {
+        if (_copilotService is CopilotSdkService sdkService)
+        {
+            sdkService.SessionEventReceived += OnSdkSessionEvent;
+            _logger.LogDebug("Subscribed to SDK session events");
+        }
+    }
+
+    /// <summary>
+    /// Unsubscribes from SDK events.
+    /// </summary>
+    private void UnsubscribeFromSdkEvents()
+    {
+        if (_copilotService is CopilotSdkService sdkService)
+        {
+            sdkService.SessionEventReceived -= OnSdkSessionEvent;
+        }
+    }
+
+    /// <summary>
+    /// Handles SDK session events for tool progress display.
+    /// </summary>
+    private void OnSdkSessionEvent(object? sender, SdkSessionEventArgs args)
+    {
+        // Only handle events for the current session
+        if (Session == null || args.SessionId != Session.SessionId)
+            return;
+
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            switch (args.Event)
+            {
+                case ToolExecutionStartEvent toolStart:
+                    IsToolExecuting = true;
+                    CurrentToolName = toolStart.Data?.ToolName ?? "Unknown tool";
+                    StatusMessage = $"Executing: {CurrentToolName}";
+                    _logger.LogDebug("Tool execution started: {ToolName}", CurrentToolName);
+                    break;
+
+                case ToolExecutionCompleteEvent toolComplete:
+                    IsToolExecuting = false;
+                    CurrentToolName = string.Empty;
+                    StatusMessage = "Thinking...";
+                    _logger.LogDebug("Tool execution completed");
+                    break;
+
+                case SessionIdleEvent:
+                    IsToolExecuting = false;
+                    CurrentToolName = string.Empty;
+                    _logger.LogDebug("Session idle");
+                    break;
+
+                case AbortEvent:
+                    IsToolExecuting = false;
+                    CurrentToolName = string.Empty;
+                    StatusMessage = "Aborted";
+                    _logger.LogInformation("Session aborted");
+                    break;
+            }
+        });
+    }
+
+    public Task InitializeAsync(Session session)
+    {
+        // Unsubscribe from previous session events
+        UnsubscribeFromSdkEvents();
+        
         Session = session;
         
         // Load existing messages
@@ -141,8 +232,13 @@ public partial class ChatViewModel : ViewModelBase
         // Initialize session info view model with session
         SessionInfoViewModel.SetSession(session);
         
+        // Subscribe to SDK events for tool progress
+        SubscribeToSdkEvents();
+        
         _logger.LogInformation("Chat initialized for session {SessionId} with {Count} messages", 
             session.SessionId, session.MessageHistory.Count);
+        
+        return Task.CompletedTask;
     }
 
     [RelayCommand]
