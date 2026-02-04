@@ -4,9 +4,11 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Serilog;
+using CopilotAgent.Core.Models;
 using CopilotAgent.Core.Services;
 using CopilotAgent.Persistence;
 using CopilotAgent.App.ViewModels;
+using CopilotAgent.App.Services;
 
 namespace CopilotAgent.App;
 
@@ -39,18 +41,55 @@ public partial class App : Application
 
         try
         {
+            // Pre-load settings to avoid deadlock during DI resolution
+            // Using Task.Run to avoid blocking on the UI synchronization context
+            Log.Debug("Pre-loading application settings...");
+            var persistenceService = new JsonPersistenceService(
+                Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance.CreateLogger<JsonPersistenceService>());
+            var appSettings = await Task.Run(() => persistenceService.LoadSettingsAsync());
+            Log.Debug("Settings loaded: UseSdkMode={UseSdkMode}", appSettings.UseSdkMode);
+
             // Build host with DI
             _host = Host.CreateDefaultBuilder()
                 .ConfigureServices((context, services) =>
                 {
+                    // App Settings - already loaded, register as singleton instance
+                    services.AddSingleton(appSettings);
+
                     // Core Services
                     services.AddSingleton<IPersistenceService, JsonPersistenceService>();
-                    services.AddSingleton<ICopilotService, CopilotService>();
+                    
+                    // Tool Approval Service (for SDK mode)
+                    services.AddSingleton<IToolApprovalService, ToolApprovalService>();
+                    
+                    // Register both Copilot service implementations
+                    services.AddSingleton<CopilotSdkService>();
+                    services.AddSingleton<CopilotCliService>();
+                    
+                    // Select implementation based on feature flag
+                    services.AddSingleton<ICopilotService>(sp =>
+                    {
+                        var settings = sp.GetRequiredService<AppSettings>();
+                        if (settings.UseSdkMode)
+                        {
+                            Log.Information("Using SDK mode for Copilot communication");
+                            return sp.GetRequiredService<CopilotSdkService>();
+                        }
+                        else
+                        {
+                            Log.Information("Using legacy CLI mode for Copilot communication");
+                            return sp.GetRequiredService<CopilotCliService>();
+                        }
+                    });
+                    
                     services.AddSingleton<ISessionManager, SessionManager>();
                     services.AddSingleton<ICommandPolicyService, CommandPolicyService>();
                     services.AddSingleton<IMcpService, McpService>();
                     services.AddSingleton<ISkillsService, SkillsService>();
                     services.AddSingleton<IIterativeTaskService, IterativeTaskService>();
+
+                    // UI Services
+                    services.AddSingleton<ToolApprovalUIService>();
 
                     // ViewModels
                     services.AddTransient<MainWindowViewModel>();
@@ -84,19 +123,39 @@ public partial class App : Application
 
             var skillsService = _host.Services.GetRequiredService<ISkillsService>();
             await skillsService.ScanSkillsAsync();
+            
+            Log.Debug("Initializing tool approval UI service...");
+            // Initialize tool approval UI service
+            var toolApprovalUIService = _host.Services.GetRequiredService<ToolApprovalUIService>();
+            toolApprovalUIService.Initialize();
+            Log.Debug("Tool approval UI service initialized");
 
             // If no sessions exist, create a default one
             if (!sessionManager.Sessions.Any())
             {
+                Log.Debug("No sessions exist, creating default session...");
                 await sessionManager.CreateSessionAsync();
+                Log.Debug("Default session created");
             }
 
+            Log.Debug("Creating main window...");
             // Show main window
             var mainWindow = _host.Services.GetRequiredService<MainWindow>();
+            Log.Debug("Getting main view model...");
             var mainViewModel = _host.Services.GetRequiredService<MainWindowViewModel>();
+            Log.Debug("Setting DataContext...");
             mainWindow.DataContext = mainViewModel;
+            Log.Debug("Initializing main view model...");
             await mainViewModel.InitializeAsync();
+            Log.Debug("Showing main window...");
             mainWindow.Show();
+            mainWindow.Activate();
+            mainWindow.Focus();
+            
+            // Ensure window is visible and in foreground
+            mainWindow.WindowState = WindowState.Normal;
+            mainWindow.Topmost = true;
+            mainWindow.Topmost = false;
 
             Log.Information("Copilot Agent Desktop started successfully");
         }
@@ -133,6 +192,14 @@ public partial class App : Application
                 {
                     disposableMcp.Dispose();
                 }
+                
+                // Dispose tool approval UI service
+                var toolApprovalUIService = _host.Services.GetRequiredService<ToolApprovalUIService>();
+                toolApprovalUIService.Dispose();
+                
+                // Save tool approval rules
+                var toolApprovalService = _host.Services.GetRequiredService<IToolApprovalService>();
+                await toolApprovalService.SaveRulesAsync();
 
                 await _host.StopAsync(TimeSpan.FromSeconds(5));
                 _host.Dispose();

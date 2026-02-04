@@ -16,6 +16,7 @@ public class JsonPersistenceService : IPersistenceService
     private readonly string _settingsFile;
     private readonly string _commandPolicyFile;
     private readonly string _mcpServersFile;
+    private readonly string _approvalRulesFile;
     
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -34,6 +35,7 @@ public class JsonPersistenceService : IPersistenceService
         _settingsFile = Path.Combine(_dataDirectory, "settings.json");
         _commandPolicyFile = Path.Combine(_dataDirectory, "command-policy.json");
         _mcpServersFile = Path.Combine(_dataDirectory, "mcp-servers.json");
+        _approvalRulesFile = Path.Combine(_dataDirectory, "approval-rules.json");
         
         // Ensure directories exist
         Directory.CreateDirectory(_dataDirectory);
@@ -245,6 +247,45 @@ public class JsonPersistenceService : IPersistenceService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to load MCP servers, using empty list");
+            return null;
+        }
+    }
+
+    public async Task SaveApprovalRulesAsync(ApprovalRulesCollection rules)
+    {
+        try
+        {
+            var json = JsonSerializer.Serialize(rules, JsonOptions);
+            await File.WriteAllTextAsync(_approvalRulesFile, json);
+            _logger.LogInformation("Approval rules saved successfully ({GlobalCount} global, {SessionCount} sessions)", 
+                rules.GlobalRules.Count, rules.SessionRules.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save approval rules");
+            throw;
+        }
+    }
+
+    public async Task<ApprovalRulesCollection?> LoadApprovalRulesAsync()
+    {
+        try
+        {
+            if (!File.Exists(_approvalRulesFile))
+            {
+                _logger.LogInformation("Approval rules file not found, using empty collection");
+                return null;
+            }
+
+            var json = await File.ReadAllTextAsync(_approvalRulesFile);
+            var rules = JsonSerializer.Deserialize<ApprovalRulesCollection>(json, JsonOptions);
+            _logger.LogInformation("Approval rules loaded successfully ({GlobalCount} global, {SessionCount} sessions)", 
+                rules?.GlobalRules.Count ?? 0, rules?.SessionRules.Count ?? 0);
+            return rules;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load approval rules, using empty collection");
             return null;
         }
     }

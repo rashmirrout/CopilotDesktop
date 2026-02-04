@@ -77,4 +77,30 @@ public class AppSettings
     /// <summary>Maximum number of recent sessions to track</summary>
     [JsonPropertyName("maxRecentSessions")]
     public int MaxRecentSessions { get; set; } = 10;
+
+    /// <summary>
+    /// Use SDK mode (recommended) for Copilot communication.
+    /// Set to false for legacy CLI mode using process spawning.
+    /// Default: true
+    /// </summary>
+    [JsonPropertyName("useSdkMode")]
+    public bool UseSdkMode { get; set; } = true;
+
+    /// <summary>
+    /// How to display tool approval requests to the user.
+    /// </summary>
+    [JsonPropertyName("approvalUIMode")]
+    public ApprovalUIMode ApprovalUIMode { get; set; } = ApprovalUIMode.Both;
+
+    /// <summary>
+    /// Auto-approve low-risk tool operations (read operations).
+    /// </summary>
+    [JsonPropertyName("autoApproveLowRisk")]
+    public bool AutoApproveLowRisk { get; set; } = false;
+
+    /// <summary>
+    /// Default autonomous mode settings for new sessions.
+    /// </summary>
+    [JsonPropertyName("defaultAutonomousMode")]
+    public AutonomousModeSettings DefaultAutonomousMode { get; set; } = new();
 }

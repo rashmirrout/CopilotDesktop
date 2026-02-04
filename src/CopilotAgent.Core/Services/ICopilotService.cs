@@ -53,4 +53,13 @@ public interface ICopilotService : IDisposable
     /// Call this when closing the application.
     /// </summary>
     void TerminateAllProcesses();
+
+    /// <summary>
+    /// Aborts the current operation in a session.
+    /// For SDK mode: calls session.AbortAsync().
+    /// For CLI mode: terminates the process.
+    /// </summary>
+    /// <param name="sessionId">The session ID to abort.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task AbortAsync(string sessionId, CancellationToken cancellationToken = default);
 }

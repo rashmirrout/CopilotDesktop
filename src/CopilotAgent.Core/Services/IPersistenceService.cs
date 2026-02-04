@@ -61,4 +61,14 @@ public interface IPersistenceService
     /// Loads MCP server configurations
     /// </summary>
     Task<List<McpServerConfig>?> LoadMcpServersAsync();
+
+    /// <summary>
+    /// Saves tool approval rules
+    /// </summary>
+    Task SaveApprovalRulesAsync(ApprovalRulesCollection rules);
+
+    /// <summary>
+    /// Loads tool approval rules
+    /// </summary>
+    Task<ApprovalRulesCollection?> LoadApprovalRulesAsync();
 }

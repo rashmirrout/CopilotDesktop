@@ -12,11 +12,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- System.Text.Json for serialization -->
-    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <!-- System.Text.Json for serialization - must match Core project version -->
+    <PackageReference Include="System.Text.Json" Version="10.0.2" />
     
-    <!-- Logging -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.1" />
+    <!-- Logging - must match Core project version -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.2" />
     
     <!-- Security (DPAPI for secret encryption) -->
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
