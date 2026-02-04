@@ -60,6 +60,7 @@ public partial class App : Application
                     services.AddTransient<McpConfigViewModel>();
                     services.AddTransient<SkillsViewModel>();
                     services.AddTransient<IterativeTaskViewModel>();
+                    services.AddTransient<SessionInfoViewModel>();
 
                     // Main Window
                     services.AddSingleton<MainWindow>();

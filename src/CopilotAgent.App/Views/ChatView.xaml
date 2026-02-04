@@ -286,6 +286,16 @@
                              GroupName="ContentTabs"
                              Style="{StaticResource {x:Type ToggleButton}}"
                              Padding="12,8"
+                             Margin="0,0,4,0"
+                             Cursor="Hand"
+                             Background="Transparent"
+                             BorderThickness="0,0,0,2"
+                             Foreground="#424242"/>
+                <RadioButton x:Name="SessionTab"
+                             Content="📋 Session"
+                             GroupName="ContentTabs"
+                             Style="{StaticResource {x:Type ToggleButton}}"
+                             Padding="12,8"
                              Cursor="Hand"
                              Background="Transparent"
                              BorderThickness="0,0,0,2"
@@ -557,6 +567,10 @@
             <!-- Agent Content -->
             <views:IterativeTaskView DataContext="{Binding IterativeTaskViewModel}"
                                      Visibility="{Binding IsChecked, ElementName=AgentTab, Converter={StaticResource BoolToVisibility}}"/>
+
+            <!-- Session Info Content -->
+            <views:SessionInfoView DataContext="{Binding SessionInfoViewModel}"
+                                   Visibility="{Binding IsChecked, ElementName=SessionTab, Converter={StaticResource BoolToVisibility}}"/>
         </Grid>
     </Grid>
 </UserControl>

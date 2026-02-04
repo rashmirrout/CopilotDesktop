@@ -45,6 +45,9 @@ public partial class ChatViewModel : ViewModelBase
     [ObservableProperty]
     private IterativeTaskViewModel _iterativeTaskViewModel = null!;
 
+    [ObservableProperty]
+    private SessionInfoViewModel _sessionInfoViewModel = null!;
+
     public ChatViewModel(
         ICopilotService copilotService,
         ISessionManager sessionManager,
@@ -52,7 +55,8 @@ public partial class ChatViewModel : ViewModelBase
         TerminalViewModel terminalViewModel,
         SkillsViewModel skillsViewModel,
         McpConfigViewModel mcpConfigViewModel,
-        IterativeTaskViewModel iterativeTaskViewModel)
+        IterativeTaskViewModel iterativeTaskViewModel,
+        SessionInfoViewModel sessionInfoViewModel)
     {
         _copilotService = copilotService;
         _sessionManager = sessionManager;
@@ -61,6 +65,7 @@ public partial class ChatViewModel : ViewModelBase
         _skillsViewModel = skillsViewModel;
         _mcpConfigViewModel = mcpConfigViewModel;
         _iterativeTaskViewModel = iterativeTaskViewModel;
+        _sessionInfoViewModel = sessionInfoViewModel;
         
         // Subscribe to terminal "Add to message" events
         _terminalViewModel.AddToMessageRequested += OnTerminalAddToMessage;
@@ -132,6 +137,9 @@ public partial class ChatViewModel : ViewModelBase
 
         // Initialize iterative task view model with session
         IterativeTaskViewModel.SetSession(session.SessionId);
+        
+        // Initialize session info view model with session
+        SessionInfoViewModel.SetSession(session);
         
         _logger.LogInformation("Chat initialized for session {SessionId} with {Count} messages", 
             session.SessionId, session.MessageHistory.Count);
