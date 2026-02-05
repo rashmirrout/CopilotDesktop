@@ -380,6 +380,27 @@ public class CopilotCliService : ICopilotService, IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Checks if a session has an active connection.
+    /// CLI mode doesn't maintain persistent connections, so this always returns false.
+    /// </summary>
+    public bool HasActiveSession(string sessionId)
+    {
+        // CLI mode doesn't maintain persistent SDK sessions
+        return false;
+    }
+
+    /// <summary>
+    /// Gets live MCP server information.
+    /// CLI mode doesn't support MCP servers, so this returns an empty list.
+    /// </summary>
+    public Task<List<LiveMcpServerInfo>> GetLiveMcpServersAsync(string sessionId, CancellationToken cancellationToken = default)
+    {
+        // CLI mode doesn't support querying live MCP servers
+        _logger.LogDebug("GetLiveMcpServersAsync called in CLI mode - not supported");
+        return Task.FromResult(new List<LiveMcpServerInfo>());
+    }
+
     private async Task<(int ExitCode, string Output)> ExecuteCopilotCommandAsync(string arguments)
     {
         var processInfo = new ProcessStartInfo

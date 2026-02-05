@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
+using System.IO;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -9,230 +11,384 @@ using Microsoft.Extensions.Logging;
 namespace CopilotAgent.App.ViewModels;
 
 /// <summary>
-/// ViewModel for MCP server configuration
+/// Represents the pending state of an MCP server toggle
+/// </summary>
+public enum McpPendingState
+{
+    /// <summary>No pending change</summary>
+    None,
+    /// <summary>Server will be enabled when applied</summary>
+    PendingEnable,
+    /// <summary>Server will be disabled when applied</summary>
+    PendingDisable
+}
+
+/// <summary>
+/// ViewModel for MCP server configuration with live session view
 /// </summary>
 public partial class McpConfigViewModel : ObservableObject
 {
     private readonly IMcpService _mcpService;
+    private readonly ISessionManager _sessionManager;
+    private readonly ICopilotService _copilotService;
     private readonly ILogger<McpConfigViewModel> _logger;
 
     [ObservableProperty]
-    private ObservableCollection<McpServerViewModel> _servers = new();
+    private ObservableCollection<LiveMcpServerViewModel> _liveServers = new();
 
     [ObservableProperty]
-    private McpServerViewModel? _selectedServer;
+    private ObservableCollection<McpServerWithToolsViewModel> _configuredServers = new();
 
     [ObservableProperty]
-    private bool _isEditing;
+    private McpServerWithToolsViewModel? _selectedServer;
 
     [ObservableProperty]
-    private string _editName = string.Empty;
+    private bool _hasPendingChanges;
 
     [ObservableProperty]
-    private string _editDescription = string.Empty;
+    private int _pendingChangesCount;
 
     [ObservableProperty]
-    private McpTransport _editTransport = McpTransport.Stdio;
+    private string _mcpConfigFilePath = string.Empty;
 
     [ObservableProperty]
-    private string _editCommand = string.Empty;
+    private bool _isApplying;
 
     [ObservableProperty]
-    private string _editArgs = string.Empty;
+    private bool _isLoading;
 
     [ObservableProperty]
-    private string _editUrl = string.Empty;
+    private bool _hasActiveSession;
 
     [ObservableProperty]
-    private int _editTimeout = 30;
+    private string _sessionStatusText = "No active session";
 
-    [ObservableProperty]
-    private bool _editEnabled = true;
-
-    private bool _isNewServer;
-
-    public McpConfigViewModel(IMcpService mcpService, ILogger<McpConfigViewModel> logger)
+    public McpConfigViewModel(
+        IMcpService mcpService,
+        ISessionManager sessionManager,
+        ICopilotService copilotService,
+        ILogger<McpConfigViewModel> logger)
     {
         _mcpService = mcpService;
+        _sessionManager = sessionManager;
+        _copilotService = copilotService;
         _logger = logger;
 
         _mcpService.ServerStatusChanged += OnServerStatusChanged;
+        
+        // Set MCP config file path
+        var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        McpConfigFilePath = Path.Combine(homeDir, ".copilot", "mcp-config.json");
     }
 
     public async Task InitializeAsync()
     {
-        await RefreshServersAsync();
+        // Load servers from Copilot MCP config file first
+        await _mcpService.LoadServersFromCopilotConfigAsync();
+        await RefreshAsync();
     }
 
     [RelayCommand]
-    private async Task RefreshServersAsync()
+    private async Task RefreshAsync()
     {
+        IsLoading = true;
         try
         {
-            var servers = _mcpService.GetServers();
-            Servers.Clear();
-            foreach (var server in servers)
+            // Reload from Copilot config to get latest
+            await _mcpService.LoadServersFromCopilotConfigAsync();
+            
+            // Check for active session
+            var session = _sessionManager.ActiveSession;
+            HasActiveSession = session != null && _copilotService.HasActiveSession(session.SessionId);
+            
+            if (HasActiveSession && session != null)
             {
-                Servers.Add(new McpServerViewModel(server, _mcpService.GetServerStatus(server.Name)));
+                SessionStatusText = $"Session: {session.DisplayName} (Active)";
+                
+                // Query live MCP servers from SDK session
+                await RefreshLiveServersAsync(session.SessionId);
             }
+            else
+            {
+                SessionStatusText = session != null ? $"Session: {session.DisplayName} (Not connected)" : "No active session";
+                LiveServers.Clear();
+            }
+            
+            // Also load configured servers for the "Configure" view
+            await RefreshConfiguredServersAsync();
+
+            UpdatePendingChangesState();
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to refresh MCP servers");
         }
-    }
-
-    [RelayCommand]
-    private void AddServer()
-    {
-        _isNewServer = true;
-        IsEditing = true;
-        EditName = string.Empty;
-        EditDescription = string.Empty;
-        EditTransport = McpTransport.Stdio;
-        EditCommand = string.Empty;
-        EditArgs = string.Empty;
-        EditUrl = string.Empty;
-        EditTimeout = 30;
-        EditEnabled = true;
-    }
-
-    [RelayCommand]
-    private void EditServer()
-    {
-        if (SelectedServer == null) return;
-
-        _isNewServer = false;
-        IsEditing = true;
-        EditName = SelectedServer.Name;
-        EditDescription = SelectedServer.Description ?? string.Empty;
-        EditTransport = SelectedServer.Config.Transport;
-        EditCommand = SelectedServer.Config.Command ?? string.Empty;
-        EditArgs = SelectedServer.Config.Args != null ? string.Join(" ", SelectedServer.Config.Args) : string.Empty;
-        EditUrl = SelectedServer.Config.Url ?? string.Empty;
-        EditTimeout = SelectedServer.Config.TimeoutSeconds;
-        EditEnabled = SelectedServer.Config.Enabled;
-    }
-
-    [RelayCommand]
-    private async Task SaveServerAsync()
-    {
-        if (string.IsNullOrWhiteSpace(EditName))
+        finally
         {
-            MessageBox.Show("Server name is required.", "Validation Error", MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
+            IsLoading = false;
         }
+    }
 
+    private async Task RefreshLiveServersAsync(string sessionId)
+    {
+        LiveServers.Clear();
+        
         try
         {
-            var config = new McpServerConfig
+            var liveServers = await _copilotService.GetLiveMcpServersAsync(sessionId);
+            
+            foreach (var serverInfo in liveServers)
             {
-                Name = EditName.Trim(),
-                Description = string.IsNullOrWhiteSpace(EditDescription) ? null : EditDescription.Trim(),
-                Transport = EditTransport,
-                Command = EditTransport == McpTransport.Stdio ? EditCommand.Trim() : null,
-                Args = EditTransport == McpTransport.Stdio && !string.IsNullOrWhiteSpace(EditArgs)
-                    ? EditArgs.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToList()
-                    : null,
-                Url = EditTransport == McpTransport.Http ? EditUrl.Trim() : null,
-                TimeoutSeconds = EditTimeout,
-                Enabled = EditEnabled
-            };
-
-            if (_isNewServer)
-            {
-                await _mcpService.AddServerAsync(config);
-                _logger.LogInformation("Added MCP server: {Name}", config.Name);
+                var serverVm = new LiveMcpServerViewModel(serverInfo);
+                LiveServers.Add(serverVm);
             }
-            else
-            {
-                await _mcpService.UpdateServerAsync(config);
-                _logger.LogInformation("Updated MCP server: {Name}", config.Name);
-            }
-
-            IsEditing = false;
-            await RefreshServersAsync();
+            
+            _logger.LogInformation("Loaded {Count} live MCP servers from session", LiveServers.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to save MCP server");
-            MessageBox.Show($"Failed to save server: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            _logger.LogError(ex, "Failed to get live MCP servers from session {SessionId}", sessionId);
         }
     }
 
-    [RelayCommand]
-    private void CancelEdit()
+    private async Task RefreshConfiguredServersAsync()
     {
-        IsEditing = false;
+        var servers = _mcpService.GetServers();
+        var session = _sessionManager.ActiveSession;
+        
+        // If session has EnabledMcpServers configured, use that
+        // Otherwise, use the server's own Enabled property from config
+        var sessionEnabledServers = session?.EnabledMcpServers;
+        var hasSessionOverrides = sessionEnabledServers != null && sessionEnabledServers.Count > 0;
+
+        _logger.LogDebug("RefreshConfiguredServersAsync: Found {Count} servers, session has {SessionCount} enabled servers, hasOverrides={HasOverrides}",
+            servers.Count, sessionEnabledServers?.Count ?? 0, hasSessionOverrides);
+
+        ConfiguredServers.Clear();
+        foreach (var server in servers)
+        {
+            var status = _mcpService.GetServerStatus(server.Name);
+            
+            // Determine if server is enabled:
+            // - If session has explicit EnabledMcpServers list, check that
+            // - Otherwise, use the server config's Enabled property (defaults to true)
+            bool isEnabled;
+            if (hasSessionOverrides)
+            {
+                isEnabled = sessionEnabledServers!.Contains(server.Name);
+            }
+            else
+            {
+                // Use config's Enabled property - servers are enabled by default if no session override
+                isEnabled = server.Enabled;
+            }
+            
+            _logger.LogDebug("Server {Name}: Enabled={Enabled}, ConfigEnabled={ConfigEnabled}, Status={Status}",
+                server.Name, isEnabled, server.Enabled, status);
+            
+            var serverVm = new McpServerWithToolsViewModel(server, status, isEnabled);
+            
+            // Try to load tools if server is running
+            if (status == McpServerStatus.Running)
+            {
+                try
+                {
+                    var tools = await _mcpService.GetToolsAsync(server.Name);
+                    foreach (var tool in tools)
+                    {
+                        serverVm.Tools.Add(new McpToolViewModel(tool));
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to get tools for server {Server}", server.Name);
+                }
+            }
+            
+            ConfiguredServers.Add(serverVm);
+        }
+        
+        _logger.LogInformation("Loaded {Count} configured MCP servers", ConfiguredServers.Count);
     }
 
     [RelayCommand]
-    private async Task DeleteServerAsync()
+    private void ToggleServer(McpServerWithToolsViewModel? server)
     {
-        if (SelectedServer == null) return;
+        if (server == null) return;
 
+        // Toggle the pending state (not the actual enabled state)
+        server.TogglePendingState();
+
+        // Update pending changes tracking
+        UpdatePendingChangesState();
+        
+        _logger.LogDebug("MCP server {ServerName} pending state: {State}", server.Name, server.PendingState);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanApplyChanges))]
+    private async Task ApplyChangesAsync()
+    {
+        var session = _sessionManager.ActiveSession;
+        if (session == null) return;
+
+        // Show confirmation dialog
         var result = MessageBox.Show(
-            $"Are you sure you want to delete '{SelectedServer.Name}'?",
-            "Confirm Delete",
+            "Applying MCP server changes requires recreating the session.\n\n" +
+            "• Message history will be preserved\n" +
+            "• Current operation (if any) will be interrupted\n\n" +
+            "Continue?",
+            "Restart Session Required",
             MessageBoxButton.YesNo,
             MessageBoxImage.Question);
 
         if (result != MessageBoxResult.Yes) return;
 
+        IsApplying = true;
+
         try
         {
-            await _mcpService.RemoveServerAsync(SelectedServer.Name);
-            _logger.LogInformation("Deleted MCP server: {Name}", SelectedServer.Name);
-            await RefreshServersAsync();
+            // Apply all pending changes to the session
+            foreach (var server in ConfiguredServers)
+            {
+                if (server.PendingState == McpPendingState.PendingEnable)
+                {
+                    if (!session.EnabledMcpServers.Contains(server.Name))
+                    {
+                        session.EnabledMcpServers.Add(server.Name);
+                    }
+                    server.CommitPendingState();
+                }
+                else if (server.PendingState == McpPendingState.PendingDisable)
+                {
+                    session.EnabledMcpServers.Remove(server.Name);
+                    server.CommitPendingState();
+                }
+            }
+
+            // Recreate the session with new MCP configuration
+            await _copilotService.RecreateSessionAsync(session, new SessionRecreateOptions
+            {
+                // Keep same model and working directory, just update MCP servers
+            });
+
+            UpdatePendingChangesState();
+            _logger.LogInformation("Applied MCP server changes and recreated session");
+            
+            // Refresh to show new live servers
+            await RefreshAsync();
+
+            MessageBox.Show(
+                "MCP servers updated successfully. Session has been restarted.",
+                "Success",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to delete MCP server");
-            MessageBox.Show($"Failed to delete server: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            _logger.LogError(ex, "Failed to apply MCP server changes");
+            MessageBox.Show(
+                $"Failed to apply changes: {ex.Message}",
+                "Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        finally
+        {
+            IsApplying = false;
+        }
+    }
+
+    private bool CanApplyChanges() => HasPendingChanges && !IsApplying;
+
+    [RelayCommand]
+    private void DiscardChanges()
+    {
+        // Reset all pending states
+        foreach (var server in ConfiguredServers)
+        {
+            server.ResetPendingState();
+        }
+        UpdatePendingChangesState();
+    }
+
+    [RelayCommand]
+    private void OpenConfigFile()
+    {
+        try
+        {
+            // Ensure the config file exists
+            var dir = Path.GetDirectoryName(McpConfigFilePath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                Directory.CreateDirectory(dir);
+            }
+            
+            if (!File.Exists(McpConfigFilePath))
+            {
+                // Create a template config file
+                var template = """
+                {
+                  "mcpServers": {
+                    "example-server": {
+                      "command": "npx",
+                      "args": ["-y", "@modelcontextprotocol/server-example"],
+                      "env": {}
+                    }
+                  }
+                }
+                """;
+                File.WriteAllText(McpConfigFilePath, template);
+            }
+            
+            // Open in default editor
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = McpConfigFilePath,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to open MCP config file");
+            MessageBox.Show($"Failed to open config file: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
     [RelayCommand]
-    private async Task StartServerAsync()
+    private void OpenConfigFolder()
     {
-        if (SelectedServer == null) return;
-
         try
         {
-            var success = await _mcpService.StartServerAsync(SelectedServer.Name);
-            if (!success)
+            var folder = Path.GetDirectoryName(McpConfigFilePath);
+            if (!string.IsNullOrEmpty(folder))
             {
-                MessageBox.Show($"Failed to start server '{SelectedServer.Name}'", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = folder,
+                    UseShellExecute = true
+                });
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to start MCP server");
-            MessageBox.Show($"Failed to start server: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            _logger.LogError(ex, "Failed to open MCP config folder");
+            MessageBox.Show($"Failed to open folder: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
-    [RelayCommand]
-    private async Task StopServerAsync()
+    private void UpdatePendingChangesState()
     {
-        if (SelectedServer == null) return;
-
-        try
-        {
-            await _mcpService.StopServerAsync(SelectedServer.Name);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to stop MCP server");
-            MessageBox.Show($"Failed to stop server: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
+        var pendingCount = ConfiguredServers.Count(s => s.PendingState != McpPendingState.None);
+        PendingChangesCount = pendingCount;
+        HasPendingChanges = pendingCount > 0;
+        ApplyChangesCommand.NotifyCanExecuteChanged();
     }
 
     private void OnServerStatusChanged(object? sender, McpServerStatusChangedEventArgs e)
     {
         Application.Current.Dispatcher.Invoke(() =>
         {
-            var server = Servers.FirstOrDefault(s => s.Name == e.ServerName);
+            var server = ConfiguredServers.FirstOrDefault(s => s.Name == e.ServerName);
             if (server != null)
             {
                 server.Status = e.NewStatus;
@@ -242,30 +398,199 @@ public partial class McpConfigViewModel : ObservableObject
 }
 
 /// <summary>
-/// ViewModel wrapper for MCP server display
+/// ViewModel for live MCP server from SDK session
 /// </summary>
-public partial class McpServerViewModel : ObservableObject
+public partial class LiveMcpServerViewModel : ObservableObject
+{
+    public LiveMcpServerInfo ServerInfo { get; }
+
+    public string Name => ServerInfo.Name;
+    public bool IsActive => ServerInfo.IsActive;
+    public string Status => ServerInfo.Status;
+    public string Transport => ServerInfo.Transport;
+    public string ConnectionInfo => ServerInfo.ConnectionInfo;
+    public string? ErrorMessage => ServerInfo.ErrorMessage;
+    public int ToolsCount => ServerInfo.Tools.Count;
+
+    [ObservableProperty]
+    private bool _isExpanded;
+
+    [ObservableProperty]
+    private ObservableCollection<LiveMcpToolViewModel> _tools = new();
+
+    /// <summary>
+    /// Display color based on status
+    /// </summary>
+    public string StateColor => Status switch
+    {
+        "running" => "#4CAF50",   // Green
+        "error" => "#F44336",     // Red
+        "unknown" => "#FF9800",   // Orange
+        _ => "#9E9E9E"            // Gray
+    };
+
+    public string StatusIcon => Status switch
+    {
+        "running" => "✓",
+        "error" => "✗",
+        "unknown" => "?",
+        _ => "○"
+    };
+
+    public LiveMcpServerViewModel(LiveMcpServerInfo serverInfo)
+    {
+        ServerInfo = serverInfo;
+        
+        // Populate tools
+        foreach (var tool in serverInfo.Tools)
+        {
+            Tools.Add(new LiveMcpToolViewModel(tool));
+        }
+    }
+}
+
+/// <summary>
+/// ViewModel for live MCP tool from SDK session
+/// </summary>
+public partial class LiveMcpToolViewModel : ObservableObject
+{
+    public LiveMcpToolInfo ToolInfo { get; }
+
+    public string Name => ToolInfo.Name;
+    public string? Description => ToolInfo.Description;
+    public bool HasParameters => ToolInfo.Parameters != null && ToolInfo.Parameters.Count > 0;
+
+    public string ParametersDisplay
+    {
+        get
+        {
+            if (ToolInfo.Parameters == null || ToolInfo.Parameters.Count == 0)
+                return "No parameters";
+            
+            var parts = ToolInfo.Parameters.Select(p => 
+                $"• {p.Key} ({p.Value.Type}){(p.Value.Required ? " *" : "")}: {p.Value.Description ?? "No description"}");
+            return string.Join("\n", parts);
+        }
+    }
+
+    [ObservableProperty]
+    private bool _isExpanded;
+
+    public LiveMcpToolViewModel(LiveMcpToolInfo toolInfo)
+    {
+        ToolInfo = toolInfo;
+    }
+}
+
+/// <summary>
+/// ViewModel for MCP server with tools and pending state (for configuration)
+/// </summary>
+public partial class McpServerWithToolsViewModel : ObservableObject
 {
     public McpServerConfig Config { get; }
 
     public string Name => Config.Name;
     public string? Description => Config.Description;
     public string TransportDisplay => Config.Transport.ToString();
-    public string CommandDisplay => Config.Transport == McpTransport.Stdio 
+    public string CommandDisplay => Config.Transport == McpTransport.Stdio
         ? $"{Config.Command} {string.Join(" ", Config.Args ?? new())}"
         : Config.Url ?? "";
 
     [ObservableProperty]
     private McpServerStatus _status;
 
+    [ObservableProperty]
+    private bool _isEnabled;
+
+    [ObservableProperty]
+    private McpPendingState _pendingState = McpPendingState.None;
+
+    [ObservableProperty]
+    private bool _isExpanded;
+
+    [ObservableProperty]
+    private ObservableCollection<McpToolViewModel> _tools = new();
+
     public string StatusDisplay => Status.ToString();
     public bool IsRunning => Status == McpServerStatus.Running;
     public bool IsStopped => Status == McpServerStatus.Stopped || Status == McpServerStatus.Error;
 
-    public McpServerViewModel(McpServerConfig config, McpServerStatus status)
+    /// <summary>
+    /// Display color based on current and pending state
+    /// </summary>
+    public string StateColor => PendingState switch
+    {
+        McpPendingState.PendingEnable => "#FF9800",   // Orange - pending enable
+        McpPendingState.PendingDisable => "#FF9800", // Orange - pending disable
+        _ => IsEnabled ? "#4CAF50" : "#9E9E9E"       // Green if enabled, Gray if disabled
+    };
+
+    /// <summary>
+    /// Status text for display
+    /// </summary>
+    public string StatusText => PendingState switch
+    {
+        McpPendingState.PendingEnable => "Will be enabled",
+        McpPendingState.PendingDisable => "Will be disabled",
+        _ => IsEnabled ? "Enabled" : "Disabled"
+    };
+
+    public int ToolsCount => Tools.Count;
+
+    public McpServerWithToolsViewModel(McpServerConfig config, McpServerStatus status, bool isEnabled)
     {
         Config = config;
         _status = status;
+        _isEnabled = isEnabled;
+    }
+
+    /// <summary>
+    /// Toggle the pending state when user clicks
+    /// </summary>
+    public void TogglePendingState()
+    {
+        if (PendingState == McpPendingState.None)
+        {
+            // Start a pending change
+            PendingState = IsEnabled ? McpPendingState.PendingDisable : McpPendingState.PendingEnable;
+        }
+        else
+        {
+            // Cancel the pending change
+            PendingState = McpPendingState.None;
+        }
+
+        OnPropertyChanged(nameof(StateColor));
+        OnPropertyChanged(nameof(StatusText));
+    }
+
+    /// <summary>
+    /// Commit the pending state to actual state
+    /// </summary>
+    public void CommitPendingState()
+    {
+        if (PendingState == McpPendingState.PendingEnable)
+        {
+            IsEnabled = true;
+        }
+        else if (PendingState == McpPendingState.PendingDisable)
+        {
+            IsEnabled = false;
+        }
+        PendingState = McpPendingState.None;
+
+        OnPropertyChanged(nameof(StateColor));
+        OnPropertyChanged(nameof(StatusText));
+    }
+
+    /// <summary>
+    /// Reset pending state without committing
+    /// </summary>
+    public void ResetPendingState()
+    {
+        PendingState = McpPendingState.None;
+        OnPropertyChanged(nameof(StateColor));
+        OnPropertyChanged(nameof(StatusText));
     }
 
     partial void OnStatusChanged(McpServerStatus value)
@@ -273,5 +598,50 @@ public partial class McpServerViewModel : ObservableObject
         OnPropertyChanged(nameof(StatusDisplay));
         OnPropertyChanged(nameof(IsRunning));
         OnPropertyChanged(nameof(IsStopped));
+    }
+
+    partial void OnPendingStateChanged(McpPendingState value)
+    {
+        OnPropertyChanged(nameof(StateColor));
+        OnPropertyChanged(nameof(StatusText));
+    }
+
+    partial void OnIsEnabledChanged(bool value)
+    {
+        OnPropertyChanged(nameof(StateColor));
+        OnPropertyChanged(nameof(StatusText));
+    }
+}
+
+/// <summary>
+/// ViewModel for MCP tool display
+/// </summary>
+public partial class McpToolViewModel : ObservableObject
+{
+    public McpToolInfo Tool { get; }
+
+    public string Name => Tool.Name;
+    public string? Description => Tool.Description;
+    public bool HasParameters => Tool.Parameters != null && Tool.Parameters.Count > 0;
+    
+    public string ParametersDisplay
+    {
+        get
+        {
+            if (Tool.Parameters == null || Tool.Parameters.Count == 0)
+                return "No parameters";
+            
+            var parts = Tool.Parameters.Select(p => 
+                $"• {p.Key} ({p.Value.Type}){(p.Value.Required ? " *" : "")}: {p.Value.Description ?? "No description"}");
+            return string.Join("\n", parts);
+        }
+    }
+
+    [ObservableProperty]
+    private bool _isExpanded;
+
+    public McpToolViewModel(McpToolInfo tool)
+    {
+        Tool = tool;
     }
 }

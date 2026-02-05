@@ -46,6 +46,9 @@ public interface IMcpService
     /// <summary>Load server configurations from persistence</summary>
     Task LoadServersAsync();
 
+    /// <summary>Load server configurations from Copilot MCP config file (~/.copilot/mcp-config.json)</summary>
+    Task LoadServersFromCopilotConfigAsync();
+
     /// <summary>Save server configurations to persistence</summary>
     Task SaveServersAsync();
 }
