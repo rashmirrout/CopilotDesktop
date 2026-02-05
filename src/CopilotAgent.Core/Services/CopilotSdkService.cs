@@ -134,11 +134,13 @@ internal static class AutoApprovedInternalTools
 /// - Graceful abort/cancellation
 /// - Session resume support
 /// - Integration with autonomous mode settings
+/// - Skills integration (SkillDirectories + DisabledSkills)
 /// </summary>
 public class CopilotSdkService : ICopilotService, IAsyncDisposable
 {
     private readonly IToolApprovalService _approvalService;
     private readonly IMcpService _mcpService;
+    private readonly ISkillsService _skillsService;
     private readonly ILogger<CopilotSdkService> _logger;
     private readonly SemaphoreSlim _clientLock = new(1, 1);
     
@@ -155,10 +157,12 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
     public CopilotSdkService(
         IToolApprovalService approvalService,
         IMcpService mcpService,
+        ISkillsService skillsService,
         ILogger<CopilotSdkService> logger)
     {
         _approvalService = approvalService;
         _mcpService = mcpService;
+        _skillsService = skillsService;
         _logger = logger;
         _logger.LogInformation("CopilotSdkService initialized");
     }
@@ -863,6 +867,23 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
             }
         }
 
+        // Build skill configuration
+        var skillDirectories = BuildSkillDirectories(session);
+        var disabledSkills = BuildDisabledSkills(session);
+        
+        if (skillDirectories.Any())
+        {
+            _logger.LogInformation("Passing {Count} skill directories to SDK session: {Dirs}",
+                skillDirectories.Count, string.Join(", ", skillDirectories));
+        }
+        
+        if (disabledSkills.Any())
+        {
+            _logger.LogInformation("Passing {Count} disabled skills to SDK session: {Skills}",
+                disabledSkills.Count, string.Join(", ", disabledSkills.Take(5)) + 
+                (disabledSkills.Count > 5 ? $"... (+{disabledSkills.Count - 5} more)" : ""));
+        }
+
         // Create a new SDK session
         _logger.LogInformation("Creating new SDK session for {SessionId} with model {Model} in {WorkDir}",
             session.SessionId, session.ModelId, session.WorkingDirectory);
@@ -873,11 +894,14 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
             WorkingDirectory = session.WorkingDirectory,
             Streaming = true,
             Hooks = CreateSessionHooks(session),
-            McpServers = mcpServersConfig
+            McpServers = mcpServersConfig,
+            SkillDirectories = skillDirectories.Any() ? skillDirectories : null,
+            DisabledSkills = disabledSkills.Any() ? disabledSkills : null
         };
 
-        _logger.LogDebug("Session config: Model={Model}, WorkingDir={WorkDir}, Streaming={Streaming}",
-            config.Model, config.WorkingDirectory, config.Streaming);
+        _logger.LogDebug("Session config: Model={Model}, WorkingDir={WorkDir}, Streaming={Streaming}, SkillDirs={SkillDirs}, DisabledSkills={DisabledSkills}",
+            config.Model, config.WorkingDirectory, config.Streaming, 
+            skillDirectories.Count, disabledSkills.Count);
 
         CopilotSession sdkSession;
         try
@@ -1363,6 +1387,34 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
             mcpServers.Count, string.Join(", ", mcpServers.Keys));
 
         return mcpServers;
+    }
+
+    /// <summary>
+    /// Builds the list of skill directories to pass to the SDK.
+    /// </summary>
+    /// <param name="session">The session (may have custom skill directories)</param>
+    /// <returns>List of skill directory paths</returns>
+    private List<string> BuildSkillDirectories(Session session)
+    {
+        // If session has custom skill directories, use those
+        if (session.SkillDirectories != null && session.SkillDirectories.Any())
+        {
+            return session.SkillDirectories.ToList();
+        }
+        
+        // Otherwise, use the default directories from skills service
+        return _skillsService.GetSkillDirectories();
+    }
+
+    /// <summary>
+    /// Builds the list of disabled skill names to pass to the SDK.
+    /// By default, all skills are disabled until explicitly enabled by the user.
+    /// </summary>
+    /// <param name="session">The session containing disabled skills list</param>
+    /// <returns>List of skill names to disable</returns>
+    private List<string> BuildDisabledSkills(Session session)
+    {
+        return _skillsService.GetDisabledSkillNames(session);
     }
 
     /// <summary>
