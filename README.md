@@ -19,6 +19,23 @@ A production-grade Windows desktop application providing a Claude-like agent UI 
 
 <img width="1184" height="790" alt="image" src="https://github.com/user-attachments/assets/bdbb3457-97d7-44ea-a9bc-dda50904650f" />
 
+## How to Use
+
+### Quick Start (5 Steps)
+
+1. **Complete Prerequisites** - Ensure you have the [Copilot CLI installed](#installing-the-copilot-cli)
+
+2. **Download Latest Release** - [⬇️ Download CopilotAgent.exe](https://github.com/rashmirrout/CopilotDesktop/releases/download/Beta_0/CopilotAgent.exe)
+
+3. **Authenticate with Copilot** - Run this in terminal:
+   ```bash
+   copilot login
+   ```
+
+4. **Start the Application** - Double-click `CopilotAgent.exe`
+
+5. **Explore Possibilities** - Create sessions, chat with Copilot, configure MCP servers, and more!
+
 ## Architecture
 
 ```
