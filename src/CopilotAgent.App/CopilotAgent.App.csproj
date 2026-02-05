@@ -30,6 +30,7 @@
 
   <ItemGroup>
     <!-- WPF-UI for modern Fluent Design -->
+    <PackageReference Include="Emoji.Wpf" Version="0.3.4" />
     <PackageReference Include="MdXaml" Version="1.27.0" />
     <PackageReference Include="Wpf.Ui" Version="3.0.5" />
     
