@@ -1,0 +1,260 @@
+<UserControl x:Class="CopilotAgent.App.Views.InlineApprovalView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:CopilotAgent.App.ViewModels"
+             xmlns:converters="clr-namespace:CopilotAgent.App.Converters"
+             mc:Ignorable="d"
+             d:DesignWidth="500"
+             d:DataContext="{d:DesignInstance Type=vm:InlineApprovalViewModel}">
+    
+    <UserControl.Resources>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
+        <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility"/>
+        <converters:BoolToExpandTextConverter x:Key="BoolToExpandText"/>
+        
+        <!-- Compact Button Style -->
+        <Style x:Key="CompactButtonStyle" TargetType="Button">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}"
+                                CornerRadius="3"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Opacity" Value="0.85"/>
+                </Trigger>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Opacity" Value="0.5"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        
+        <!-- Link Button Style -->
+        <Style x:Key="LinkButtonStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#1976D2"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <TextBlock Text="{TemplateBinding Content}"
+                                   Foreground="{TemplateBinding Foreground}"
+                                   TextDecorations="Underline"
+                                   Padding="{TemplateBinding Padding}"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Foreground" Value="#1565C0"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+    
+    <Border Background="#E8EAF6" 
+            CornerRadius="8" 
+            Padding="12"
+            Margin="40,5,40,5">
+        <Grid>
+            <!-- Pending Approval State -->
+            <StackPanel Visibility="{Binding IsResolved, Converter={StaticResource InverseBoolToVisibility}}">
+                <!-- Header Row -->
+                <Grid Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <!-- Tool Icon and Name -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <TextBlock Text="🔧" FontSize="14" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="Tool Request:" 
+                                   FontSize="11" 
+                                   Foreground="#5C6BC0"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,6,0"/>
+                        <TextBlock Text="{Binding ToolName}" 
+                                   FontSize="12" 
+                                   FontWeight="Bold"
+                                   Foreground="#3F51B5"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+                    
+                    <!-- Risk Badge -->
+                    <Border Grid.Column="2" 
+                            Background="{Binding RiskColor}"
+                            CornerRadius="3"
+                            Padding="6,2">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding RiskEmoji}" FontSize="10" Margin="0,0,3,0"/>
+                            <TextBlock Text="{Binding RiskLevelDisplay}" 
+                                       FontSize="10"
+                                       FontWeight="SemiBold"
+                                       Foreground="White"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+                
+                <!-- Arguments Summary -->
+                <Border Background="#C5CAE9" 
+                        CornerRadius="4" 
+                        Padding="8"
+                        Margin="0,0,0,8">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <!-- Summary or Full Args -->
+                        <TextBlock Grid.Column="0"
+                                   Text="{Binding ToolArgsSummary}" 
+                                   FontFamily="Consolas, Courier New"
+                                   FontSize="11"
+                                   Foreground="#37474F"
+                                   TextTrimming="CharacterEllipsis"
+                                   VerticalAlignment="Center"
+                                   Visibility="{Binding IsExpanded, Converter={StaticResource InverseBoolToVisibility}}"/>
+                        
+                        <ScrollViewer Grid.Column="0"
+                                      MaxHeight="100"
+                                      VerticalScrollBarVisibility="Auto"
+                                      Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="{Binding FullToolArgs}" 
+                                       FontFamily="Consolas, Courier New"
+                                       FontSize="11"
+                                       Foreground="#37474F"
+                                       TextWrapping="Wrap"/>
+                        </ScrollViewer>
+                        
+                        <!-- Expand/Collapse Toggle -->
+                        <Button Grid.Column="1"
+                                Content="{Binding IsExpanded, Converter={StaticResource BoolToExpandText}}"
+                                Command="{Binding ToggleExpandedCommand}"
+                                Style="{StaticResource LinkButtonStyle}"
+                                Margin="8,0,0,0"
+                                VerticalAlignment="Top"/>
+                    </Grid>
+                </Border>
+                
+                <!-- Action Buttons -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <!-- Deny Button -->
+                    <Button Grid.Column="0"
+                            Content="Deny"
+                            Command="{Binding DenyCommand}"
+                            Background="#FFCDD2"
+                            Foreground="#C62828"
+                            Style="{StaticResource CompactButtonStyle}"/>
+                    
+                    <!-- View Details Link -->
+                    <Button Grid.Column="1"
+                            Content="View Details"
+                            Command="{Binding ShowDetailsCommand}"
+                            Style="{StaticResource LinkButtonStyle}"
+                            HorizontalAlignment="Center"/>
+                    
+                    <!-- Approve Buttons -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <Button Content="Allow Once"
+                                Command="{Binding ApproveOnceCommand}"
+                                Background="#C8E6C9"
+                                Foreground="#2E7D32"
+                                Style="{StaticResource CompactButtonStyle}"/>
+                        <Button Content="Session"
+                                Command="{Binding ApproveSessionCommand}"
+                                Background="#A5D6A7"
+                                Foreground="#1B5E20"
+                                Style="{StaticResource CompactButtonStyle}"
+                                ToolTip="Allow for this session"/>
+                        <Button Content="Always"
+                                Command="{Binding ApproveAlwaysCommand}"
+                                Background="#81C784"
+                                Foreground="White"
+                                Style="{StaticResource CompactButtonStyle}"
+                                ToolTip="Always allow this tool"/>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+            
+            <!-- Resolved State -->
+            <Border Visibility="{Binding IsResolved, Converter={StaticResource BoolToVisibility}}"
+                    Padding="4">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <!-- Status Icon -->
+                    <TextBlock Grid.Column="0" 
+                               FontSize="14" 
+                               VerticalAlignment="Center"
+                               Margin="0,0,8,0">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Text" Value="❌"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding WasApproved}" Value="True">
+                                        <Setter Property="Text" Value="✅"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                    
+                    <!-- Tool Name and Status -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding ToolName}" 
+                                   FontSize="12" 
+                                   FontWeight="SemiBold"
+                                   Foreground="#37474F"
+                                   Margin="0,0,8,0"/>
+                        <TextBlock Text="—" Foreground="#9E9E9E" Margin="0,0,8,0"/>
+                        <TextBlock Text="{Binding ResolutionMessage}" 
+                                   FontSize="11"
+                                   FontStyle="Italic">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="#C62828"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding WasApproved}" Value="True">
+                                            <Setter Property="Foreground" Value="#2E7D32"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</UserControl>
