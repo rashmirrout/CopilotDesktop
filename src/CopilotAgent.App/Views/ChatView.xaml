@@ -7,12 +7,23 @@
              xmlns:views="clr-namespace:CopilotAgent.App.Views"
              xmlns:mdxaml="clr-namespace:MdXaml;assembly=MdXaml"
              xmlns:converters="clr-namespace:CopilotAgent.App.Converters"
+             xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="800"
              d:DataContext="{d:DesignInstance Type=vm:ChatViewModel}">
     
     <UserControl.Resources>
         <converters:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
+        <converters:UtcToLocalTimeConverter x:Key="UtcToLocalTime"/>
+        
+        <!-- MdXaml Custom Style for colorful markdown rendering -->
+        <Style x:Key="CustomMarkdownStyle" TargetType="FlowDocument">
+            <Setter Property="FontFamily" Value="Segoe UI, Segoe UI Emoji, Segoe UI Symbol"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Foreground" Value="#212121"/>
+            <Setter Property="PagePadding" Value="0"/>
+            <Setter Property="TextAlignment" Value="Left"/>
+        </Style>
         
         <!-- Message Templates -->
         <DataTemplate x:Key="UserMessageTemplate">
@@ -28,10 +39,10 @@
                                FontSize="11"
                                Foreground="#1976D2"
                                Margin="0,0,0,4"/>
-                    <TextBlock Text="{Binding Content}" 
-                               TextWrapping="Wrap"
-                               FontSize="14"/>
-                    <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:HH:mm}'}" 
+                    <emoji:TextBlock Text="{Binding Content}" 
+                                     TextWrapping="Wrap"
+                                     FontSize="14"/>
+                    <TextBlock Text="{Binding Timestamp, Converter={StaticResource UtcToLocalTime}, StringFormat='{}{0:HH:mm}'}" 
                                FontSize="10"
                                Foreground="#666"
                                HorizontalAlignment="Right"
@@ -57,7 +68,9 @@
                     <mdxaml:MarkdownScrollViewer Markdown="{Binding Content}"
                                                  VerticalScrollBarVisibility="Disabled"
                                                  Background="Transparent"
-                                                 FontSize="14"/>
+                                                 FontFamily="Segoe UI, Segoe UI Emoji, Segoe UI Symbol"
+                                                 FontSize="14"
+                                                 Foreground="#212121"/>
                     <!-- Bottom row with timestamp and copy button -->
                     <Grid Margin="0,4,0,0">
                         <Grid.ColumnDefinitions>
@@ -66,7 +79,7 @@
                         </Grid.ColumnDefinitions>
                         
                         <TextBlock Grid.Column="0"
-                                   Text="{Binding Timestamp, StringFormat='{}{0:HH:mm}'}" 
+                                   Text="{Binding Timestamp, Converter={StaticResource UtcToLocalTime}, StringFormat='{}{0:HH:mm}'}" 
                                    FontSize="10"
                                    Foreground="#666"
                                    HorizontalAlignment="Right"
@@ -129,13 +142,13 @@
                     Margin="60,5,60,5"
                     HorizontalAlignment="Center">
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="ℹ️" 
+                    <emoji:TextBlock Text="ℹ️" 
                                FontSize="12"
                                Margin="0,0,6,0"/>
-                    <TextBlock Text="{Binding Content}" 
-                               TextWrapping="Wrap"
-                               FontSize="12"
-                               Foreground="#F57F17"/>
+                    <emoji:TextBlock Text="{Binding Content}" 
+                                     TextWrapping="Wrap"
+                                     FontSize="12"
+                                     Foreground="#F57F17"/>
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -147,15 +160,17 @@
                     Margin="60,5,60,5"
                     HorizontalAlignment="Stretch">
                 <StackPanel>
-                    <TextBlock Text="🔧 Tool Execution" 
-                               FontWeight="SemiBold" 
-                               FontSize="11"
-                               Foreground="#3F51B5"
-                               Margin="0,0,0,4"/>
-                    <TextBlock Text="{Binding Content}" 
-                               TextWrapping="Wrap"
-                               FontSize="12"
-                               Foreground="#5C6BC0"/>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                        <emoji:TextBlock Text="🔧" FontSize="11" Margin="0,0,4,0"/>
+                        <TextBlock Text="Tool Execution" 
+                                   FontWeight="SemiBold" 
+                                   FontSize="11"
+                                   Foreground="#3F51B5"/>
+                    </StackPanel>
+                    <emoji:TextBlock Text="{Binding Content}" 
+                                     TextWrapping="Wrap"
+                                     FontSize="12"
+                                     Foreground="#5C6BC0"/>
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -214,21 +229,31 @@
                         <Run Text="{Binding Session.TokenBudget.TokensUsed, Mode=OneWay}"/>
                         <Run Text="/"/>
                         <Run Text="{Binding Session.TokenBudget.MaxTokens, Mode=OneWay}"/>
+                        <Run Text=" | 🤖 "/>
+                        <Run Text="{Binding SessionInfoViewModel.CurrentModel, Mode=OneWay}"/>
                     </TextBlock>
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="🔄 Reset" 
-                            Command="{Binding ClearHistoryCommand}"
+                    <Button Command="{Binding ClearHistoryCommand}"
                             Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}"
                             Foreground="White"
                             Margin="0,0,8,0"
-                            Padding="10,6"/>
-                    <Button Content="💾 Save" 
-                            Command="{Binding SaveSessionCommand}"
+                            Padding="10,6">
+                        <StackPanel Orientation="Horizontal">
+                            <emoji:TextBlock Text="🔄" FontSize="12" Margin="0,0,4,0"/>
+                            <TextBlock Text="Reset" Foreground="White"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding SaveSessionCommand}"
                             Style="{StaticResource {x:Static ToolBar.ButtonStyleKey}}"
                             Foreground="White"
-                            Padding="10,6"/>
+                            Padding="10,6">
+                        <StackPanel Orientation="Horizontal">
+                            <emoji:TextBlock Text="💾" FontSize="12" Margin="0,0,4,0"/>
+                            <TextBlock Text="Save" Foreground="White"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Grid>
         </Border>
@@ -241,7 +266,6 @@
                 Padding="8,0">
             <StackPanel Orientation="Horizontal">
                 <RadioButton x:Name="ChatTab"
-                             Content="💬 Chat"
                              IsChecked="True"
                              GroupName="ContentTabs"
                              Style="{StaticResource {x:Type ToggleButton}}"
@@ -250,9 +274,13 @@
                              Cursor="Hand"
                              Background="Transparent"
                              BorderThickness="0,0,0,2"
-                             Foreground="#424242"/>
+                             Foreground="#424242">
+                    <StackPanel Orientation="Horizontal">
+                        <emoji:TextBlock Text="💬" FontSize="14" Margin="0,0,4,0"/>
+                        <TextBlock Text="Chat" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </RadioButton>
                 <RadioButton x:Name="TerminalTab"
-                             Content="💻 Terminal"
                              GroupName="ContentTabs"
                              Style="{StaticResource {x:Type ToggleButton}}"
                              Padding="12,8"
@@ -260,9 +288,13 @@
                              Cursor="Hand"
                              Background="Transparent"
                              BorderThickness="0,0,0,2"
-                             Foreground="#424242"/>
+                             Foreground="#424242">
+                    <StackPanel Orientation="Horizontal">
+                        <emoji:TextBlock Text="💻" FontSize="14" Margin="0,0,4,0"/>
+                        <TextBlock Text="Terminal" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </RadioButton>
                 <RadioButton x:Name="AgentTab"
-                             Content="🤖 Agent"
                              GroupName="ContentTabs"
                              Style="{StaticResource {x:Type ToggleButton}}"
                              Padding="12,8"
@@ -270,9 +302,13 @@
                              Cursor="Hand"
                              Background="Transparent"
                              BorderThickness="0,0,0,2"
-                             Foreground="#424242"/>
+                             Foreground="#424242">
+                    <StackPanel Orientation="Horizontal">
+                        <emoji:TextBlock Text="🤖" FontSize="14" Margin="0,0,4,0"/>
+                        <TextBlock Text="Agent" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </RadioButton>
                 <RadioButton x:Name="SkillsTab"
-                             Content="🎯 Skills"
                              GroupName="ContentTabs"
                              Style="{StaticResource {x:Type ToggleButton}}"
                              Padding="12,8"
@@ -280,9 +316,13 @@
                              Cursor="Hand"
                              Background="Transparent"
                              BorderThickness="0,0,0,2"
-                             Foreground="#424242"/>
+                             Foreground="#424242">
+                    <StackPanel Orientation="Horizontal">
+                        <emoji:TextBlock Text="🎯" FontSize="14" Margin="0,0,4,0"/>
+                        <TextBlock Text="Skills" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </RadioButton>
                 <RadioButton x:Name="McpTab"
-                             Content="🔌 MCP"
                              GroupName="ContentTabs"
                              Style="{StaticResource {x:Type ToggleButton}}"
                              Padding="12,8"
@@ -290,16 +330,25 @@
                              Cursor="Hand"
                              Background="Transparent"
                              BorderThickness="0,0,0,2"
-                             Foreground="#424242"/>
+                             Foreground="#424242">
+                    <StackPanel Orientation="Horizontal">
+                        <emoji:TextBlock Text="🔌" FontSize="14" Margin="0,0,4,0"/>
+                        <TextBlock Text="MCP" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </RadioButton>
                 <RadioButton x:Name="SessionTab"
-                             Content="📋 Session"
                              GroupName="ContentTabs"
                              Style="{StaticResource {x:Type ToggleButton}}"
                              Padding="12,8"
                              Cursor="Hand"
                              Background="Transparent"
                              BorderThickness="0,0,0,2"
-                             Foreground="#424242"/>
+                             Foreground="#424242">
+                    <StackPanel Orientation="Horizontal">
+                        <emoji:TextBlock Text="📋" FontSize="14" Margin="0,0,4,0"/>
+                        <TextBlock Text="Session" VerticalAlignment="Center"/>
+                    </StackPanel>
+                </RadioButton>
             </StackPanel>
         </Border>
 
@@ -491,7 +540,7 @@
                         </Border.Style>
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
-                                <TextBlock Text="🔧" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <emoji:TextBlock Text="🔧" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                 <TextBlock Text="Executing tool: " 
                                            FontSize="12" 
                                            Foreground="#3F51B5"
@@ -542,22 +591,7 @@
                         </Border.Triggers>
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                <TextBlock x:Name="ThinkingEmoji" Text="🤔" FontSize="16" Margin="0,0,8,0">
-                                    <TextBlock.RenderTransform>
-                                        <RotateTransform CenterX="8" CenterY="8"/>
-                                    </TextBlock.RenderTransform>
-                                    <TextBlock.Triggers>
-                                        <EventTrigger RoutedEvent="TextBlock.Loaded">
-                                            <BeginStoryboard>
-                                                <Storyboard RepeatBehavior="Forever">
-                                                    <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
-                                                                     From="-10" To="10" Duration="0:0:0.3"
-                                                                     AutoReverse="True"/>
-                                                </Storyboard>
-                                            </BeginStoryboard>
-                                        </EventTrigger>
-                                    </TextBlock.Triggers>
-                                </TextBlock>
+                                <emoji:TextBlock x:Name="ThinkingEmoji" Text="🤔" FontSize="16" Margin="0,0,8,0"/>
                                 <TextBlock Text="Thinking" 
                                            FontSize="12" 
                                            Foreground="#E65100"

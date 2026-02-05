@@ -5,6 +5,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:CopilotAgent.App.ViewModels"
              xmlns:converters="clr-namespace:CopilotAgent.App.Converters"
+             xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="800"
              d:DataContext="{d:DesignInstance Type=vm:IterativeTaskViewModel}"
@@ -38,10 +39,13 @@
                 Padding="16"
                 Margin="0,0,0,16">
             <StackPanel>
-                <TextBlock Text="🔄 Iterative Agent Mode" 
-                           FontSize="18" 
-                           FontWeight="SemiBold"
-                           Foreground="#1976D2"/>
+                <StackPanel Orientation="Horizontal">
+                    <emoji:TextBlock Text="🔄" FontSize="18" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                    <TextBlock Text="Iterative Agent Mode" 
+                               FontSize="18" 
+                               FontWeight="SemiBold"
+                               Foreground="#1976D2"/>
+                </StackPanel>
                 <TextBlock Text="Define a task with success criteria, and the agent will iterate until complete. Click on iterations to view detailed tool execution history."
                            FontSize="12"
                            Foreground="#424242"
@@ -311,7 +315,8 @@
                         Background="#EEEEEE" 
                         Padding="12,8">
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="📋 Iteration History" 
+                        <emoji:TextBlock Text="📋" FontSize="14" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                        <TextBlock Text="Iteration History" 
                                    FontWeight="SemiBold"
                                    Foreground="#424242"/>
                         <TextBlock Text="{Binding Iterations.Count, StringFormat=' ({0} iterations)'}"
@@ -427,11 +432,13 @@
                                             <!-- Agent Reasoning Section -->
                                             <StackPanel Visibility="{Binding HasReasoning, Converter={StaticResource BoolToVisibility}}"
                                                         Margin="0,0,0,12">
-                                                <TextBlock Text="🤔 Agent Reasoning" 
-                                                           FontWeight="SemiBold" 
-                                                           FontSize="12"
-                                                           Foreground="#424242"
-                                                           Margin="0,0,0,6"/>
+                                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                    <emoji:TextBlock Text="🤔" FontSize="12" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                    <TextBlock Text="Agent Reasoning" 
+                                                               FontWeight="SemiBold" 
+                                                               FontSize="12"
+                                                               Foreground="#424242"/>
+                                                </StackPanel>
                                                 <ItemsControl ItemsSource="{Binding AgentReasoning}">
                                                     <ItemsControl.ItemTemplate>
                                                         <DataTemplate>
@@ -451,11 +458,13 @@
                                             </StackPanel>
                                             
                                             <!-- Tool Executions Section -->
-                                            <TextBlock Text="🔧 Tool Executions" 
-                                                       FontWeight="SemiBold" 
-                                                       FontSize="12"
-                                                       Foreground="#424242"
-                                                       Margin="0,0,0,6"/>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                                <emoji:TextBlock Text="🔧" FontSize="12" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                <TextBlock Text="Tool Executions" 
+                                                           FontWeight="SemiBold" 
+                                                           FontSize="12"
+                                                           Foreground="#424242"/>
+                                            </StackPanel>
                                             
                                             <!-- No tools message -->
                                             <TextBlock Text="No tools executed in this iteration"
@@ -556,11 +565,13 @@
                                                     CornerRadius="4"
                                                     Margin="0,12,0,0">
                                                 <StackPanel>
-                                                    <TextBlock Text="📊 Evaluation" 
-                                                               FontWeight="SemiBold" 
-                                                               FontSize="11"
-                                                               Foreground="#2E7D32"
-                                                               Margin="0,0,0,4"/>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                        <emoji:TextBlock Text="📊" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                        <TextBlock Text="Evaluation" 
+                                                                   FontWeight="SemiBold" 
+                                                                   FontSize="11"
+                                                                   Foreground="#2E7D32"/>
+                                                    </StackPanel>
                                                     <TextBlock Text="{Binding Evaluation}"
                                                                TextWrapping="Wrap"
                                                                FontSize="12"
@@ -580,7 +591,7 @@
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center"
                             Visibility="{Binding HasHistory, Converter={StaticResource InverseBoolToVisibility}}">
-                    <TextBlock Text="🚀" FontSize="48" HorizontalAlignment="Center"/>
+                    <emoji:TextBlock Text="🚀" FontSize="48" HorizontalAlignment="Center"/>
                     <TextBlock Text="No iterations yet"
                                FontSize="14"
                                Foreground="#757575"

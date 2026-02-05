@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:views="clr-namespace:CopilotAgent.App.Views"
+        xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
         mc:Ignorable="d"
         Title="Copilot Agent Desktop" 
         Height="800" 
@@ -11,7 +12,10 @@
         MinHeight="600"
         MinWidth="800"
         WindowStartupLocation="CenterScreen"
-        Background="{StaticResource BackgroundBrush}">
+        Background="{StaticResource BackgroundBrush}"
+        TextElement.FontFamily="Segoe UI, Segoe UI Emoji, Segoe UI Symbol"
+        TextOptions.TextFormattingMode="Display"
+        TextOptions.TextRenderingMode="ClearType">
     
     <Window.Resources>
         <!-- Tab Button Style -->
@@ -167,8 +171,7 @@
                             </Style>
                         </Button.Style>
                     </Button>
-                    <Button Content="🌿 Worktree" 
-                            Command="{Binding CreateWorktreeSessionCommand}"
+                    <Button Command="{Binding CreateWorktreeSessionCommand}"
                             Background="{StaticResource AccentBrush}"
                             Foreground="White"
                             BorderThickness="0"
@@ -177,6 +180,10 @@
                             FontSize="12"
                             Cursor="Hand"
                             ToolTip="Create session from GitHub issue">
+                        <StackPanel Orientation="Horizontal">
+                            <emoji:TextBlock Text="🌿" FontSize="12" Margin="0,0,4,0"/>
+                            <TextBlock Text="Worktree" Foreground="White"/>
+                        </StackPanel>
                         <Button.Style>
                             <Style TargetType="Button">
                                 <Setter Property="Template">
@@ -199,14 +206,14 @@
                             </Style>
                         </Button.Style>
                     </Button>
-                    <Button Content="⚙️" 
-                            Command="{Binding ShowSettingsCommand}"
+                    <Button Command="{Binding ShowSettingsCommand}"
                             Background="Transparent"
                             BorderThickness="0"
                             Padding="10,6"
                             FontSize="14"
                             Cursor="Hand"
                             ToolTip="Settings">
+                        <emoji:TextBlock Text="⚙️" FontSize="14"/>
                         <Button.Style>
                             <Style TargetType="Button">
                                 <Style.Triggers>
@@ -251,7 +258,7 @@
             </Border.Style>
             <StackPanel HorizontalAlignment="Center" 
                         VerticalAlignment="Center">
-                <TextBlock Text="👋" 
+                <emoji:TextBlock Text="👋" 
                            FontSize="64" 
                            HorizontalAlignment="Center"
                            Margin="0,0,0,16"/>

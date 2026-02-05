@@ -5,6 +5,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:CopilotAgent.App.ViewModels"
              xmlns:converters="clr-namespace:CopilotAgent.App.Converters"
+             xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="400"
              Background="{DynamicResource BackgroundBrush}">
@@ -46,16 +47,20 @@
                 </StackPanel>
                 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="⟳" ToolTip="Refresh skills"
+                    <Button ToolTip="Refresh skills"
                             Command="{Binding RefreshSkillsCommand}"
-                            Background="Transparent" Foreground="#888"
+                            Background="Transparent"
                             FontSize="14" Padding="6,4"
-                            BorderThickness="0" Cursor="Hand"/>
-                    <Button Content="📤" ToolTip="Upload skill file"
+                            BorderThickness="0" Cursor="Hand">
+                        <emoji:TextBlock Text="🔄" FontSize="14"/>
+                    </Button>
+                    <Button ToolTip="Upload skill file"
                             Command="{Binding UploadSkillCommand}"
-                            Background="Transparent" Foreground="#888"
+                            Background="Transparent"
                             FontSize="14" Padding="6,4"
-                            BorderThickness="0" Cursor="Hand"/>
+                            BorderThickness="0" Cursor="Hand">
+                        <emoji:TextBlock Text="📤" FontSize="14"/>
+                    </Button>
                 </StackPanel>
             </Grid>
         </Border>
@@ -69,7 +74,7 @@
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 
-                <TextBlock Grid.Column="0" Text="📂" FontSize="14" Foreground="#888" 
+                <emoji:TextBlock Grid.Column="0" Text="📂" FontSize="14" 
                            VerticalAlignment="Center" Margin="0,0,8,0"/>
                 <TextBlock Grid.Column="1" 
                            Text="{Binding SkillsFolderPath}" 
@@ -354,7 +359,7 @@
                 </Grid.ColumnDefinitions>
                 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="⚠" FontSize="14" Foreground="White" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <emoji:TextBlock Text="⚠️" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center"/>
                     <TextBlock Foreground="White" FontSize="12" VerticalAlignment="Center">
                         <Run Text="{Binding PendingChangesCount, Mode=OneWay}"/>
                         <Run Text=" pending change(s)"/>

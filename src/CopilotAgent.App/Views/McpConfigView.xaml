@@ -4,6 +4,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:CopilotAgent.App.ViewModels"
+             xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="500"
              Background="{DynamicResource BackgroundBrush}">
@@ -40,11 +41,13 @@
                     <TextBlock Text="{Binding SessionStatusText}" FontSize="12" Foreground="#888" Margin="0,4,0,0"/>
                 </StackPanel>
                 
-                <Button Grid.Column="1" Content="⟳" ToolTip="Refresh"
+                <Button Grid.Column="1" ToolTip="Refresh"
                         Command="{Binding RefreshCommand}"
-                        Background="Transparent" Foreground="#888"
+                        Background="Transparent"
                         FontSize="16" Padding="8,4" VerticalAlignment="Center"
-                        BorderThickness="0" Cursor="Hand"/>
+                        BorderThickness="0" Cursor="Hand">
+                    <emoji:TextBlock Text="🔄" FontSize="16"/>
+                </Button>
             </Grid>
         </Border>
         
@@ -58,7 +61,7 @@
                 </Grid.ColumnDefinitions>
                 
                 <!-- Folder icon -->
-                <TextBlock Grid.Column="0" Text="📄" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <emoji:TextBlock Grid.Column="0" Text="📄" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
                 
                 <!-- Path display -->
                 <TextBlock Grid.Column="1" 
@@ -110,7 +113,7 @@
                 </Grid.ColumnDefinitions>
                 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="⚠" FontSize="14" Foreground="White" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <emoji:TextBlock Text="⚠️" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
                     <TextBlock Foreground="White" FontWeight="Medium" VerticalAlignment="Center">
                         <Run Text="{Binding PendingChangesCount, Mode=OneWay}"/>
                         <Run Text=" pending change(s) - requires session restart"/>
@@ -198,7 +201,10 @@
                     <!-- Live Session Section -->
                     <Border Background="#1A1A1A" Padding="12,8" Margin="0,0,0,1"
                             Visibility="{Binding HasActiveSession, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="🔴 LIVE SESSION" FontSize="11" FontWeight="Bold" Foreground="#4CAF50"/>
+                        <StackPanel Orientation="Horizontal">
+                            <emoji:TextBlock Text="🔴" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                            <TextBlock Text="LIVE SESSION" FontSize="11" FontWeight="Bold" Foreground="#4CAF50"/>
+                        </StackPanel>
                     </Border>
                     
                     <ItemsControl ItemsSource="{Binding LiveServers}"
@@ -332,7 +338,7 @@
                                                                             <ColumnDefinition Width="Auto"/>
                                                                         </Grid.ColumnDefinitions>
                                                                         
-                                                                        <TextBlock Grid.Column="0" Text="🔧" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                                        <emoji:TextBlock Grid.Column="0" Text="🔧" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
                                                                         <TextBlock Grid.Column="1" Text="{Binding Name, Mode=OneWay}" 
                                                                                    FontSize="12" Foreground="#DDD" FontWeight="Medium"
                                                                                    VerticalAlignment="Center"/>
@@ -391,7 +397,10 @@
                     <!-- Configured Servers Section Header (when there's no active session or to show config) -->
                     <Border Background="#1A1A1A" Padding="12,8" Margin="0,8,0,1">
                         <StackPanel>
-                            <TextBlock Text="📋 CONFIGURED SERVERS" FontSize="11" FontWeight="Bold" Foreground="#888"/>
+                            <StackPanel Orientation="Horizontal">
+                                <emoji:TextBlock Text="📋" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                <TextBlock Text="CONFIGURED SERVERS" FontSize="11" FontWeight="Bold" Foreground="#888"/>
+                            </StackPanel>
                             <TextBlock Text="Toggle servers to enable/disable for next session" FontSize="10" Foreground="#555" Margin="0,2,0,0"/>
                         </StackPanel>
                     </Border>
