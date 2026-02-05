@@ -1257,18 +1257,52 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
     /// </summary>
     /// <param name="session">The session containing enabled MCP server names</param>
     /// <returns>Dictionary of MCP server configurations, or null if none enabled</returns>
+    /// <remarks>
+    /// EnabledMcpServers behavior:
+    /// - null: Load ALL servers from mcp-config.json (default for new sessions)
+    /// - Empty list: Explicitly no servers (user choice)
+    /// - Non-empty list: Only these specific servers are enabled
+    /// </remarks>
     private Dictionary<string, object>? BuildMcpServersConfig(Session session)
     {
-        var enabledServers = _mcpService.GetServers()
-            .Where(s => s.Enabled && session.EnabledMcpServers.Contains(s.Name))
-            .ToList();
-
-        if (!enabledServers.Any())
+        List<McpServerConfig> serversToLoad;
+        
+        if (session.EnabledMcpServers == null)
         {
-            _logger.LogDebug("No enabled MCP servers found for session {SessionId} (session has {Count} enabled servers configured)",
-                session.SessionId, session.EnabledMcpServers.Count);
+            // null = load ALL servers from mcp-config.json (default behavior for new sessions)
+            serversToLoad = _mcpService.GetServers()
+                .Where(s => s.Enabled) // Only servers with Enabled=true in config
+                .ToList();
+            
+            _logger.LogInformation("Session {SessionId}: EnabledMcpServers is null, loading ALL enabled servers from config ({Count} servers)",
+                session.SessionId, serversToLoad.Count);
+        }
+        else if (session.EnabledMcpServers.Count == 0)
+        {
+            // Empty list = user explicitly wants NO servers
+            _logger.LogInformation("Session {SessionId}: EnabledMcpServers is empty list, no servers will be loaded",
+                session.SessionId);
             return null;
         }
+        else
+        {
+            // Non-empty list = load specific servers
+            serversToLoad = _mcpService.GetServers()
+                .Where(s => s.Enabled && session.EnabledMcpServers.Contains(s.Name))
+                .ToList();
+            
+            _logger.LogInformation("Session {SessionId}: Loading {Count} specific servers: {Names}",
+                session.SessionId, serversToLoad.Count, string.Join(", ", serversToLoad.Select(s => s.Name)));
+        }
+
+        if (!serversToLoad.Any())
+        {
+            _logger.LogDebug("No MCP servers to load for session {SessionId}",
+                session.SessionId);
+            return null;
+        }
+        
+        var enabledServers = serversToLoad;
 
         var mcpServers = new Dictionary<string, object>();
 

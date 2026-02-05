@@ -156,31 +156,42 @@ public partial class McpConfigViewModel : ObservableObject
         var servers = _mcpService.GetServers();
         var session = _sessionManager.ActiveSession;
         
-        // If session has EnabledMcpServers configured, use that
-        // Otherwise, use the server's own Enabled property from config
+        // EnabledMcpServers behavior:
+        // - null: Use all servers from mcp-config.json (default for new sessions - all enabled)
+        // - Empty list: Explicitly no servers (user choice)
+        // - Non-empty list: Only these specific servers are enabled
         var sessionEnabledServers = session?.EnabledMcpServers;
-        var hasSessionOverrides = sessionEnabledServers != null && sessionEnabledServers.Count > 0;
+        
+        var enabledStateDescription = sessionEnabledServers == null 
+            ? "null (use all)" 
+            : sessionEnabledServers.Count == 0 
+                ? "empty (none)" 
+                : $"list with {sessionEnabledServers.Count} items";
 
-        _logger.LogDebug("RefreshConfiguredServersAsync: Found {Count} servers, session has {SessionCount} enabled servers, hasOverrides={HasOverrides}",
-            servers.Count, sessionEnabledServers?.Count ?? 0, hasSessionOverrides);
+        _logger.LogDebug("RefreshConfiguredServersAsync: Found {Count} servers, EnabledMcpServers is {State}",
+            servers.Count, enabledStateDescription);
 
         ConfiguredServers.Clear();
         foreach (var server in servers)
         {
             var status = _mcpService.GetServerStatus(server.Name);
             
-            // Determine if server is enabled:
-            // - If session has explicit EnabledMcpServers list, check that
-            // - Otherwise, use the server config's Enabled property (defaults to true)
+            // Determine if server is enabled based on EnabledMcpServers state:
             bool isEnabled;
-            if (hasSessionOverrides)
+            if (sessionEnabledServers == null)
             {
-                isEnabled = sessionEnabledServers!.Contains(server.Name);
+                // null = use server's Enabled property from config (default behavior - typically all enabled)
+                isEnabled = server.Enabled;
+            }
+            else if (sessionEnabledServers.Count == 0)
+            {
+                // Empty list = user explicitly chose no servers
+                isEnabled = false;
             }
             else
             {
-                // Use config's Enabled property - servers are enabled by default if no session override
-                isEnabled = server.Enabled;
+                // Non-empty list = check if server is in the list
+                isEnabled = sessionEnabledServers.Contains(server.Name);
             }
             
             _logger.LogDebug("Server {Name}: Enabled={Enabled}, ConfigEnabled={ConfigEnabled}, Status={Status}",
@@ -247,6 +258,26 @@ public partial class McpConfigViewModel : ObservableObject
 
         try
         {
+            // Initialize EnabledMcpServers if it's null (first time user makes changes)
+            // When transitioning from null (all enabled) to explicit list, we need to
+            // populate the list with all currently enabled servers first
+            if (session.EnabledMcpServers == null)
+            {
+                _logger.LogInformation("Initializing EnabledMcpServers list for session (was null)");
+                session.EnabledMcpServers = new List<string>();
+                
+                // Add all servers that are currently enabled (based on config defaults)
+                foreach (var server in ConfiguredServers)
+                {
+                    if (server.IsEnabled)
+                    {
+                        session.EnabledMcpServers.Add(server.Name);
+                    }
+                }
+                _logger.LogDebug("Initialized EnabledMcpServers with {Count} servers: {Names}",
+                    session.EnabledMcpServers.Count, string.Join(", ", session.EnabledMcpServers));
+            }
+
             // Apply all pending changes to the session
             foreach (var server in ConfiguredServers)
             {
@@ -264,6 +295,9 @@ public partial class McpConfigViewModel : ObservableObject
                     server.CommitPendingState();
                 }
             }
+
+            _logger.LogInformation("Final EnabledMcpServers: {Count} servers: {Names}",
+                session.EnabledMcpServers.Count, string.Join(", ", session.EnabledMcpServers));
 
             // Recreate the session with new MCP configuration
             await _copilotService.RecreateSessionAsync(session, new SessionRecreateOptions

@@ -25,6 +25,9 @@
     
     <!-- Dependency Injection - upgraded to 10.x for SDK compatibility -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.2" />
+    
+    <!-- Playwright for browser automation (OAuth/SAML authentication) -->
+    <PackageReference Include="Microsoft.Playwright" Version="1.52.0" />
   </ItemGroup>
 
 </Project>

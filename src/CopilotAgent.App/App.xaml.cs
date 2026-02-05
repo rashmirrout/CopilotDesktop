@@ -72,6 +72,14 @@ public partial class App : Application
                     services.AddSingleton<IMcpService, McpService>();
                     services.AddSingleton<ISkillsService, SkillsService>();
                     services.AddSingleton<IIterativeTaskService, IterativeTaskService>();
+                    
+                    // Browser Automation Service (for OAuth/SAML authentication)
+                    services.AddSingleton<IBrowserAutomationService>(sp =>
+                    {
+                        var logger = sp.GetRequiredService<ILogger<PlaywrightBrowserService>>();
+                        var settings = sp.GetRequiredService<AppSettings>();
+                        return new PlaywrightBrowserService(logger, settings.BrowserAutomation);
+                    });
 
                     // UI Services
                     services.AddSingleton<ToolApprovalUIService>();
@@ -185,6 +193,10 @@ public partial class App : Application
                 // Save tool approval rules
                 var toolApprovalService = _host.Services.GetRequiredService<IToolApprovalService>();
                 await toolApprovalService.SaveRulesAsync();
+                
+                // Close browser automation service (saves storage state)
+                var browserService = _host.Services.GetRequiredService<IBrowserAutomationService>();
+                await browserService.DisposeAsync();
 
                 await _host.StopAsync(TimeSpan.FromSeconds(5));
                 _host.Dispose();

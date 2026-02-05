@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -14,6 +15,7 @@ public partial class SettingsDialogViewModel : ViewModelBase
     private readonly AppSettings _settings;
     private readonly IToolApprovalService _toolApprovalService;
     private readonly IPersistenceService _persistenceService;
+    private readonly IBrowserAutomationService _browserService;
     private readonly Action _closeAction;
     
     // Backing fields for settings (edited copies)
@@ -44,6 +46,13 @@ public partial class SettingsDialogViewModel : ViewModelBase
     [ObservableProperty]
     private string _approvalRulesSummary = "No saved rules";
     
+    // Browser automation settings
+    [ObservableProperty]
+    private bool _browserHeadless;
+    
+    [ObservableProperty]
+    private string _browserStorageInfo = "No browser data";
+    
     public bool DefaultAllowAllNotChecked => !DefaultAllowAll;
     
     /// <summary>
@@ -55,16 +64,19 @@ public partial class SettingsDialogViewModel : ViewModelBase
         AppSettings settings,
         IToolApprovalService toolApprovalService,
         IPersistenceService persistenceService,
+        IBrowserAutomationService browserService,
         Action closeAction)
     {
         _settings = settings;
         _toolApprovalService = toolApprovalService;
         _persistenceService = persistenceService;
+        _browserService = browserService;
         _closeAction = closeAction;
         
         // Load current settings into editable properties
         LoadFromSettings();
         UpdateRulesSummary();
+        UpdateBrowserStorageInfo();
     }
     
     private void LoadFromSettings()
@@ -82,6 +94,38 @@ public partial class SettingsDialogViewModel : ViewModelBase
         DefaultAllowAllTools = _settings.DefaultAutonomousMode.AllowAllTools;
         DefaultAllowAllPaths = _settings.DefaultAutonomousMode.AllowAllPaths;
         DefaultAllowAllUrls = _settings.DefaultAutonomousMode.AllowAllUrls;
+        
+        // Browser automation settings
+        BrowserHeadless = _settings.BrowserAutomation.Headless;
+    }
+    
+    private void UpdateBrowserStorageInfo()
+    {
+        var storagePath = _settings.BrowserAutomation.StorageStatePath;
+        if (string.IsNullOrEmpty(storagePath))
+        {
+            storagePath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "CopilotAgent", "browser-data", "storage-state.json");
+        }
+        
+        if (File.Exists(storagePath))
+        {
+            try
+            {
+                var fileInfo = new FileInfo(storagePath);
+                var sizeKb = fileInfo.Length / 1024.0;
+                BrowserStorageInfo = $"Storage: {sizeKb:F1} KB";
+            }
+            catch
+            {
+                BrowserStorageInfo = "Storage data exists";
+            }
+        }
+        else
+        {
+            BrowserStorageInfo = "No browser data stored";
+        }
     }
     
     private void UpdateRulesSummary()
@@ -166,6 +210,9 @@ public partial class SettingsDialogViewModel : ViewModelBase
             AllowAllUrls = DefaultAllowAllUrls
         };
         
+        // Browser automation settings
+        _settings.BrowserAutomation.Headless = BrowserHeadless;
+        
         // Save to persistence
         _ = _persistenceService.SaveSettingsAsync(_settings);
         
@@ -201,6 +248,42 @@ public partial class SettingsDialogViewModel : ViewModelBase
             DefaultAllowAllTools = false;
             DefaultAllowAllPaths = false;
             DefaultAllowAllUrls = false;
+            
+            // Browser automation defaults
+            BrowserHeadless = true;
+        }
+    }
+    
+    [RelayCommand]
+    private async Task ClearBrowserDataAsync()
+    {
+        var result = MessageBox.Show(
+            "Clear all browser data including cookies, session storage, and cached authentication?\n\nYou will need to re-authenticate with MCP servers after this.",
+            "Clear Browser Data",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        
+        if (result == MessageBoxResult.Yes)
+        {
+            try
+            {
+                await _browserService.ClearBrowserDataAsync();
+                UpdateBrowserStorageInfo();
+                
+                MessageBox.Show(
+                    "Browser data cleared successfully.",
+                    "Clear Browser Data",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show(
+                    $"Failed to clear browser data: {ex.Message}",
+                    "Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
         }
     }
     

@@ -95,4 +95,10 @@ public class AppSettings
     /// </summary>
     [JsonPropertyName("defaultAutonomousMode")]
     public AutonomousModeSettings DefaultAutonomousMode { get; set; } = new();
+
+    /// <summary>
+    /// Browser automation settings for OAuth/SAML authentication flows.
+    /// </summary>
+    [JsonPropertyName("browserAutomation")]
+    public BrowserAutomationSettings BrowserAutomation { get; set; } = new();
 }
