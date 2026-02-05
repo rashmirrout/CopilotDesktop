@@ -150,6 +150,71 @@
                     </StackPanel>
                 </Border>
                 
+                <!-- Browser Automation Section -->
+                <TextBlock Text="🌐 Browser Automation" Style="{StaticResource SectionHeaderStyle}"/>
+                <Border Style="{StaticResource SectionBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingsLabelStyle}"
+                                   Text="Browser settings for OAuth/SAML authentication with MCP servers:"/>
+                        
+                        <CheckBox Style="{StaticResource SettingsCheckboxStyle}"
+                                  IsChecked="{Binding BrowserHeadless}">
+                            <TextBlock Text="Run browser in headless mode (hidden)"/>
+                        </CheckBox>
+                        <TextBlock Style="{StaticResource SublabelStyle}"
+                                   Text="When enabled, browser operations run invisibly. Disable for debugging authentication issues."/>
+                        
+                        <Separator Margin="0,12"/>
+                        
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            
+                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                <TextBlock Style="{StaticResource SettingsLabelStyle}"
+                                           Text="{Binding BrowserStorageInfo}"
+                                           Margin="0"/>
+                            </StackPanel>
+                            
+                            <Button Grid.Column="1"
+                                    Content="Clear Browser Data"
+                                    Command="{Binding ClearBrowserDataCommand}"
+                                    Background="Transparent"
+                                    Foreground="#D32F2F"
+                                    BorderBrush="#D32F2F"
+                                    BorderThickness="1"
+                                    Padding="12,6"
+                                    Cursor="Hand">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="4"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center"
+                                                              VerticalAlignment="Center"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Button.Template>
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background" Value="#FFEBEE"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </Grid>
+                        <TextBlock Style="{StaticResource SublabelStyle}"
+                                   Text="Clears cookies, session storage, and cached authentication. You'll need to re-authenticate with MCP servers."/>
+                    </StackPanel>
+                </Border>
+                
                 <!-- Saved Approvals Section -->
                 <TextBlock Text="📋 Saved Approvals" Style="{StaticResource SectionHeaderStyle}"/>
                 <Border Style="{StaticResource SectionBorderStyle}">

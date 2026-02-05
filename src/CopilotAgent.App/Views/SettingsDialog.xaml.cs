@@ -15,7 +15,8 @@ public partial class SettingsDialog : Window
     public SettingsDialog(
         AppSettings settings,
         IToolApprovalService toolApprovalService,
-        IPersistenceService persistenceService)
+        IPersistenceService persistenceService,
+        IBrowserAutomationService browserService)
     {
         InitializeComponent();
         
@@ -23,6 +24,7 @@ public partial class SettingsDialog : Window
             settings,
             toolApprovalService,
             persistenceService,
+            browserService,
             () => Close());
         
         DataContext = _viewModel;
@@ -40,9 +42,10 @@ public partial class SettingsDialog : Window
         AppSettings settings,
         IToolApprovalService toolApprovalService,
         IPersistenceService persistenceService,
+        IBrowserAutomationService browserService,
         Window? owner = null)
     {
-        var dialog = new SettingsDialog(settings, toolApprovalService, persistenceService);
+        var dialog = new SettingsDialog(settings, toolApprovalService, persistenceService, browserService);
         
         if (owner != null)
         {

@@ -19,6 +19,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly AppSettings _appSettings;
     private readonly IToolApprovalService _toolApprovalService;
     private readonly IPersistenceService _persistenceService;
+    private readonly IBrowserAutomationService _browserService;
 
     [ObservableProperty]
     private ObservableCollection<Session> _sessions = new();
@@ -38,7 +39,8 @@ public partial class MainWindowViewModel : ViewModelBase
         ILogger<MainWindowViewModel> logger,
         AppSettings appSettings,
         IToolApprovalService toolApprovalService,
-        IPersistenceService persistenceService)
+        IPersistenceService persistenceService,
+        IBrowserAutomationService browserService)
     {
         _sessionManager = sessionManager;
         _serviceProvider = serviceProvider;
@@ -46,6 +48,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _appSettings = appSettings;
         _toolApprovalService = toolApprovalService;
         _persistenceService = persistenceService;
+        _browserService = browserService;
     }
 
     public override async Task InitializeAsync()
@@ -159,6 +162,7 @@ public partial class MainWindowViewModel : ViewModelBase
             _appSettings,
             _toolApprovalService,
             _persistenceService,
+            _browserService,
             System.Windows.Application.Current.MainWindow);
         
         if (saved)

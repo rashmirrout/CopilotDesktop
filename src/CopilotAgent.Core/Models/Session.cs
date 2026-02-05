@@ -60,9 +60,14 @@ public class Session : INotifyPropertyChanged
     [JsonPropertyName("deniedCommands")]
     public List<string> DeniedCommands { get; set; } = new();
 
-    /// <summary>Enabled MCP servers for this session</summary>
+    /// <summary>
+    /// Enabled MCP servers for this session.
+    /// - null: Use all servers from mcp-config.json (default behavior)
+    /// - Empty list: Explicitly no servers (user choice)
+    /// - Non-empty list: Only these specific servers are enabled
+    /// </summary>
     [JsonPropertyName("enabledMcpServers")]
-    public List<string> EnabledMcpServers { get; set; } = new();
+    public List<string>? EnabledMcpServers { get; set; }
 
     /// <summary>Enabled skills for this session</summary>
     [JsonPropertyName("enabledSkills")]
