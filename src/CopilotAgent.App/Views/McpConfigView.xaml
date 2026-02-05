@@ -4,7 +4,6 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:CopilotAgent.App.ViewModels"
-             xmlns:models="clr-namespace:CopilotAgent.Core.Models;assembly=CopilotAgent.Core"
              mc:Ignorable="d"
              d:DesignHeight="600" d:DesignWidth="500"
              Background="{DynamicResource BackgroundBrush}">
@@ -16,17 +15,19 @@
         <SolidColorBrush x:Key="StatusRunningBrush" Color="#4CAF50"/>
         <SolidColorBrush x:Key="StatusStoppedBrush" Color="#9E9E9E"/>
         <SolidColorBrush x:Key="StatusErrorBrush" Color="#F44336"/>
-        <SolidColorBrush x:Key="StatusStartingBrush" Color="#FF9800"/>
+        <SolidColorBrush x:Key="StatusUnknownBrush" Color="#FF9800"/>
+        <SolidColorBrush x:Key="PendingChangeBrush" Color="#FF9800"/>
     </UserControl.Resources>
     
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
         </Grid.RowDefinitions>
         
-        <!-- Header -->
+        <!-- Header with Session Status -->
         <Border Grid.Row="0" Background="#2D2D2D" Padding="16,12">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -35,296 +36,92 @@
                 </Grid.ColumnDefinitions>
                 
                 <StackPanel Grid.Column="0">
-                    <TextBlock Text="MCP Servers" FontSize="18" FontWeight="SemiBold" Foreground="White"/>
-                    <TextBlock Text="Manage Model Context Protocol servers" FontSize="12" Foreground="#888" Margin="0,4,0,0"/>
+                    <TextBlock Text="MCP Servers - Live Session View" FontSize="18" FontWeight="SemiBold" Foreground="White"/>
+                    <TextBlock Text="{Binding SessionStatusText}" FontSize="12" Foreground="#888" Margin="0,4,0,0"/>
                 </StackPanel>
                 
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="+ Add Server" 
-                            Command="{Binding AddServerCommand}"
-                            Background="#0078D4" Foreground="White"
-                            Padding="12,6" Margin="0,0,8,0"
-                            BorderThickness="0" Cursor="Hand">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}" 
-                                                    CornerRadius="4" Padding="{TemplateBinding Padding}">
-                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                            </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#106EBE"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
-                    
-                    <Button Content="⟳" ToolTip="Refresh"
-                            Command="{Binding RefreshServersCommand}"
-                            Background="Transparent" Foreground="#888"
-                            FontSize="16" Padding="8,4"
-                            BorderThickness="0" Cursor="Hand"/>
-                </StackPanel>
+                <Button Grid.Column="1" Content="⟳" ToolTip="Refresh"
+                        Command="{Binding RefreshCommand}"
+                        Background="Transparent" Foreground="#888"
+                        FontSize="16" Padding="8,4" VerticalAlignment="Center"
+                        BorderThickness="0" Cursor="Hand"/>
             </Grid>
         </Border>
         
-        <!-- Server List -->
-        <Grid Grid.Row="1">
-            <!-- List View -->
-            <ListBox ItemsSource="{Binding Servers}"
-                     SelectedItem="{Binding SelectedServer}"
-                     Background="Transparent"
-                     BorderThickness="0"
-                     Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}, ConverterParameter=Inverse}"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                <ListBox.ItemContainerStyle>
-                    <Style TargetType="ListBoxItem">
-                        <Setter Property="Padding" Value="0"/>
-                        <Setter Property="Margin" Value="0"/>
-                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-                        <Setter Property="Template">
-                            <Setter.Value>
-                                <ControlTemplate TargetType="ListBoxItem">
-                                    <Border x:Name="Border" Background="Transparent" 
-                                            BorderBrush="#333" BorderThickness="0,0,0,1"
-                                            Padding="16,12">
-                                        <ContentPresenter/>
-                                    </Border>
-                                    <ControlTemplate.Triggers>
-                                        <Trigger Property="IsSelected" Value="True">
-                                            <Setter TargetName="Border" Property="Background" Value="#1A0078D4"/>
-                                        </Trigger>
-                                        <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="Border" Property="Background" Value="#0D0078D4"/>
-                                        </Trigger>
-                                    </ControlTemplate.Triggers>
-                                </ControlTemplate>
-                            </Setter.Value>
-                        </Setter>
-                    </Style>
-                </ListBox.ItemContainerStyle>
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto"/>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="Auto"/>
-                            </Grid.ColumnDefinitions>
-                            
-                            <!-- Status Indicator -->
-                            <Ellipse Grid.Column="0" Width="10" Height="10" 
-                                     VerticalAlignment="Center" Margin="0,0,12,0">
-                                <Ellipse.Style>
-                                    <Style TargetType="Ellipse">
-                                        <Setter Property="Fill" Value="{StaticResource StatusStoppedBrush}"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Status}" Value="Running">
-                                                <Setter Property="Fill" Value="{StaticResource StatusRunningBrush}"/>
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding Status}" Value="Starting">
-                                                <Setter Property="Fill" Value="{StaticResource StatusStartingBrush}"/>
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding Status}" Value="Error">
-                                                <Setter Property="Fill" Value="{StaticResource StatusErrorBrush}"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Ellipse.Style>
-                            </Ellipse>
-                            
-                            <!-- Server Info -->
-                            <StackPanel Grid.Column="1">
-                                <TextBlock Text="{Binding Name}" FontWeight="Medium" FontSize="14" Foreground="White"/>
-                                <TextBlock FontSize="12" Foreground="#888" Margin="0,2,0,0">
-                                    <Run Text="{Binding TransportDisplay, Mode=OneWay}"/>
-                                    <Run Text=" • "/>
-                                    <Run Text="{Binding CommandDisplay, Mode=OneWay}"/>
-                                </TextBlock>
-                                <TextBlock Text="{Binding Description}" FontSize="11" Foreground="#666" 
-                                           Margin="0,4,0,0" TextTrimming="CharacterEllipsis"
-                                           Visibility="{Binding Description, Converter={StaticResource BoolToVis}}"/>
-                            </StackPanel>
-                            
-                            <!-- Status Badge -->
-                            <Border Grid.Column="2" CornerRadius="3" Padding="8,4" 
-                                    VerticalAlignment="Center" Margin="8,0,0,0">
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Setter Property="Background" Value="#333"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Status}" Value="Running">
-                                                <Setter Property="Background" Value="#1B5E20"/>
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding Status}" Value="Error">
-                                                <Setter Property="Background" Value="#B71C1C"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                                <TextBlock Text="{Binding StatusDisplay}" FontSize="11" Foreground="White"/>
-                            </Border>
-                        </Grid>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-            
-            <!-- Empty State -->
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Visibility="{Binding Servers.Count, Converter={StaticResource BoolToVis}, ConverterParameter=Zero}">
-                <TextBlock Text="No MCP servers configured" FontSize="16" Foreground="#666" HorizontalAlignment="Center"/>
-                <TextBlock Text="Click 'Add Server' to configure your first MCP server" FontSize="12" Foreground="#555" 
-                           HorizontalAlignment="Center" Margin="0,8,0,0"/>
-            </StackPanel>
-            
-            <!-- Edit Panel -->
-            <Border Background="#252525" Padding="20"
-                    Visibility="{Binding IsEditing, Converter={StaticResource BoolToVis}}">
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel MaxWidth="400">
-                        <TextBlock Text="Server Configuration" FontSize="16" FontWeight="SemiBold" 
-                                   Foreground="White" Margin="0,0,0,20"/>
-                        
-                        <!-- Name -->
-                        <TextBlock Text="Name *" FontSize="12" Foreground="#AAA" Margin="0,0,0,4"/>
-                        <TextBox Text="{Binding EditName, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="#333" Foreground="White" BorderBrush="#555"
-                                 Padding="8,6" FontSize="14"/>
-                        
-                        <!-- Description -->
-                        <TextBlock Text="Description" FontSize="12" Foreground="#AAA" Margin="0,16,0,4"/>
-                        <TextBox Text="{Binding EditDescription, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="#333" Foreground="White" BorderBrush="#555"
-                                 Padding="8,6" FontSize="14"/>
-                        
-                        <!-- Transport -->
-                        <TextBlock Text="Transport" FontSize="12" Foreground="#AAA" Margin="0,16,0,4"/>
-                        <ComboBox SelectedValue="{Binding EditTransport}"
-                                  SelectedValuePath="Tag"
-                                  Background="#333" Foreground="White" BorderBrush="#555"
-                                  Padding="8,6" FontSize="14">
-                            <ComboBoxItem Content="Standard I/O (stdio)" Tag="{x:Static models:McpTransport.Stdio}"/>
-                            <ComboBoxItem Content="HTTP" Tag="{x:Static models:McpTransport.Http}"/>
-                        </ComboBox>
-                        
-                        <!-- Stdio Fields -->
-                        <StackPanel Visibility="{Binding EditTransport, Converter={StaticResource BoolToVis}, ConverterParameter=Stdio}">
-                            <TextBlock Text="Command *" FontSize="12" Foreground="#AAA" Margin="0,16,0,4"/>
-                            <TextBox Text="{Binding EditCommand, UpdateSourceTrigger=PropertyChanged}"
-                                     Background="#333" Foreground="White" BorderBrush="#555"
-                                     Padding="8,6" FontSize="14" FontFamily="Consolas"/>
-                            
-                            <TextBlock Text="Arguments (space-separated)" FontSize="12" Foreground="#AAA" Margin="0,16,0,4"/>
-                            <TextBox Text="{Binding EditArgs, UpdateSourceTrigger=PropertyChanged}"
-                                     Background="#333" Foreground="White" BorderBrush="#555"
-                                     Padding="8,6" FontSize="14" FontFamily="Consolas"/>
-                        </StackPanel>
-                        
-                        <!-- HTTP Fields -->
-                        <StackPanel Visibility="{Binding EditTransport, Converter={StaticResource BoolToVis}, ConverterParameter=Http}">
-                            <TextBlock Text="URL *" FontSize="12" Foreground="#AAA" Margin="0,16,0,4"/>
-                            <TextBox Text="{Binding EditUrl, UpdateSourceTrigger=PropertyChanged}"
-                                     Background="#333" Foreground="White" BorderBrush="#555"
-                                     Padding="8,6" FontSize="14"/>
-                        </StackPanel>
-                        
-                        <!-- Timeout -->
-                        <TextBlock Text="Timeout (seconds)" FontSize="12" Foreground="#AAA" Margin="0,16,0,4"/>
-                        <TextBox Text="{Binding EditTimeout, UpdateSourceTrigger=PropertyChanged}"
-                                 Background="#333" Foreground="White" BorderBrush="#555"
-                                 Padding="8,6" FontSize="14" Width="100" HorizontalAlignment="Left"/>
-                        
-                        <!-- Enabled -->
-                        <CheckBox Content="Enabled" IsChecked="{Binding EditEnabled}"
-                                  Foreground="White" Margin="0,16,0,0"/>
-                        
-                        <!-- Buttons -->
-                        <StackPanel Orientation="Horizontal" Margin="0,24,0,0">
-                            <Button Content="Save" Command="{Binding SaveServerCommand}"
-                                    Background="#0078D4" Foreground="White"
-                                    Padding="16,8" Margin="0,0,8,0"
-                                    BorderThickness="0" Cursor="Hand">
-                                <Button.Style>
-                                    <Style TargetType="Button">
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border Background="{TemplateBinding Background}" 
-                                                            CornerRadius="4" Padding="{TemplateBinding Padding}">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
-                            <Button Content="Cancel" Command="{Binding CancelEditCommand}"
-                                    Background="#555" Foreground="White"
-                                    Padding="16,8"
-                                    BorderThickness="0" Cursor="Hand">
-                                <Button.Style>
-                                    <Style TargetType="Button">
-                                        <Setter Property="Template">
-                                            <Setter.Value>
-                                                <ControlTemplate TargetType="Button">
-                                                    <Border Background="{TemplateBinding Background}" 
-                                                            CornerRadius="4" Padding="{TemplateBinding Padding}">
-                                                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                    </Border>
-                                                </ControlTemplate>
-                                            </Setter.Value>
-                                        </Setter>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
-                        </StackPanel>
-                    </StackPanel>
-                </ScrollViewer>
-            </Border>
-        </Grid>
+        <!-- Config File Path Bar -->
+        <Border Grid.Row="1" Background="#252525" Padding="12,8" BorderBrush="#333" BorderThickness="0,0,0,1">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <!-- Folder icon -->
+                <TextBlock Grid.Column="0" Text="📄" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                
+                <!-- Path display -->
+                <TextBlock Grid.Column="1" 
+                           Text="{Binding McpConfigFilePath}" 
+                           Foreground="#AAA" FontSize="12" 
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding McpConfigFilePath}"/>
+                
+                <!-- Open button -->
+                <Button Grid.Column="2" 
+                        Content="Open" 
+                        Command="{Binding OpenConfigFileCommand}"
+                        Background="#444" Foreground="White"
+                        Padding="10,4" Margin="8,0,0,0"
+                        BorderThickness="0" Cursor="Hand"
+                        ToolTip="Open config file in default editor">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}" 
+                                                CornerRadius="3" Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#555"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </Grid>
+        </Border>
         
-        <!-- Action Bar (when server selected) -->
-        <Border Grid.Row="2" Background="#2D2D2D" Padding="12,8"
-                Visibility="{Binding SelectedServer, Converter={StaticResource BoolToVis}}">
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                <Button Content="▶ Start" Command="{Binding StartServerCommand}"
-                        IsEnabled="{Binding SelectedServer.IsStopped}"
-                        Background="#4CAF50" Foreground="White"
-                        Padding="12,6" Margin="0,0,8,0"
-                        BorderThickness="0" Cursor="Hand">
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="Button">
-                                        <Border Background="{TemplateBinding Background}" 
-                                                CornerRadius="4" Padding="{TemplateBinding Padding}"
-                                                Opacity="{TemplateBinding Opacity}">
-                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                            <Style.Triggers>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Opacity" Value="0.5"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                </Button>
+        <!-- Pending Changes Banner -->
+        <Border Grid.Row="2" Background="#FF9800" Padding="12,8"
+                Visibility="{Binding HasPendingChanges, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
                 
-                <Button Content="⏹ Stop" Command="{Binding StopServerCommand}"
-                        IsEnabled="{Binding SelectedServer.IsRunning}"
-                        Background="#F44336" Foreground="White"
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="⚠" FontSize="14" Foreground="White" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                    <TextBlock Foreground="White" FontWeight="Medium" VerticalAlignment="Center">
+                        <Run Text="{Binding PendingChangesCount, Mode=OneWay}"/>
+                        <Run Text=" pending change(s) - requires session restart"/>
+                    </TextBlock>
+                </StackPanel>
+                
+                <!-- Discard button -->
+                <Button Grid.Column="1" 
+                        Content="Discard" 
+                        Command="{Binding DiscardChangesCommand}"
+                        Background="#E65100" Foreground="White"
                         Padding="12,6" Margin="0,0,8,0"
                         BorderThickness="0" Cursor="Hand">
                     <Button.Style>
@@ -340,36 +137,19 @@
                                 </Setter.Value>
                             </Setter>
                             <Style.Triggers>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Opacity" Value="0.5"/>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#BF360C"/>
                                 </Trigger>
                             </Style.Triggers>
                         </Style>
                     </Button.Style>
                 </Button>
                 
-                <Button Content="✏ Edit" Command="{Binding EditServerCommand}"
-                        Background="#555" Foreground="White"
-                        Padding="12,6" Margin="0,0,8,0"
-                        BorderThickness="0" Cursor="Hand">
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="Button">
-                                        <Border Background="{TemplateBinding Background}" 
-                                                CornerRadius="4" Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                        </Style>
-                    </Button.Style>
-                </Button>
-                
-                <Button Content="🗑 Delete" Command="{Binding DeleteServerCommand}"
-                        Background="#B71C1C" Foreground="White"
+                <!-- Apply Changes button -->
+                <Button Grid.Column="2" 
+                        Content="Apply Changes" 
+                        Command="{Binding ApplyChangesCommand}"
+                        Background="#1B5E20" Foreground="White"
                         Padding="12,6"
                         BorderThickness="0" Cursor="Hand">
                     <Button.Style>
@@ -384,10 +164,368 @@
                                     </ControlTemplate>
                                 </Setter.Value>
                             </Setter>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#2E7D32"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.5"/>
+                                </Trigger>
+                            </Style.Triggers>
                         </Style>
                     </Button.Style>
                 </Button>
-            </StackPanel>
+            </Grid>
         </Border>
+        
+        <!-- Main Content Area -->
+        <Grid Grid.Row="3">
+            <!-- Loading indicator -->
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                        Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="Loading MCP servers..." FontSize="14" Foreground="#888" HorizontalAlignment="Center"/>
+            </StackPanel>
+            
+            <!-- Applying indicator -->
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                        Visibility="{Binding IsApplying, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="Applying changes and restarting session..." FontSize="14" Foreground="#FF9800" HorizontalAlignment="Center"/>
+            </StackPanel>
+            
+            <!-- Live Servers List (when session is active) -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel>
+                    <!-- Live Session Section -->
+                    <Border Background="#1A1A1A" Padding="12,8" Margin="0,0,0,1"
+                            Visibility="{Binding HasActiveSession, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="🔴 LIVE SESSION" FontSize="11" FontWeight="Bold" Foreground="#4CAF50"/>
+                    </Border>
+                    
+                    <ItemsControl ItemsSource="{Binding LiveServers}"
+                                  Visibility="{Binding HasActiveSession, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="#333" BorderThickness="0,0,0,1">
+                                    <StackPanel>
+                                        <!-- Server Header Row -->
+                                        <Grid Background="#1E1E1E" Cursor="Hand">
+                                            <Grid.InputBindings>
+                                                <MouseBinding MouseAction="LeftClick" Command="{Binding ToggleExpandedCommand, RelativeSource={RelativeSource Self}}" />
+                                            </Grid.InputBindings>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            
+                                            <!-- Expand/Collapse Arrow -->
+                                            <ToggleButton Grid.Column="0" 
+                                                          IsChecked="{Binding IsExpanded}"
+                                                          Background="Transparent" BorderThickness="0"
+                                                          Padding="12,12,4,12" Cursor="Hand"
+                                                          VerticalAlignment="Center">
+                                                <ToggleButton.Template>
+                                                    <ControlTemplate TargetType="ToggleButton">
+                                                        <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                                                            <TextBlock x:Name="Arrow" Text="▶" FontSize="10" Foreground="#888">
+                                                                <TextBlock.RenderTransform>
+                                                                    <RotateTransform Angle="0"/>
+                                                                </TextBlock.RenderTransform>
+                                                            </TextBlock>
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsChecked" Value="True">
+                                                                <Setter TargetName="Arrow" Property="RenderTransform">
+                                                                    <Setter.Value>
+                                                                        <RotateTransform Angle="90"/>
+                                                                    </Setter.Value>
+                                                                </Setter>
+                                                            </Trigger>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter TargetName="Arrow" Property="Foreground" Value="White"/>
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </ToggleButton.Template>
+                                            </ToggleButton>
+                                            
+                                            <!-- State Indicator (colored ellipse) -->
+                                            <Ellipse Grid.Column="1" Width="10" Height="10" 
+                                                     VerticalAlignment="Center" Margin="4,0,12,0">
+                                                <Ellipse.Fill>
+                                                    <SolidColorBrush Color="{Binding StateColor, Mode=OneWay}"/>
+                                                </Ellipse.Fill>
+                                            </Ellipse>
+                                            
+                                            <!-- Server Info -->
+                                            <StackPanel Grid.Column="2" Margin="0,12" VerticalAlignment="Center">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Name, Mode=OneWay}" FontWeight="Medium" FontSize="14" Foreground="White"/>
+                                                    <TextBlock Text="{Binding StatusIcon, Mode=OneWay}" FontSize="12" Foreground="#888" Margin="8,0,0,0" VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                                <TextBlock FontSize="11" Foreground="#666" Margin="0,2,0,0">
+                                                    <Run Text="{Binding Transport, Mode=OneWay}"/>
+                                                    <Run Text=" • "/>
+                                                    <Run Text="{Binding ToolsCount, Mode=OneWay}"/>
+                                                    <Run Text=" tools"/>
+                                                </TextBlock>
+                                            </StackPanel>
+                                            
+                                            <!-- Status Badge -->
+                                            <Border Grid.Column="3" 
+                                                    CornerRadius="3" Padding="8,4" Margin="8,0,12,0"
+                                                    VerticalAlignment="Center">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="#333"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Status, Mode=OneWay}" Value="running">
+                                                                <Setter Property="Background" Value="#1B5E20"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Status, Mode=OneWay}" Value="error">
+                                                                <Setter Property="Background" Value="#B71C1C"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Status, Mode=OneWay}" Value="unknown">
+                                                                <Setter Property="Background" Value="#E65100"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="{Binding Status, Mode=OneWay}" 
+                                                           FontSize="11" Foreground="White"/>
+                                            </Border>
+                                        </Grid>
+                                        
+                                        <!-- Expandable Tools Section -->
+                                        <Border Background="#252525" 
+                                                Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}"
+                                                Padding="40,8,16,12">
+                                            <StackPanel>
+                                                <!-- Connection Info -->
+                                                <TextBlock FontSize="11" Foreground="#666" Margin="0,0,0,8">
+                                                    <Run Text="Connection: "/>
+                                                    <Run Text="{Binding ConnectionInfo, Mode=OneWay}" Foreground="#888"/>
+                                                </TextBlock>
+                                                
+                                                <!-- Error message if any -->
+                                                <Border Background="#3E2723" CornerRadius="4" Padding="10,8" Margin="0,0,0,8"
+                                                        Visibility="{Binding ErrorMessage, Mode=OneWay, Converter={StaticResource BoolToVis}}">
+                                                    <TextBlock Text="{Binding ErrorMessage, Mode=OneWay}" FontSize="11" Foreground="#FFAB91" TextWrapping="Wrap"/>
+                                                </Border>
+                                                
+                                                <!-- Tools Header -->
+                                                <TextBlock Text="Available Tools:" FontSize="11" Foreground="#666" 
+                                                           FontWeight="Medium" Margin="0,4,0,6"/>
+                                                
+                                                <!-- Tools List -->
+                                                <ItemsControl ItemsSource="{Binding Tools}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Background="#1A1A1A" CornerRadius="4" Padding="10,8" Margin="0,0,0,4">
+                                                                <StackPanel>
+                                                                    <!-- Tool name and expand button -->
+                                                                    <Grid>
+                                                                        <Grid.ColumnDefinitions>
+                                                                            <ColumnDefinition Width="Auto"/>
+                                                                            <ColumnDefinition Width="*"/>
+                                                                            <ColumnDefinition Width="Auto"/>
+                                                                        </Grid.ColumnDefinitions>
+                                                                        
+                                                                        <TextBlock Grid.Column="0" Text="🔧" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                                        <TextBlock Grid.Column="1" Text="{Binding Name, Mode=OneWay}" 
+                                                                                   FontSize="12" Foreground="#DDD" FontWeight="Medium"
+                                                                                   VerticalAlignment="Center"/>
+                                                                        <ToggleButton Grid.Column="2" 
+                                                                                      IsChecked="{Binding IsExpanded}"
+                                                                                      Background="Transparent" BorderThickness="0"
+                                                                                      Cursor="Hand" Padding="4"
+                                                                                      Visibility="{Binding HasParameters, Converter={StaticResource BoolToVis}}">
+                                                                            <ToggleButton.Template>
+                                                                                <ControlTemplate TargetType="ToggleButton">
+                                                                                    <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                                                                                        <TextBlock x:Name="ExpandText" Text="▼" FontSize="9" Foreground="#666"/>
+                                                                                    </Border>
+                                                                                    <ControlTemplate.Triggers>
+                                                                                        <Trigger Property="IsChecked" Value="True">
+                                                                                            <Setter TargetName="ExpandText" Property="Text" Value="▲"/>
+                                                                                        </Trigger>
+                                                                                    </ControlTemplate.Triggers>
+                                                                                </ControlTemplate>
+                                                                            </ToggleButton.Template>
+                                                                        </ToggleButton>
+                                                                    </Grid>
+                                                                    
+                                                                    <!-- Tool description -->
+                                                                    <TextBlock Text="{Binding Description, Mode=OneWay}" 
+                                                                               FontSize="11" Foreground="#888" 
+                                                                               TextWrapping="Wrap" Margin="18,4,0,0"
+                                                                               Visibility="{Binding Description, Mode=OneWay, Converter={StaticResource BoolToVis}}"/>
+                                                                    
+                                                                    <!-- Parameters (expanded) -->
+                                                                    <Border Background="#0D0D0D" CornerRadius="3" Padding="8,6" Margin="18,6,0,0"
+                                                                            Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}">
+                                                                        <TextBlock Text="{Binding ParametersDisplay, Mode=OneWay}" 
+                                                                                   FontSize="10" Foreground="#777"
+                                                                                   FontFamily="Consolas"
+                                                                                   TextWrapping="Wrap"/>
+                                                                    </Border>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                                
+                                                <!-- No tools message -->
+                                                <TextBlock Text="No tools registered" 
+                                                           FontSize="11" Foreground="#555" FontStyle="Italic"
+                                                           Visibility="{Binding Tools.Count, Converter={StaticResource BoolToVis}, ConverterParameter=Zero}"/>
+                                            </StackPanel>
+                                        </Border>
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    
+                    <!-- Configured Servers Section Header (when there's no active session or to show config) -->
+                    <Border Background="#1A1A1A" Padding="12,8" Margin="0,8,0,1">
+                        <StackPanel>
+                            <TextBlock Text="📋 CONFIGURED SERVERS" FontSize="11" FontWeight="Bold" Foreground="#888"/>
+                            <TextBlock Text="Toggle servers to enable/disable for next session" FontSize="10" Foreground="#555" Margin="0,2,0,0"/>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- Configured Server List -->
+                    <ItemsControl ItemsSource="{Binding ConfiguredServers}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Border BorderBrush="#333" BorderThickness="0,0,0,1">
+                                    <Grid Background="#1E1E1E" Cursor="Hand">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        
+                                        <!-- State Indicator (colored ellipse) -->
+                                        <Ellipse Grid.Column="0" Width="10" Height="10" 
+                                                 VerticalAlignment="Center" Margin="12,0,12,0">
+                                            <Ellipse.Fill>
+                                                <SolidColorBrush Color="{Binding StateColor, Mode=OneWay}"/>
+                                            </Ellipse.Fill>
+                                        </Ellipse>
+                                        
+                                        <!-- Server Info -->
+                                        <StackPanel Grid.Column="1" Margin="0,12" VerticalAlignment="Center">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Name, Mode=OneWay}" FontWeight="Medium" FontSize="14" Foreground="White"/>
+                                            </StackPanel>
+                                            <TextBlock FontSize="11" Foreground="#666" Margin="0,2,0,0">
+                                                <Run Text="{Binding TransportDisplay, Mode=OneWay}"/>
+                                                <Run Text=" • "/>
+                                                <Run Text="{Binding CommandDisplay, Mode=OneWay}"/>
+                                            </TextBlock>
+                                        </StackPanel>
+                                        
+                                        <!-- Status Text -->
+                                        <TextBlock Grid.Column="2" 
+                                                   Text="{Binding StatusText, Mode=OneWay}" 
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"
+                                                   Margin="8,0">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="#888"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding PendingState}" Value="PendingEnable">
+                                                            <Setter Property="Foreground" Value="#FF9800"/>
+                                                            <Setter Property="FontWeight" Value="Medium"/>
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding PendingState}" Value="PendingDisable">
+                                                            <Setter Property="Foreground" Value="#FF9800"/>
+                                                            <Setter Property="FontWeight" Value="Medium"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                        
+                                        <!-- Toggle Button -->
+                                        <Button Grid.Column="3" 
+                                                Command="{Binding DataContext.ToggleServerCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                CommandParameter="{Binding}"
+                                                Margin="8,0,12,0"
+                                                Padding="10,6"
+                                                BorderThickness="0" Cursor="Hand"
+                                                VerticalAlignment="Center">
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="Background" Value="#444"/>
+                                                    <Setter Property="Foreground" Value="White"/>
+                                                    <Setter Property="Content" Value="Enable"/>
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border Background="{TemplateBinding Background}" 
+                                                                        CornerRadius="3" Padding="{TemplateBinding Padding}">
+                                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                                </Border>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <!-- Currently disabled, no pending change -->
+                                                        <MultiDataTrigger>
+                                                            <MultiDataTrigger.Conditions>
+                                                                <Condition Binding="{Binding IsEnabled}" Value="False"/>
+                                                                <Condition Binding="{Binding PendingState}" Value="None"/>
+                                                            </MultiDataTrigger.Conditions>
+                                                            <Setter Property="Content" Value="Enable"/>
+                                                            <Setter Property="Background" Value="#4CAF50"/>
+                                                        </MultiDataTrigger>
+                                                        <!-- Currently enabled, no pending change -->
+                                                        <MultiDataTrigger>
+                                                            <MultiDataTrigger.Conditions>
+                                                                <Condition Binding="{Binding IsEnabled}" Value="True"/>
+                                                                <Condition Binding="{Binding PendingState}" Value="None"/>
+                                                            </MultiDataTrigger.Conditions>
+                                                            <Setter Property="Content" Value="Disable"/>
+                                                            <Setter Property="Background" Value="#757575"/>
+                                                        </MultiDataTrigger>
+                                                        <!-- Pending enable - show undo -->
+                                                        <DataTrigger Binding="{Binding PendingState}" Value="PendingEnable">
+                                                            <Setter Property="Content" Value="↩ Undo"/>
+                                                            <Setter Property="Background" Value="#FF9800"/>
+                                                        </DataTrigger>
+                                                        <!-- Pending disable - show undo -->
+                                                        <DataTrigger Binding="{Binding PendingState}" Value="PendingDisable">
+                                                            <Setter Property="Content" Value="↩ Undo"/>
+                                                            <Setter Property="Background" Value="#FF9800"/>
+                                                        </DataTrigger>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Opacity" Value="0.9"/>
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+            
+            <!-- Empty State (no servers) -->
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                        Visibility="{Binding ConfiguredServers.Count, Converter={StaticResource BoolToVis}, ConverterParameter=Zero}">
+                <TextBlock Text="No MCP servers configured" FontSize="16" Foreground="#666" HorizontalAlignment="Center"/>
+                <TextBlock Text="Click 'Open' above to edit the MCP config file" FontSize="12" Foreground="#555" 
+                           HorizontalAlignment="Center" Margin="0,8,0,0"/>
+            </StackPanel>
+        </Grid>
     </Grid>
 </UserControl>

@@ -415,6 +415,115 @@ public class McpService : IMcpService, IDisposable
         }
     }
 
+    public async Task LoadServersFromCopilotConfigAsync()
+    {
+        try
+        {
+            var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var configPath = Path.Combine(homeDir, ".copilot", "mcp-config.json");
+
+            if (!File.Exists(configPath))
+            {
+                _logger.LogInformation("Copilot MCP config file not found at {Path}", configPath);
+                return;
+            }
+
+            var json = await File.ReadAllTextAsync(configPath);
+            var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            var loadedServers = new List<McpServerConfig>();
+
+            // Parse mcpServers object
+            if (root.TryGetProperty("mcpServers", out var mcpServers))
+            {
+                foreach (var serverProp in mcpServers.EnumerateObject())
+                {
+                    var serverName = serverProp.Name;
+                    var serverValue = serverProp.Value;
+
+                    var config = new McpServerConfig
+                    {
+                        Name = serverName,
+                        Transport = McpTransport.Stdio // Default to stdio
+                    };
+
+                    // Parse command
+                    if (serverValue.TryGetProperty("command", out var command))
+                    {
+                        config.Command = command.GetString();
+                    }
+
+                    // Parse args
+                    if (serverValue.TryGetProperty("args", out var args))
+                    {
+                        config.Args = args.EnumerateArray()
+                            .Select(a => a.GetString() ?? "")
+                            .ToList();
+                    }
+
+                    // Parse env
+                    if (serverValue.TryGetProperty("env", out var env))
+                    {
+                        config.Env = new Dictionary<string, string>();
+                        foreach (var envProp in env.EnumerateObject())
+                        {
+                            config.Env[envProp.Name] = envProp.Value.GetString() ?? "";
+                        }
+                    }
+
+                    // Parse optional description
+                    if (serverValue.TryGetProperty("description", out var description))
+                    {
+                        config.Description = description.GetString();
+                    }
+
+                    // Parse optional url (for HTTP transport)
+                    if (serverValue.TryGetProperty("url", out var url))
+                    {
+                        config.Url = url.GetString();
+                        config.Transport = McpTransport.Http;
+                    }
+
+                    loadedServers.Add(config);
+                    _logger.LogDebug("Loaded MCP server from Copilot config: {ServerName}", serverName);
+                }
+            }
+
+            lock (_serversLock)
+            {
+                // Merge with existing servers - Copilot config takes precedence
+                foreach (var newServer in loadedServers)
+                {
+                    var existingIndex = _servers.FindIndex(s => 
+                        s.Name.Equals(newServer.Name, StringComparison.OrdinalIgnoreCase));
+                    
+                    if (existingIndex >= 0)
+                    {
+                        // Update existing
+                        _servers[existingIndex] = newServer;
+                    }
+                    else
+                    {
+                        // Add new
+                        _servers.Add(newServer);
+                    }
+                }
+            }
+
+            _logger.LogInformation("Loaded {Count} MCP servers from Copilot config at {Path}", 
+                loadedServers.Count, configPath);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogError(ex, "Failed to parse Copilot MCP config JSON");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to load MCP servers from Copilot config");
+        }
+    }
+
     public async Task SaveServersAsync()
     {
         try

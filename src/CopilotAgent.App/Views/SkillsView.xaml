@@ -3,19 +3,32 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="clr-namespace:CopilotAgent.App.ViewModels"
+             xmlns:converters="clr-namespace:CopilotAgent.App.Converters"
              mc:Ignorable="d"
-             d:DesignHeight="500" d:DesignWidth="350"
+             d:DesignHeight="600" d:DesignWidth="400"
              Background="{DynamicResource BackgroundBrush}">
     
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
+        
+        <!-- Pending state color converter -->
+        <Style x:Key="SkillStateIndicator" TargetType="Ellipse">
+            <Setter Property="Width" Value="12"/>
+            <Setter Property="Height" Value="12"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Margin" Value="0,0,10,0"/>
+        </Style>
     </UserControl.Resources>
     
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         
@@ -29,17 +42,17 @@
                 
                 <StackPanel Grid.Column="0">
                     <TextBlock Text="Skills" FontSize="16" FontWeight="SemiBold" Foreground="White"/>
-                    <TextBlock Text="Enable skills for this session" FontSize="11" Foreground="#888" Margin="0,2,0,0"/>
+                    <TextBlock Text="Enable skills to enhance Copilot" FontSize="11" Foreground="#888" Margin="0,2,0,0"/>
                 </StackPanel>
                 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Button Content="⟳" ToolTip="Refresh"
+                    <Button Content="⟳" ToolTip="Refresh skills"
                             Command="{Binding RefreshSkillsCommand}"
                             Background="Transparent" Foreground="#888"
                             FontSize="14" Padding="6,4"
                             BorderThickness="0" Cursor="Hand"/>
-                    <Button Content="📂" ToolTip="Open Skills Folder"
-                            Command="{Binding OpenSkillsFolderCommand}"
+                    <Button Content="📤" ToolTip="Upload skill file"
+                            Command="{Binding UploadSkillCommand}"
                             Background="Transparent" Foreground="#888"
                             FontSize="14" Padding="6,4"
                             BorderThickness="0" Cursor="Hand"/>
@@ -47,8 +60,60 @@
             </Grid>
         </Border>
         
+        <!-- Skills Folder Path -->
+        <Border Grid.Row="1" Background="#1E1E1E" Padding="12,8">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <TextBlock Grid.Column="0" Text="📂" FontSize="14" Foreground="#888" 
+                           VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Grid.Column="1" 
+                           Text="{Binding SkillsFolderPath}" 
+                           FontSize="11" 
+                           Foreground="#AAA"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center"
+                           ToolTip="{Binding SkillsFolderPath}"/>
+                <Button Grid.Column="2"
+                        Content="Open"
+                        Command="{Binding OpenSkillsFolderCommand}"
+                        Background="#444"
+                        Foreground="#CCC"
+                        FontSize="10"
+                        Padding="8,3"
+                        Margin="8,0,0,0"
+                        BorderThickness="0"
+                        Cursor="Hand"
+                        ToolTip="Open skills folder in Explorer">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}" 
+                                                CornerRadius="3" Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#555"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </Grid>
+        </Border>
+        
         <!-- Filter Bar -->
-        <Border Grid.Row="1" Background="#252525" Padding="12,8">
+        <Border Grid.Row="2" Background="#252525" Padding="12,8">
             <StackPanel>
                 <!-- Search Box -->
                 <TextBox Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}"
@@ -86,7 +151,7 @@
         </Border>
         
         <!-- Skills List -->
-        <ListBox Grid.Row="2"
+        <ListBox Grid.Row="3"
                  ItemsSource="{Binding Skills}"
                  SelectedItem="{Binding SelectedSkill}"
                  Background="Transparent"
@@ -127,13 +192,41 @@
                             <ColumnDefinition Width="Auto"/>
                         </Grid.ColumnDefinitions>
                         
-                        <!-- Enable Checkbox -->
-                        <CheckBox Grid.Column="0" 
-                                  IsChecked="{Binding IsEnabled}"
-                                  VerticalAlignment="Center"
-                                  Margin="0,0,10,0"
-                                  Command="{Binding DataContext.ToggleSkillCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                  CommandParameter="{Binding}"/>
+                        <!-- State Indicator with dynamic color -->
+                        <Ellipse Grid.Column="0" 
+                                 Width="12" Height="12"
+                                 VerticalAlignment="Center"
+                                 Margin="0,0,10,0"
+                                 Cursor="Hand">
+                            <Ellipse.Style>
+                                <Style TargetType="Ellipse">
+                                    <Setter Property="Fill" Value="#9E9E9E"/>
+                                    <Style.Triggers>
+                                        <!-- Green when enabled and no pending change -->
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding IsEnabled}" Value="True"/>
+                                                <Condition Binding="{Binding PendingState}" Value="None"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Fill" Value="#4CAF50"/>
+                                        </MultiDataTrigger>
+                                        <!-- Orange when pending enable -->
+                                        <DataTrigger Binding="{Binding PendingState}" Value="PendingEnable">
+                                            <Setter Property="Fill" Value="#FF9800"/>
+                                        </DataTrigger>
+                                        <!-- Orange when pending disable -->
+                                        <DataTrigger Binding="{Binding PendingState}" Value="PendingDisable">
+                                            <Setter Property="Fill" Value="#FF9800"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Ellipse.Style>
+                            <Ellipse.InputBindings>
+                                <MouseBinding MouseAction="LeftClick"
+                                              Command="{Binding DataContext.ToggleSkillCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                              CommandParameter="{Binding}"/>
+                            </Ellipse.InputBindings>
+                        </Ellipse>
                         
                         <!-- Skill Info -->
                         <StackPanel Grid.Column="1">
@@ -142,39 +235,89 @@
                                 <TextBlock Text="{Binding Name}" FontWeight="Medium" FontSize="13" Foreground="White"/>
                             </StackPanel>
                             <TextBlock Text="{Binding Description}" FontSize="11" Foreground="#888" 
-                                       Margin="0,2,0,0" TextTrimming="CharacterEllipsis" MaxWidth="250"
-                                       Visibility="{Binding Description, Converter={StaticResource BoolToVis}}"/>
+                                       Margin="0,2,0,0" TextTrimming="CharacterEllipsis" MaxWidth="220"/>
+                            <!-- Status text -->
+                            <TextBlock Text="{Binding StatusText}" FontSize="10" Margin="0,4,0,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="#666"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding PendingState}" Value="PendingEnable">
+                                                <Setter Property="Foreground" Value="#FF9800"/>
+                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding PendingState}" Value="PendingDisable">
+                                                <Setter Property="Foreground" Value="#FF9800"/>
+                                                <Setter Property="FontWeight" Value="SemiBold"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
                         </StackPanel>
                         
-                        <!-- Source Badge -->
-                        <Border Grid.Column="2" CornerRadius="3" Padding="6,2" 
-                                VerticalAlignment="Center" Margin="8,0,0,0">
-                            <Border.Style>
-                                <Style TargetType="Border">
+                        <!-- Toggle Button -->
+                        <Button Grid.Column="2"
+                                VerticalAlignment="Center"
+                                Margin="8,0,0,0"
+                                Padding="8,4"
+                                BorderThickness="0"
+                                Cursor="Hand"
+                                Command="{Binding DataContext.ToggleSkillCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                CommandParameter="{Binding}">
+                            <Button.Style>
+                                <Style TargetType="Button">
                                     <Setter Property="Background" Value="#333"/>
+                                    <Setter Property="Foreground" Value="#AAA"/>
+                                    <Setter Property="Content" Value="Enable"/>
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="{TemplateBinding Background}" 
+                                                        CornerRadius="3" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Source}" Value="BuiltIn">
-                                            <Setter Property="Background" Value="#1B5E20"/>
+                                        <!-- Currently enabled, no pending: show Disable -->
+                                        <MultiDataTrigger>
+                                            <MultiDataTrigger.Conditions>
+                                                <Condition Binding="{Binding IsEnabled}" Value="True"/>
+                                                <Condition Binding="{Binding PendingState}" Value="None"/>
+                                            </MultiDataTrigger.Conditions>
+                                            <Setter Property="Background" Value="#2E7D32"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                            <Setter Property="Content" Value="Disable"/>
+                                        </MultiDataTrigger>
+                                        <!-- Pending Enable: show Undo -->
+                                        <DataTrigger Binding="{Binding PendingState}" Value="PendingEnable">
+                                            <Setter Property="Background" Value="#FF9800"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                            <Setter Property="Content" Value="↩ Undo"/>
                                         </DataTrigger>
-                                        <DataTrigger Binding="{Binding Source}" Value="Personal">
-                                            <Setter Property="Background" Value="#1565C0"/>
+                                        <!-- Pending Disable: show Undo -->
+                                        <DataTrigger Binding="{Binding PendingState}" Value="PendingDisable">
+                                            <Setter Property="Background" Value="#FF9800"/>
+                                            <Setter Property="Foreground" Value="White"/>
+                                            <Setter Property="Content" Value="↩ Undo"/>
                                         </DataTrigger>
-                                        <DataTrigger Binding="{Binding Source}" Value="Repository">
-                                            <Setter Property="Background" Value="#6A1B9A"/>
-                                        </DataTrigger>
+                                        <Trigger Property="IsMouseOver" Value="True">
+                                            <Setter Property="Opacity" Value="0.9"/>
+                                        </Trigger>
                                     </Style.Triggers>
                                 </Style>
-                            </Border.Style>
-                            <TextBlock Text="{Binding SourceDisplay}" FontSize="10" Foreground="White"/>
-                        </Border>
+                            </Button.Style>
+                        </Button>
                     </Grid>
                 </DataTemplate>
             </ListBox.ItemTemplate>
         </ListBox>
         
         <!-- Empty State -->
-        <StackPanel Grid.Row="2" VerticalAlignment="Center" HorizontalAlignment="Center"
-                    Visibility="{Binding Skills.Count, Converter={StaticResource BoolToVis}, ConverterParameter=Zero}">
+        <StackPanel Grid.Row="3" VerticalAlignment="Center" HorizontalAlignment="Center"
+                    Visibility="{Binding Skills.Count, Converter={StaticResource InverseBoolToVis}}">
             <TextBlock Text="No skills found" FontSize="14" Foreground="#666" HorizontalAlignment="Center"/>
             <TextBlock Text="Add SKILL.md files to your personal folder" FontSize="11" Foreground="#555" 
                        HorizontalAlignment="Center" Margin="0,6,0,0"/>
@@ -200,8 +343,85 @@
             </Button>
         </StackPanel>
         
+        <!-- Pending Changes Banner -->
+        <Border Grid.Row="4" Background="#FF9800" Padding="12,8"
+                Visibility="{Binding HasPendingChanges, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="⚠" FontSize="14" Foreground="White" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <TextBlock Foreground="White" FontSize="12" VerticalAlignment="Center">
+                        <Run Text="{Binding PendingChangesCount, Mode=OneWay}"/>
+                        <Run Text=" pending change(s)"/>
+                    </TextBlock>
+                </StackPanel>
+                
+                <Button Grid.Column="1"
+                        Content="Discard"
+                        Command="{Binding DiscardChangesCommand}"
+                        Background="#E65100"
+                        Foreground="White"
+                        FontSize="11"
+                        Padding="10,5"
+                        Margin="0,0,8,0"
+                        BorderThickness="0"
+                        Cursor="Hand">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}" 
+                                                CornerRadius="3" Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                
+                <Button Grid.Column="2"
+                        Content="Apply Changes"
+                        Command="{Binding ApplyChangesCommand}"
+                        Background="#1976D2"
+                        Foreground="White"
+                        FontSize="11"
+                        FontWeight="SemiBold"
+                        Padding="12,5"
+                        BorderThickness="0"
+                        Cursor="Hand">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="{TemplateBinding Background}" 
+                                                CornerRadius="3" Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.5"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </Grid>
+        </Border>
+        
         <!-- Selected Skill Actions -->
-        <Border Grid.Row="3" Background="#2D2D2D" Padding="12,8"
+        <Border Grid.Row="5" Background="#2D2D2D" Padding="12,8"
                 Visibility="{Binding SelectedSkill, Converter={StaticResource BoolToVis}}">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                 <Button Content="👁 View Content" 
@@ -221,36 +441,6 @@
                                     </ControlTemplate>
                                 </Setter.Value>
                             </Setter>
-                        </Style>
-                    </Button.Style>
-                </Button>
-                
-                <Button Content="{Binding SelectedSkill.IsEnabled, Converter={StaticResource BoolToVis}, ConverterParameter=Toggle}"
-                        Command="{Binding ToggleSkillCommand}"
-                        CommandParameter="{Binding SelectedSkill}"
-                        Padding="10,5"
-                        BorderThickness="0" Cursor="Hand">
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Setter Property="Background" Value="#4CAF50"/>
-                            <Setter Property="Foreground" Value="White"/>
-                            <Setter Property="Content" Value="✓ Enable"/>
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="Button">
-                                        <Border Background="{TemplateBinding Background}" 
-                                                CornerRadius="3" Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding SelectedSkill.IsEnabled}" Value="True">
-                                    <Setter Property="Background" Value="#F44336"/>
-                                    <Setter Property="Content" Value="✗ Disable"/>
-                                </DataTrigger>
-                            </Style.Triggers>
                         </Style>
                     </Button.Style>
                 </Button>

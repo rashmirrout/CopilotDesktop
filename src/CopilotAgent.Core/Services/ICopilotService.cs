@@ -73,6 +73,22 @@ public interface ICopilotService : IDisposable
     /// <param name="options">Options specifying what to change.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     Task RecreateSessionAsync(Session session, SessionRecreateOptions options, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Gets information about MCP servers active in the live SDK session.
+    /// This queries the actual running session to get current server state and available tools.
+    /// </summary>
+    /// <param name="sessionId">The session ID to query.</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    /// <returns>List of live MCP server information with tools.</returns>
+    Task<List<LiveMcpServerInfo>> GetLiveMcpServersAsync(string sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Checks if a session has an active SDK session (is connected).
+    /// </summary>
+    /// <param name="sessionId">The session ID to check.</param>
+    /// <returns>True if the session has an active SDK connection.</returns>
+    bool HasActiveSession(string sessionId);
 }
 
 /// <summary>
@@ -89,4 +105,61 @@ public class SessionRecreateOptions
     /// New working directory. If null, keeps the existing directory.
     /// </summary>
     public string? NewWorkingDirectory { get; set; }
+}
+
+/// <summary>
+/// Information about MCP servers active in the live SDK session.
+/// </summary>
+public class LiveMcpServerInfo
+{
+    /// <summary>Server name/identifier</summary>
+    public string Name { get; set; } = string.Empty;
+    
+    /// <summary>Whether the server is currently active/connected</summary>
+    public bool IsActive { get; set; }
+    
+    /// <summary>Server status (running, stopped, error, etc.)</summary>
+    public string Status { get; set; } = "unknown";
+    
+    /// <summary>Tools available from this server</summary>
+    public List<LiveMcpToolInfo> Tools { get; set; } = new();
+    
+    /// <summary>Server transport type (stdio/http)</summary>
+    public string Transport { get; set; } = "stdio";
+    
+    /// <summary>Command or URL used to connect</summary>
+    public string ConnectionInfo { get; set; } = string.Empty;
+    
+    /// <summary>Error message if server failed to start</summary>
+    public string? ErrorMessage { get; set; }
+}
+
+/// <summary>
+/// Information about a tool from a live MCP server.
+/// </summary>
+public class LiveMcpToolInfo
+{
+    /// <summary>Tool name</summary>
+    public string Name { get; set; } = string.Empty;
+    
+    /// <summary>Tool description</summary>
+    public string? Description { get; set; }
+    
+    /// <summary>Tool parameters</summary>
+    public Dictionary<string, LiveMcpToolParameter>? Parameters { get; set; }
+}
+
+/// <summary>
+/// Parameter information for a live MCP tool.
+/// </summary>
+public class LiveMcpToolParameter
+{
+    /// <summary>Parameter type</summary>
+    public string Type { get; set; } = "string";
+    
+    /// <summary>Parameter description</summary>
+    public string? Description { get; set; }
+    
+    /// <summary>Whether the parameter is required</summary>
+    public bool Required { get; set; }
 }

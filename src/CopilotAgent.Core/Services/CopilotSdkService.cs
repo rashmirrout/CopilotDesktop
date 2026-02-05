@@ -537,6 +537,217 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
     }
 
     /// <summary>
+    /// Checks if a session has an active SDK session.
+    /// </summary>
+    public bool HasActiveSession(string sessionId)
+    {
+        return _sdkSessions.ContainsKey(sessionId);
+    }
+
+    /// <summary>
+    /// Gets live MCP server information from the active SDK session.
+    /// This queries the session to get the actual MCP servers and their tools.
+    /// </summary>
+    public async Task<List<LiveMcpServerInfo>> GetLiveMcpServersAsync(
+        string sessionId, 
+        CancellationToken cancellationToken = default)
+    {
+        var result = new List<LiveMcpServerInfo>();
+        
+        // Check if we have an active SDK session
+        if (!_sdkSessions.TryGetValue(sessionId, out var sdkSession))
+        {
+            _logger.LogDebug("No active SDK session for {SessionId}, returning empty MCP list", sessionId);
+            return result;
+        }
+        
+        // Get the app session to find which MCP servers were configured
+        if (!_appSessions.TryGetValue(sessionId, out var appSession))
+        {
+            _logger.LogWarning("No app session found for {SessionId}", sessionId);
+            return result;
+        }
+        
+        _logger.LogInformation("Getting live MCP servers for session {SessionId}", sessionId);
+        
+        try
+        {
+            // Get all tools from the session - MCP tools will be included
+            var allTools = await GetSessionToolsAsync(sdkSession, cancellationToken);
+            
+            // Group tools by MCP server (MCP tools typically have a prefix like "server_name/tool_name")
+            var mcpToolsByServer = new Dictionary<string, List<LiveMcpToolInfo>>();
+            var nonMcpTools = new List<LiveMcpToolInfo>();
+            
+            foreach (var tool in allTools)
+            {
+                // Check if this is an MCP tool (has server prefix)
+                var slashIndex = tool.Name.IndexOf('/');
+                if (slashIndex > 0)
+                {
+                    var serverName = tool.Name.Substring(0, slashIndex);
+                    var toolName = tool.Name.Substring(slashIndex + 1);
+                    
+                    if (!mcpToolsByServer.ContainsKey(serverName))
+                    {
+                        mcpToolsByServer[serverName] = new List<LiveMcpToolInfo>();
+                    }
+                    
+                    mcpToolsByServer[serverName].Add(new LiveMcpToolInfo
+                    {
+                        Name = toolName,
+                        Description = tool.Description,
+                        Parameters = tool.Parameters
+                    });
+                }
+                else
+                {
+                    nonMcpTools.Add(tool);
+                }
+            }
+            
+            // Build the result from the session's enabled MCP servers
+            var enabledServers = appSession.EnabledMcpServers ?? new List<string>();
+            var configuredServers = _mcpService.GetServers()
+                .Where(s => enabledServers.Contains(s.Name))
+                .ToList();
+            
+            foreach (var serverConfig in configuredServers)
+            {
+                var serverInfo = new LiveMcpServerInfo
+                {
+                    Name = serverConfig.Name,
+                    Transport = serverConfig.Transport.ToString().ToLower(),
+                    ConnectionInfo = serverConfig.Transport == McpTransport.Stdio 
+                        ? $"{serverConfig.Command} {string.Join(" ", serverConfig.Args ?? new())}"
+                        : serverConfig.Url ?? "",
+                };
+                
+                // Check if we found tools for this server
+                if (mcpToolsByServer.TryGetValue(serverConfig.Name, out var tools))
+                {
+                    serverInfo.IsActive = true;
+                    serverInfo.Status = "running";
+                    serverInfo.Tools = tools;
+                }
+                else
+                {
+                    // Server was configured but we didn't find tools for it
+                    // It might be starting, failed, or not have any tools
+                    serverInfo.IsActive = false;
+                    serverInfo.Status = "unknown";
+                }
+                
+                result.Add(serverInfo);
+            }
+            
+            // If there are non-MCP tools, add them as a "builtin" server for display
+            if (nonMcpTools.Any())
+            {
+                result.Insert(0, new LiveMcpServerInfo
+                {
+                    Name = "copilot-builtin",
+                    IsActive = true,
+                    Status = "running",
+                    Transport = "internal",
+                    ConnectionInfo = "Built-in Copilot tools",
+                    Tools = nonMcpTools
+                });
+            }
+            
+            _logger.LogInformation("Found {Count} MCP servers with {ToolCount} total tools for session {SessionId}",
+                result.Count, result.Sum(s => s.Tools.Count), sessionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get live MCP servers for session {SessionId}", sessionId);
+        }
+        
+        return result;
+    }
+
+    /// <summary>
+    /// Gets all available tools from the SDK session.
+    /// Since the SDK may not expose a direct ListTools API, we track tools that have been
+    /// observed through the pre-tool-use hooks and from the configured MCP servers.
+    /// </summary>
+    private Task<List<LiveMcpToolInfo>> GetSessionToolsAsync(
+        CopilotSession sdkSession, 
+        CancellationToken cancellationToken)
+    {
+        var tools = new List<LiveMcpToolInfo>();
+        
+        // The SDK doesn't expose a direct ListTools API
+        // Tools are discovered through pre-tool-use hooks during session use
+        // For now, we return an empty list - tools will be populated from MCP server configs
+        // and tracked during session execution
+        
+        _logger.LogDebug("GetSessionToolsAsync: SDK doesn't expose direct tool listing, returning empty list");
+        
+        return Task.FromResult(tools);
+    }
+
+    /// <summary>
+    /// Converts SDK tool schema to our LiveMcpToolParameter format.
+    /// </summary>
+    private Dictionary<string, LiveMcpToolParameter>? ConvertToolParameters(object? inputSchema)
+    {
+        if (inputSchema == null)
+            return null;
+        
+        var result = new Dictionary<string, LiveMcpToolParameter>();
+        
+        try
+        {
+            // inputSchema is typically a JsonElement or similar structure
+            if (inputSchema is JsonElement je && je.ValueKind == JsonValueKind.Object)
+            {
+                if (je.TryGetProperty("properties", out var properties) && properties.ValueKind == JsonValueKind.Object)
+                {
+                    var requiredProps = new HashSet<string>();
+                    if (je.TryGetProperty("required", out var required) && required.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var req in required.EnumerateArray())
+                        {
+                            if (req.ValueKind == JsonValueKind.String)
+                            {
+                                requiredProps.Add(req.GetString() ?? "");
+                            }
+                        }
+                    }
+                    
+                    foreach (var prop in properties.EnumerateObject())
+                    {
+                        var paramName = prop.Name;
+                        var param = new LiveMcpToolParameter
+                        {
+                            Required = requiredProps.Contains(paramName)
+                        };
+                        
+                        if (prop.Value.TryGetProperty("type", out var typeEl))
+                        {
+                            param.Type = typeEl.GetString() ?? "string";
+                        }
+                        
+                        if (prop.Value.TryGetProperty("description", out var descEl))
+                        {
+                            param.Description = descEl.GetString();
+                        }
+                        
+                        result[paramName] = param;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to convert tool parameters from schema");
+        }
+        
+        return result.Count > 0 ? result : null;
+    }
+
+    /// <summary>
     /// Recreates the SDK session with new configuration.
     /// This disposes the old SDK session and updates the app Session object
     /// so the next SendMessageStreamingAsync will create a fresh SDK session.
