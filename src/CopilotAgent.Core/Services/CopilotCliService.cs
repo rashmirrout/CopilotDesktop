@@ -351,6 +351,35 @@ public class CopilotCliService : ICopilotService, IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Recreates a session with new options (model/directory change).
+    /// CLI mode is deprecated - this is a stub implementation.
+    /// </summary>
+    public Task RecreateSessionAsync(Session session, SessionRecreateOptions options, CancellationToken cancellationToken = default)
+    {
+        // CLI mode is being deprecated - just update the session object directly
+        // The CLI doesn't maintain persistent SDK sessions to recreate
+        
+        if (!string.IsNullOrEmpty(options.NewModel))
+        {
+            session.ModelId = options.NewModel;
+        }
+        
+        if (!string.IsNullOrEmpty(options.NewWorkingDirectory))
+        {
+            session.WorkingDirectory = options.NewWorkingDirectory;
+        }
+        
+        // Clear session tracking to start fresh
+        TerminateSessionProcess(session.SessionId);
+        session.CopilotSessionId = null;
+        
+        _logger.LogInformation("CLI session recreated for {SessionId} with model={Model}, dir={Dir}", 
+            session.SessionId, options.NewModel ?? "(unchanged)", options.NewWorkingDirectory ?? "(unchanged)");
+        
+        return Task.CompletedTask;
+    }
+
     private async Task<(int ExitCode, string Output)> ExecuteCopilotCommandAsync(string arguments)
     {
         var processInfo = new ProcessStartInfo

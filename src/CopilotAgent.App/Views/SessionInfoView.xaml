@@ -641,36 +641,42 @@
                     
                     <Button Style="{StaticResource CommandButtonStyle}" 
                             Command="{Binding ShowContextCommand}"
-                            IsEnabled="{Binding IsCommandRunning, Converter={StaticResource InverseBoolToVisibility}}">
+                            IsEnabled="False"
+                            ToolTip="Not available in SDK mode - Coming soon"
+                            ToolTipService.ShowOnDisabled="True">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="📊" FontSize="14" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel>
                                 <TextBlock Text="/context" FontWeight="SemiBold" FontSize="12"/>
-                                <TextBlock Text="Show token usage" FontSize="10" Foreground="#999"/>
+                                <TextBlock Text="Show token usage (SDK: Coming soon)" FontSize="10" Foreground="#999"/>
                             </StackPanel>
                         </StackPanel>
                     </Button>
                     
                     <Button Style="{StaticResource CommandButtonStyle}" 
                             Command="{Binding CompactSessionCommand}"
-                            IsEnabled="{Binding IsCommandRunning, Converter={StaticResource InverseBoolToVisibility}}">
+                            IsEnabled="False"
+                            ToolTip="Not available in SDK mode - Coming soon"
+                            ToolTipService.ShowOnDisabled="True">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="📦" FontSize="14" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel>
                                 <TextBlock Text="/compact" FontWeight="SemiBold" FontSize="12"/>
-                                <TextBlock Text="Reduce token usage" FontSize="10" Foreground="#999"/>
+                                <TextBlock Text="Reduce token usage (SDK: Coming soon)" FontSize="10" Foreground="#999"/>
                             </StackPanel>
                         </StackPanel>
                     </Button>
                     
                     <Button Style="{StaticResource CommandButtonStyle}" 
                             Command="{Binding ShowUsageCommand}"
-                            IsEnabled="{Binding IsCommandRunning, Converter={StaticResource InverseBoolToVisibility}}">
+                            IsEnabled="False"
+                            ToolTip="Not available in SDK mode - Coming soon"
+                            ToolTipService.ShowOnDisabled="True">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="📈" FontSize="14" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel>
                                 <TextBlock Text="/usage" FontWeight="SemiBold" FontSize="12"/>
-                                <TextBlock Text="Usage statistics" FontSize="10" Foreground="#999"/>
+                                <TextBlock Text="Usage statistics (SDK: Coming soon)" FontSize="10" Foreground="#999"/>
                             </StackPanel>
                         </StackPanel>
                     </Button>
@@ -693,12 +699,14 @@
                     
                     <Button Style="{StaticResource CommandButtonStyle}" 
                             Command="{Binding ListDirsCommand}"
-                            IsEnabled="{Binding IsCommandRunning, Converter={StaticResource InverseBoolToVisibility}}">
+                            IsEnabled="False"
+                            ToolTip="Not available in SDK mode - Coming soon"
+                            ToolTipService.ShowOnDisabled="True">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="📂" FontSize="14" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel>
                                 <TextBlock Text="/list-dirs" FontWeight="SemiBold" FontSize="12"/>
-                                <TextBlock Text="Allowed directories" FontSize="10" Foreground="#999"/>
+                                <TextBlock Text="Allowed directories (SDK: Coming soon)" FontSize="10" Foreground="#999"/>
                             </StackPanel>
                         </StackPanel>
                     </Button>
@@ -709,12 +717,14 @@
                     
                     <Button Style="{StaticResource CommandButtonStyle}" 
                             Command="{Binding ShowMcpServersCommand}"
-                            IsEnabled="{Binding IsCommandRunning, Converter={StaticResource InverseBoolToVisibility}}">
+                            IsEnabled="False"
+                            ToolTip="Not available in SDK mode - Coming soon"
+                            ToolTipService.ShowOnDisabled="True">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="🔌" FontSize="14" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel>
                                 <TextBlock Text="/mcp show" FontWeight="SemiBold" FontSize="12"/>
-                                <TextBlock Text="MCP server config" FontSize="10" Foreground="#999"/>
+                                <TextBlock Text="MCP server config (SDK: Coming soon)" FontSize="10" Foreground="#999"/>
                             </StackPanel>
                         </StackPanel>
                     </Button>
@@ -726,12 +736,14 @@
                     <Button Style="{StaticResource CommandButtonStyle}" 
                             Command="{Binding ClearHistoryCommand}"
                             Background="#FFF5F5" BorderBrush="#FFCDD2"
-                            IsEnabled="{Binding IsCommandRunning, Converter={StaticResource InverseBoolToVisibility}}">
+                            IsEnabled="False"
+                            ToolTip="Not available in SDK mode - Use 'New Session' instead"
+                            ToolTipService.ShowOnDisabled="True">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="🗑️" FontSize="14" Margin="0,0,10,0" VerticalAlignment="Center"/>
                             <StackPanel>
                                 <TextBlock Text="/clear" FontWeight="SemiBold" FontSize="12" Foreground="#D32F2F"/>
-                                <TextBlock Text="Clear history" FontSize="10" Foreground="#999"/>
+                                <TextBlock Text="Clear history (SDK: Use New Session)" FontSize="10" Foreground="#999"/>
                             </StackPanel>
                         </StackPanel>
                     </Button>

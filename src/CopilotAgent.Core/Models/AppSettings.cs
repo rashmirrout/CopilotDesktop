@@ -79,14 +79,6 @@ public class AppSettings
     public int MaxRecentSessions { get; set; } = 10;
 
     /// <summary>
-    /// Use SDK mode (recommended) for Copilot communication.
-    /// Set to false for legacy CLI mode using process spawning.
-    /// Default: true
-    /// </summary>
-    [JsonPropertyName("useSdkMode")]
-    public bool UseSdkMode { get; set; } = true;
-
-    /// <summary>
     /// How to display tool approval requests to the user.
     /// </summary>
     [JsonPropertyName("approvalUIMode")]

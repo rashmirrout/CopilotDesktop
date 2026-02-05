@@ -47,7 +47,7 @@ public partial class App : Application
             var persistenceService = new JsonPersistenceService(
                 Microsoft.Extensions.Logging.Abstractions.NullLoggerFactory.Instance.CreateLogger<JsonPersistenceService>());
             var appSettings = await Task.Run(() => persistenceService.LoadSettingsAsync());
-            Log.Debug("Settings loaded: UseSdkMode={UseSdkMode}", appSettings.UseSdkMode);
+            Log.Debug("Settings loaded");
 
             // Build host with DI
             _host = Host.CreateDefaultBuilder()
@@ -59,28 +59,13 @@ public partial class App : Application
                     // Core Services
                     services.AddSingleton<IPersistenceService, JsonPersistenceService>();
                     
-                    // Tool Approval Service (for SDK mode)
+                    // Tool Approval Service
                     services.AddSingleton<IToolApprovalService, ToolApprovalService>();
                     
-                    // Register both Copilot service implementations
+                    // Register Copilot SDK service (CLI service deprecated)
                     services.AddSingleton<CopilotSdkService>();
-                    services.AddSingleton<CopilotCliService>();
-                    
-                    // Select implementation based on feature flag
-                    services.AddSingleton<ICopilotService>(sp =>
-                    {
-                        var settings = sp.GetRequiredService<AppSettings>();
-                        if (settings.UseSdkMode)
-                        {
-                            Log.Information("Using SDK mode for Copilot communication");
-                            return sp.GetRequiredService<CopilotSdkService>();
-                        }
-                        else
-                        {
-                            Log.Information("Using legacy CLI mode for Copilot communication");
-                            return sp.GetRequiredService<CopilotCliService>();
-                        }
-                    });
+                    services.AddSingleton<ICopilotService>(sp => sp.GetRequiredService<CopilotSdkService>());
+                    Log.Information("Using SDK mode for Copilot communication");
                     
                     services.AddSingleton<ISessionManager, SessionManager>();
                     services.AddSingleton<ICommandPolicyService, CommandPolicyService>();
