@@ -18,12 +18,6 @@ public partial class SettingsDialogViewModel : ViewModelBase
     
     // Backing fields for settings (edited copies)
     [ObservableProperty]
-    private bool _useSdkMode;
-    
-    [ObservableProperty]
-    private bool _useCliMode;
-    
-    [ObservableProperty]
     private bool _approvalModeModal;
     
     [ObservableProperty]
@@ -75,10 +69,6 @@ public partial class SettingsDialogViewModel : ViewModelBase
     
     private void LoadFromSettings()
     {
-        // Backend mode
-        UseSdkMode = _settings.UseSdkMode;
-        UseCliMode = !_settings.UseSdkMode;
-        
         // Approval UI mode
         ApprovalModeModal = _settings.ApprovalUIMode == ApprovalUIMode.Modal;
         ApprovalModeInline = _settings.ApprovalUIMode == ApprovalUIMode.Inline;
@@ -113,16 +103,6 @@ public partial class SettingsDialogViewModel : ViewModelBase
                 parts.Add($"{sessionRules} session rule{(sessionRules != 1 ? "s" : "")}");
             ApprovalRulesSummary = string.Join(", ", parts);
         }
-    }
-    
-    partial void OnUseSdkModeChanged(bool value)
-    {
-        if (value) UseCliMode = false;
-    }
-    
-    partial void OnUseCliModeChanged(bool value)
-    {
-        if (value) UseSdkMode = false;
     }
     
     partial void OnApprovalModeModalChanged(bool value)
@@ -169,8 +149,6 @@ public partial class SettingsDialogViewModel : ViewModelBase
     private void Save()
     {
         // Apply settings
-        _settings.UseSdkMode = UseSdkMode;
-        
         if (ApprovalModeModal)
             _settings.ApprovalUIMode = ApprovalUIMode.Modal;
         else if (ApprovalModeInline)
@@ -213,9 +191,6 @@ public partial class SettingsDialogViewModel : ViewModelBase
         
         if (result == MessageBoxResult.Yes)
         {
-            UseSdkMode = true;
-            UseCliMode = false;
-            
             ApprovalModeModal = false;
             ApprovalModeInline = false;
             ApprovalModeBoth = true;

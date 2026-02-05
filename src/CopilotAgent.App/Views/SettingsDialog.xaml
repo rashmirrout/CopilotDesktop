@@ -73,34 +73,6 @@
                       Padding="24,24,24,8">
             <StackPanel>
                 
-                <!-- Backend Mode Section -->
-                <TextBlock Text="⚙️ Backend Mode" Style="{StaticResource SectionHeaderStyle}"/>
-                <Border Style="{StaticResource SectionBorderStyle}">
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource SettingsLabelStyle}"
-                                   Text="Choose how Copilot Agent communicates with GitHub Copilot:"/>
-                        
-                        <RadioButton Style="{StaticResource SettingsRadioStyle}"
-                                     IsChecked="{Binding UseSdkMode}"
-                                     GroupName="BackendMode">
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="SDK Mode " FontWeight="SemiBold"/>
-                                <TextBlock Text="(recommended)" Foreground="#4CAF50"/>
-                            </StackPanel>
-                        </RadioButton>
-                        <TextBlock Style="{StaticResource SublabelStyle}"
-                                   Text="Uses GitHub Copilot SDK with JSON-RPC. Enables tool approval, streaming, and advanced features."/>
-                        
-                        <RadioButton Style="{StaticResource SettingsRadioStyle}"
-                                     IsChecked="{Binding UseCliMode}"
-                                     GroupName="BackendMode">
-                            <TextBlock Text="CLI Mode (legacy)"/>
-                        </RadioButton>
-                        <TextBlock Style="{StaticResource SublabelStyle}"
-                                   Text="Uses gh copilot CLI process. Limited features, no tool approval support."/>
-                    </StackPanel>
-                </Border>
-                
                 <!-- Tool Approval Section -->
                 <TextBlock Text="🔔 Tool Approval" Style="{StaticResource SectionHeaderStyle}"/>
                 <Border Style="{StaticResource SectionBorderStyle}">

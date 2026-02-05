@@ -537,6 +537,63 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
     }
 
     /// <summary>
+    /// Recreates the SDK session with new configuration.
+    /// This disposes the old SDK session and updates the app Session object
+    /// so the next SendMessageStreamingAsync will create a fresh SDK session.
+    /// Message history in the app Session is preserved.
+    /// </summary>
+    public async Task RecreateSessionAsync(
+        Session session,
+        SessionRecreateOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation(
+            "Recreating session {SessionId} with options: Model={Model}, WorkDir={WorkDir}",
+            session.SessionId, options.NewModel ?? "(unchanged)", options.NewWorkingDirectory ?? "(unchanged)");
+
+        // 1. Dispose old SDK session if it exists
+        if (_sdkSessions.TryRemove(session.SessionId, out var oldSdkSession))
+        {
+            try
+            {
+                _logger.LogDebug("Disposing old SDK session for {SessionId}", session.SessionId);
+                await oldSdkSession.DisposeAsync();
+                _logger.LogInformation("Disposed old SDK session for {SessionId}", session.SessionId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error disposing old SDK session for {SessionId}", session.SessionId);
+            }
+        }
+
+        // Also clean up the app session reference
+        _appSessions.TryRemove(session.SessionId, out _);
+
+        // 2. Update app Session object with new values
+        if (!string.IsNullOrEmpty(options.NewModel))
+        {
+            _logger.LogDebug("Updating model from {Old} to {New}", session.ModelId, options.NewModel);
+            session.ModelId = options.NewModel;
+        }
+
+        if (!string.IsNullOrEmpty(options.NewWorkingDirectory))
+        {
+            _logger.LogDebug("Updating working directory from {Old} to {New}", 
+                session.WorkingDirectory, options.NewWorkingDirectory);
+            session.WorkingDirectory = options.NewWorkingDirectory;
+        }
+
+        // 3. Clear the CopilotSessionId to force new session creation
+        // The next SendMessageStreamingAsync will create a new SDK session
+        session.CopilotSessionId = null;
+
+        _logger.LogInformation(
+            "Session {SessionId} prepared for recreation. New config: Model={Model}, WorkDir={WorkDir}. " +
+            "New SDK session will be created on next message.",
+            session.SessionId, session.ModelId, session.WorkingDirectory);
+    }
+
+    /// <summary>
     /// Gets or creates an SDK session for the given app session.
     /// </summary>
     private async Task<CopilotSession> GetOrCreateSdkSessionAsync(
