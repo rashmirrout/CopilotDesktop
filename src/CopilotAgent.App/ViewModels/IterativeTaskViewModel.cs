@@ -9,7 +9,8 @@ using CopilotAgent.Core.Services;
 namespace CopilotAgent.App.ViewModels;
 
 /// <summary>
-/// ViewModel for iterative task panel
+/// ViewModel for iterative task panel with drill-down history and proper button states.
+/// Shows detailed tool execution history for each iteration.
 /// </summary>
 public partial class IterativeTaskViewModel : ViewModelBase
 {
@@ -33,25 +34,34 @@ public partial class IterativeTaskViewModel : ViewModelBase
     private ObservableCollection<IterationResult> _iterations = new();
 
     [ObservableProperty]
+    private IterationResult? _selectedIteration;
+
+    [ObservableProperty]
     private string _statusText = "No task configured";
 
     [ObservableProperty]
     private string _statusColor = "#757575";
 
     [ObservableProperty]
-    private bool _canStart;
+    private string _currentToolText = string.Empty;
 
     [ObservableProperty]
-    private bool _canStop;
+    private bool _isRunning;
 
     [ObservableProperty]
-    private bool _canClear;
+    private bool _isIdle = true;
+
+    [ObservableProperty]
+    private bool _hasHistory;
 
     [ObservableProperty]
     private bool _hasTask;
 
     [ObservableProperty]
     private int _progressPercent;
+
+    [ObservableProperty]
+    private bool _showProgress;
 
     public IterativeTaskViewModel(
         IIterativeTaskService taskService,
@@ -62,7 +72,28 @@ public partial class IterativeTaskViewModel : ViewModelBase
 
         _taskService.TaskStatusChanged += OnTaskStatusChanged;
         _taskService.IterationCompleted += OnIterationCompleted;
+        _taskService.IterationProgress += OnIterationProgress;
     }
+
+    /// <summary>
+    /// Computed property for Start button enabled state.
+    /// Enabled when idle and task is configured.
+    /// </summary>
+    public bool CanStart => IsIdle && 
+                            !string.IsNullOrWhiteSpace(TaskDescription) && 
+                            !string.IsNullOrWhiteSpace(SuccessCriteria);
+
+    /// <summary>
+    /// Computed property for Stop button enabled state.
+    /// Enabled only when running.
+    /// </summary>
+    public bool CanStop => IsRunning;
+
+    /// <summary>
+    /// Computed property for Clear button enabled state.
+    /// Enabled when idle and has history.
+    /// </summary>
+    public bool CanClear => IsIdle && HasHistory;
 
     public void SetSession(string sessionId)
     {
@@ -83,6 +114,7 @@ public partial class IterativeTaskViewModel : ViewModelBase
             SuccessCriteria = CurrentTask.SuccessCriteria;
             MaxIterations = CurrentTask.MaxIterations;
             
+            // Load iteration history
             Iterations.Clear();
             foreach (var iteration in CurrentTask.State.Iterations)
             {
@@ -90,16 +122,25 @@ public partial class IterativeTaskViewModel : ViewModelBase
             }
 
             HasTask = true;
+            HasHistory = Iterations.Count > 0;
+            IsRunning = CurrentTask.State.Status == IterativeTaskStatus.Running;
+            IsIdle = !IsRunning;
+            ShowProgress = IsRunning;
+            
             UpdateStatusFromTask();
         }
         else
         {
             HasTask = false;
+            HasHistory = false;
+            IsRunning = false;
+            IsIdle = true;
+            ShowProgress = false;
             Iterations.Clear();
             UpdateStatus(IterativeTaskStatus.NotStarted);
         }
 
-        UpdateCommandStates();
+        NotifyButtonStates();
     }
 
     private void OnTaskStatusChanged(object? sender, TaskStatusChangedEventArgs e)
@@ -109,6 +150,15 @@ public partial class IterativeTaskViewModel : ViewModelBase
 
         Application.Current.Dispatcher.Invoke(() =>
         {
+            IsRunning = e.NewStatus == IterativeTaskStatus.Running;
+            IsIdle = !IsRunning;
+            ShowProgress = IsRunning;
+            
+            if (!IsRunning)
+            {
+                CurrentToolText = string.Empty;
+            }
+            
             LoadTask();
         });
     }
@@ -120,8 +170,63 @@ public partial class IterativeTaskViewModel : ViewModelBase
 
         Application.Current.Dispatcher.Invoke(() =>
         {
-            Iterations.Add(e.Iteration);
+            // Add or update the iteration in the collection
+            var existing = Iterations.FirstOrDefault(i => i.IterationNumber == e.Iteration.IterationNumber);
+            if (existing != null)
+            {
+                var index = Iterations.IndexOf(existing);
+                Iterations[index] = e.Iteration;
+            }
+            else
+            {
+                Iterations.Add(e.Iteration);
+            }
+            
+            HasHistory = Iterations.Count > 0;
             UpdateProgressFromTask();
+            NotifyButtonStates();
+        });
+    }
+
+    private void OnIterationProgress(object? sender, IterationProgressEventArgs e)
+    {
+        if (e.SessionId != _currentSessionId)
+            return;
+
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            // Update current tool being executed
+            switch (e.ProgressType)
+            {
+                case IterationProgressType.Started:
+                    CurrentToolText = $"Iteration {e.IterationNumber} started...";
+                    break;
+                    
+                case IterationProgressType.ToolStarted:
+                    CurrentToolText = $"⚡ {e.Message ?? $"Executing {e.ToolName}..."}";
+                    break;
+                    
+                case IterationProgressType.ToolCompleted:
+                    CurrentToolText = $"✓ {e.Message ?? $"Completed {e.ToolName}"}";
+                    break;
+                    
+                case IterationProgressType.Reasoning:
+                    CurrentToolText = "🤔 Agent is thinking...";
+                    break;
+                    
+                case IterationProgressType.AssistantMessage:
+                    CurrentToolText = "📝 Processing response...";
+                    break;
+                    
+                case IterationProgressType.WaitingForApproval:
+                    CurrentToolText = "⏳ Waiting for approval...";
+                    break;
+                    
+                default:
+                    if (!string.IsNullOrEmpty(e.Message))
+                        CurrentToolText = e.Message;
+                    break;
+            }
         });
     }
 
@@ -152,36 +257,46 @@ public partial class IterativeTaskViewModel : ViewModelBase
     {
         (StatusText, StatusColor) = status switch
         {
-            IterativeTaskStatus.NotStarted => ("Not Started", "#757575"),
-            IterativeTaskStatus.Running => ($"Running... Iteration {CurrentTask?.State.CurrentIteration ?? 0}/{MaxIterations}", "#1976D2"),
-            IterativeTaskStatus.Completed => ("✓ Completed", "#4CAF50"),
-            IterativeTaskStatus.Failed => ("✗ Failed", "#D32F2F"),
-            IterativeTaskStatus.Stopped => ("⏸ Stopped", "#FF9800"),
-            IterativeTaskStatus.MaxIterationsReached => ("⚠ Max Iterations Reached", "#FF9800"),
-            _ => ("Unknown", "#757575")
+            IterativeTaskStatus.NotStarted => ("Ready to start", "#757575"),
+            IterativeTaskStatus.Running => ($"Running iteration {CurrentTask?.State.CurrentIteration ?? 0}/{MaxIterations}...", "#1976D2"),
+            IterativeTaskStatus.Completed => ("✓ Task completed successfully", "#4CAF50"),
+            IterativeTaskStatus.Failed => ("✗ Task failed", "#D32F2F"),
+            IterativeTaskStatus.Stopped => ("⏸ Task stopped by user", "#FF9800"),
+            IterativeTaskStatus.MaxIterationsReached => ("⚠ Max iterations reached", "#FF9800"),
+            _ => ("Unknown status", "#757575")
         };
 
         if (CurrentTask?.State.CompletionReason != null && status != IterativeTaskStatus.Running)
         {
-            StatusText += $": {CurrentTask.State.CompletionReason}";
+            // For non-running states, show reason on a new line if it adds value
+            if (!StatusText.Contains(CurrentTask.State.CompletionReason))
+            {
+                // Keep status text concise
+            }
         }
     }
 
-    private void UpdateCommandStates()
+    private void NotifyButtonStates()
     {
-        var status = CurrentTask?.State.Status ?? IterativeTaskStatus.NotStarted;
+        OnPropertyChanged(nameof(CanStart));
+        OnPropertyChanged(nameof(CanStop));
+        OnPropertyChanged(nameof(CanClear));
         
-        CanStart = !string.IsNullOrWhiteSpace(TaskDescription) && 
-                   !string.IsNullOrWhiteSpace(SuccessCriteria) &&
-                   status != IterativeTaskStatus.Running;
-        
-        CanStop = status == IterativeTaskStatus.Running;
-        
-        CanClear = HasTask && status != IterativeTaskStatus.Running;
+        // Also notify the RelayCommands to re-evaluate their CanExecute
+        StartTaskCommand.NotifyCanExecuteChanged();
+        StopTaskCommand.NotifyCanExecuteChanged();
+        ClearTaskCommand.NotifyCanExecuteChanged();
     }
 
-    partial void OnTaskDescriptionChanged(string value) => UpdateCommandStates();
-    partial void OnSuccessCriteriaChanged(string value) => UpdateCommandStates();
+    partial void OnTaskDescriptionChanged(string value) => NotifyButtonStates();
+    partial void OnSuccessCriteriaChanged(string value) => NotifyButtonStates();
+    partial void OnIsRunningChanged(bool value)
+    {
+        IsIdle = !value;
+        NotifyButtonStates();
+    }
+    partial void OnIsIdleChanged(bool value) => NotifyButtonStates();
+    partial void OnHasHistoryChanged(bool value) => NotifyButtonStates();
 
     [RelayCommand]
     private void CreateTask()
@@ -201,7 +316,7 @@ public partial class IterativeTaskViewModel : ViewModelBase
         _logger.LogInformation("Created task for session {SessionId}", _currentSessionId);
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartTaskAsync()
     {
         if (string.IsNullOrEmpty(_currentSessionId))
@@ -212,8 +327,11 @@ public partial class IterativeTaskViewModel : ViewModelBase
             CreateTask();
         }
 
-        IsBusy = true;
-        UpdateCommandStates();
+        IsRunning = true;
+        IsIdle = false;
+        ShowProgress = true;
+        CurrentToolText = "Initializing...";
+        NotifyButtonStates();
 
         try
         {
@@ -226,29 +344,53 @@ public partial class IterativeTaskViewModel : ViewModelBase
         }
         finally
         {
-            IsBusy = false;
-            UpdateCommandStates();
+            IsRunning = false;
+            IsIdle = true;
+            ShowProgress = false;
+            CurrentToolText = string.Empty;
+            NotifyButtonStates();
         }
     }
 
-    [RelayCommand]
-    private void StopTask()
+    [RelayCommand(CanExecute = nameof(CanStop))]
+    private async Task StopTaskAsync()
     {
         if (string.IsNullOrEmpty(_currentSessionId))
             return;
 
-        _taskService.StopTask(_currentSessionId);
-        _logger.LogInformation("Stopped task for session {SessionId}", _currentSessionId);
+        CurrentToolText = "Stopping...";
+        
+        try
+        {
+            await _taskService.StopTaskAsync(_currentSessionId);
+            _logger.LogInformation("Stopped task for session {SessionId}", _currentSessionId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error stopping task");
+            MessageBox.Show($"Error stopping task: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            IsRunning = false;
+            IsIdle = true;
+            ShowProgress = false;
+            CurrentToolText = string.Empty;
+            NotifyButtonStates();
+        }
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanClear))]
     private void ClearTask()
     {
         if (string.IsNullOrEmpty(_currentSessionId))
             return;
 
-        var result = MessageBox.Show("Clear this task and all iteration history?", 
-            "Confirm Clear", MessageBoxButton.YesNo, MessageBoxImage.Question);
+        var result = MessageBox.Show(
+            "Clear this task and all iteration history?\n\nThis will remove all recorded tool executions and results.", 
+            "Confirm Clear", 
+            MessageBoxButton.YesNo, 
+            MessageBoxImage.Question);
 
         if (result == MessageBoxResult.Yes)
         {
@@ -259,8 +401,11 @@ public partial class IterativeTaskViewModel : ViewModelBase
             Iterations.Clear();
             CurrentTask = null;
             HasTask = false;
+            HasHistory = false;
+            SelectedIteration = null;
+            CurrentToolText = string.Empty;
             UpdateStatus(IterativeTaskStatus.NotStarted);
-            UpdateCommandStates();
+            NotifyButtonStates();
             _logger.LogInformation("Cleared task for session {SessionId}", _currentSessionId);
         }
     }

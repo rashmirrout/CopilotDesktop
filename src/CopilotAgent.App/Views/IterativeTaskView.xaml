@@ -6,12 +6,21 @@
              xmlns:vm="clr-namespace:CopilotAgent.App.ViewModels"
              xmlns:converters="clr-namespace:CopilotAgent.App.Converters"
              mc:Ignorable="d"
-             d:DesignHeight="500" d:DesignWidth="800"
+             d:DesignHeight="600" d:DesignWidth="800"
              d:DataContext="{d:DesignInstance Type=vm:IterativeTaskViewModel}"
              Background="White">
     
     <UserControl.Resources>
         <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility"/>
+        <converters:BoolToVisibilityConverter x:Key="BoolToVisibility"/>
+        <converters:StringToVisibilityConverter x:Key="StringToVisibility"/>
+        
+        <!-- Status color brush -->
+        <SolidColorBrush x:Key="CompletedBrush" Color="#4CAF50"/>
+        <SolidColorBrush x:Key="FailedBrush" Color="#F44336"/>
+        <SolidColorBrush x:Key="RunningBrush" Color="#2196F3"/>
+        <SolidColorBrush x:Key="CancelledBrush" Color="#FF9800"/>
+        <SolidColorBrush x:Key="PendingBrush" Color="#9E9E9E"/>
     </UserControl.Resources>
     
     <Grid Margin="16">
@@ -33,9 +42,10 @@
                            FontSize="18" 
                            FontWeight="SemiBold"
                            Foreground="#1976D2"/>
-                <TextBlock Text="Define a task with success criteria, and the agent will iterate until complete."
+                <TextBlock Text="Define a task with success criteria, and the agent will iterate until complete. Click on iterations to view detailed tool execution history."
                            FontSize="12"
                            Foreground="#424242"
+                           TextWrapping="Wrap"
                            Margin="0,4,0,0"/>
             </StackPanel>
         </Border>
@@ -73,7 +83,8 @@
                          Height="60"
                          VerticalScrollBarVisibility="Auto"
                          Margin="0,0,0,12"
-                         Padding="8"/>
+                         Padding="8"
+                         IsEnabled="{Binding IsIdle}"/>
 
                 <!-- Success Criteria -->
                 <TextBlock Grid.Row="1" Grid.Column="0"
@@ -88,7 +99,8 @@
                          Height="60"
                          VerticalScrollBarVisibility="Auto"
                          Margin="0,0,0,12"
-                         Padding="8"/>
+                         Padding="8"
+                         IsEnabled="{Binding IsIdle}"/>
 
                 <!-- Max Iterations -->
                 <TextBlock Grid.Row="2" Grid.Column="0"
@@ -103,7 +115,8 @@
                             Minimum="1"
                             Maximum="50"
                             Width="200"
-                            VerticalAlignment="Center"/>
+                            VerticalAlignment="Center"
+                            IsEnabled="{Binding IsIdle}"/>
                     <TextBlock Text="{Binding MaxIterations}"
                                FontWeight="SemiBold"
                                Width="30"
@@ -112,20 +125,22 @@
                                Margin="12,0,0,0"/>
                 </StackPanel>
 
-                <!-- Action Buttons -->
+                <!-- Action Buttons with proper enabled/disabled states -->
                 <StackPanel Grid.Row="3" Grid.Column="1"
                             Orientation="Horizontal">
-                    <Button Content="▶ Start Task"
+                    <!-- Start Button -->
+                    <Button Content="▶ Start"
                             Command="{Binding StartTaskCommand}"
                             IsEnabled="{Binding CanStart}"
-                            Background="#4CAF50"
-                            Foreground="White"
-                            BorderThickness="0"
-                            Padding="16,8"
+                            Width="100"
                             Margin="0,0,8,0"
                             Cursor="Hand">
                         <Button.Style>
                             <Style TargetType="Button">
+                                <Setter Property="Background" Value="#4CAF50"/>
+                                <Setter Property="Foreground" Value="White"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="16,8"/>
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="Button">
@@ -141,6 +156,7 @@
                                 <Style.Triggers>
                                     <Trigger Property="IsEnabled" Value="False">
                                         <Setter Property="Background" Value="#BDBDBD"/>
+                                        <Setter Property="Foreground" Value="#9E9E9E"/>
                                     </Trigger>
                                     <Trigger Property="IsMouseOver" Value="True">
                                         <Setter Property="Background" Value="#388E3C"/>
@@ -150,17 +166,19 @@
                         </Button.Style>
                     </Button>
                     
+                    <!-- Stop Button -->
                     <Button Content="⏹ Stop"
                             Command="{Binding StopTaskCommand}"
                             IsEnabled="{Binding CanStop}"
-                            Background="#D32F2F"
-                            Foreground="White"
-                            BorderThickness="0"
-                            Padding="16,8"
+                            Width="100"
                             Margin="0,0,8,0"
                             Cursor="Hand">
                         <Button.Style>
                             <Style TargetType="Button">
+                                <Setter Property="Background" Value="#D32F2F"/>
+                                <Setter Property="Foreground" Value="White"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="16,8"/>
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="Button">
@@ -176,6 +194,7 @@
                                 <Style.Triggers>
                                     <Trigger Property="IsEnabled" Value="False">
                                         <Setter Property="Background" Value="#BDBDBD"/>
+                                        <Setter Property="Foreground" Value="#9E9E9E"/>
                                     </Trigger>
                                     <Trigger Property="IsMouseOver" Value="True">
                                         <Setter Property="Background" Value="#B71C1C"/>
@@ -185,16 +204,18 @@
                         </Button.Style>
                     </Button>
                     
+                    <!-- Clear Button -->
                     <Button Content="🗑 Clear"
                             Command="{Binding ClearTaskCommand}"
                             IsEnabled="{Binding CanClear}"
-                            Background="#757575"
-                            Foreground="White"
-                            BorderThickness="0"
-                            Padding="16,8"
+                            Width="100"
                             Cursor="Hand">
                         <Button.Style>
                             <Style TargetType="Button">
+                                <Setter Property="Background" Value="#757575"/>
+                                <Setter Property="Foreground" Value="White"/>
+                                <Setter Property="BorderThickness" Value="0"/>
+                                <Setter Property="Padding" Value="16,8"/>
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="Button">
@@ -210,6 +231,7 @@
                                 <Style.Triggers>
                                     <Trigger Property="IsEnabled" Value="False">
                                         <Setter Property="Background" Value="#BDBDBD"/>
+                                        <Setter Property="Foreground" Value="#9E9E9E"/>
                                     </Trigger>
                                     <Trigger Property="IsMouseOver" Value="True">
                                         <Setter Property="Background" Value="#616161"/>
@@ -233,8 +255,12 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
 
-                <StackPanel Grid.Column="0">
+                <StackPanel Grid.Column="0" Grid.Row="0">
                     <TextBlock Text="Status" 
                                FontSize="11" 
                                Foreground="#757575"
@@ -245,7 +271,7 @@
                                Foreground="{Binding StatusColor}"/>
                 </StackPanel>
 
-                <StackPanel Grid.Column="1" 
+                <StackPanel Grid.Column="1" Grid.Row="0"
                             VerticalAlignment="Center"
                             Width="150">
                     <TextBlock Text="{Binding ProgressPercent, StringFormat='{}{0}%'}"
@@ -257,10 +283,19 @@
                                  Background="#E0E0E0"
                                  Foreground="#1976D2"/>
                 </StackPanel>
+                
+                <!-- Current tool indicator (visible only when running) -->
+                <TextBlock Grid.Row="1" Grid.ColumnSpan="2"
+                           Text="{Binding CurrentToolText}"
+                           FontSize="12"
+                           Foreground="#1976D2"
+                           FontStyle="Italic"
+                           Margin="0,8,0,0"
+                           Visibility="{Binding ShowProgress, Converter={StaticResource BoolToVisibility}}"/>
             </Grid>
         </Border>
 
-        <!-- Iteration History -->
+        <!-- Iteration History with Drill-Down -->
         <Border Grid.Row="3" 
                 Background="#FAFAFA" 
                 CornerRadius="8" 
@@ -275,102 +310,276 @@
                 <Border Grid.Row="0" 
                         Background="#EEEEEE" 
                         Padding="12,8">
-                    <TextBlock Text="📋 Iteration History" 
-                               FontWeight="SemiBold"
-                               Foreground="#424242"/>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="📋 Iteration History" 
+                                   FontWeight="SemiBold"
+                                   Foreground="#424242"/>
+                        <TextBlock Text="{Binding Iterations.Count, StringFormat=' ({0} iterations)'}"
+                                   Foreground="#757575"
+                                   FontSize="12"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
                 </Border>
 
-                <ListView Grid.Row="1"
-                          ItemsSource="{Binding Iterations}"
-                          BorderThickness="0"
-                          Background="Transparent"
-                          ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                    <ListView.ItemTemplate>
-                        <DataTemplate>
-                            <Border Margin="8,4"
-                                    Padding="12"
-                                    CornerRadius="6"
-                                    BorderThickness="1"
-                                    BorderBrush="#E0E0E0">
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Setter Property="Background" Value="White"/>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsComplete}" Value="True">
-                                                <Setter Property="Background" Value="#E8F5E9"/>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto"/>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-
-                                    <Border Grid.Column="0"
-                                            Width="32"
-                                            Height="32"
-                                            CornerRadius="16"
-                                            Background="#1976D2"
-                                            Margin="0,0,12,0">
-                                        <TextBlock Text="{Binding IterationNumber}"
-                                                   Foreground="White"
-                                                   FontWeight="Bold"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"/>
+                <!-- Iteration List with Expanders -->
+                <ScrollViewer Grid.Row="1" 
+                              VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding Iterations}"
+                                  Margin="8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Expander Margin="0,4,0,4">
+                                    <!-- Iteration Header -->
+                                    <Expander.Header>
+                                        <Grid Width="{Binding RelativeSource={RelativeSource AncestorType=Expander}, Path=ActualWidth}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            
+                                            <!-- Iteration Number Badge -->
+                                            <Border Grid.Column="0"
+                                                    Width="28"
+                                                    Height="28"
+                                                    CornerRadius="14"
+                                                    Margin="0,0,10,0">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Background" Value="#1976D2"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Status}" Value="Completed">
+                                                                <Setter Property="Background" Value="#4CAF50"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Status}" Value="Failed">
+                                                                <Setter Property="Background" Value="#F44336"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Status}" Value="Cancelled">
+                                                                <Setter Property="Background" Value="#FF9800"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Status}" Value="Running">
+                                                                <Setter Property="Background" Value="#2196F3"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <TextBlock Text="{Binding IterationNumber}"
+                                                           Foreground="White"
+                                                           FontWeight="Bold"
+                                                           FontSize="11"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"/>
+                                            </Border>
+                                            
+                                            <!-- Summary -->
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding Summary}"
+                                                       FontWeight="Medium"
+                                                       VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Margin="0,0,10,0"/>
+                                            
+                                            <!-- Duration -->
+                                            <TextBlock Grid.Column="2"
+                                                       Text="{Binding DurationMs, StringFormat='{}{0}ms'}"
+                                                       FontSize="11"
+                                                       Foreground="#757575"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,10,0"/>
+                                            
+                                            <!-- Status Icon -->
+                                            <TextBlock Grid.Column="3" 
+                                                       FontSize="14"
+                                                       VerticalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Text" Value="⏳"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding Status}" Value="Completed">
+                                                                <Setter Property="Text" Value="✅"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Status}" Value="Failed">
+                                                                <Setter Property="Text" Value="❌"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Status}" Value="Cancelled">
+                                                                <Setter Property="Text" Value="⏸"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding Status}" Value="Running">
+                                                                <Setter Property="Text" Value="🔄"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </Grid>
+                                    </Expander.Header>
+                                    
+                                    <!-- Iteration Details (Expanded Content) -->
+                                    <Border Background="White" 
+                                            Padding="16" 
+                                            Margin="38,0,0,0"
+                                            BorderBrush="#E0E0E0"
+                                            BorderThickness="1,0,1,1"
+                                            CornerRadius="0,0,6,6">
+                                        <StackPanel>
+                                            <!-- Agent Reasoning Section -->
+                                            <StackPanel Visibility="{Binding HasReasoning, Converter={StaticResource BoolToVisibility}}"
+                                                        Margin="0,0,0,12">
+                                                <TextBlock Text="🤔 Agent Reasoning" 
+                                                           FontWeight="SemiBold" 
+                                                           FontSize="12"
+                                                           Foreground="#424242"
+                                                           Margin="0,0,0,6"/>
+                                                <ItemsControl ItemsSource="{Binding AgentReasoning}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <Border Background="#FFF8E1" 
+                                                                    Padding="10" 
+                                                                    Margin="0,0,0,4"
+                                                                    CornerRadius="4">
+                                                                <TextBlock Text="{Binding Content}"
+                                                                           TextWrapping="Wrap"
+                                                                           FontStyle="Italic"
+                                                                           FontSize="12"
+                                                                           Foreground="#5D4037"/>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </StackPanel>
+                                            
+                                            <!-- Tool Executions Section -->
+                                            <TextBlock Text="🔧 Tool Executions" 
+                                                       FontWeight="SemiBold" 
+                                                       FontSize="12"
+                                                       Foreground="#424242"
+                                                       Margin="0,0,0,6"/>
+                                            
+                                            <!-- No tools message -->
+                                            <TextBlock Text="No tools executed in this iteration"
+                                                       FontStyle="Italic"
+                                                       Foreground="#9E9E9E"
+                                                       FontSize="12"
+                                                       Margin="0,0,0,8">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ToolExecutions.Count}" Value="0">
+                                                                <Setter Property="Visibility" Value="Visible"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            
+                                            <!-- Tool execution list -->
+                                            <ItemsControl ItemsSource="{Binding ToolExecutions}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Expander Margin="0,0,0,6">
+                                                            <Expander.Header>
+                                                                <Grid>
+                                                                    <Grid.ColumnDefinitions>
+                                                                        <ColumnDefinition Width="*"/>
+                                                                        <ColumnDefinition Width="Auto"/>
+                                                                    </Grid.ColumnDefinitions>
+                                                                    <TextBlock Grid.Column="0"
+                                                                               Text="{Binding ToolDisplayHeader}"
+                                                                               FontSize="12"/>
+                                                                    <TextBlock Grid.Column="1"
+                                                                               Text="{Binding DurationText}"
+                                                                               FontSize="10"
+                                                                               Foreground="#757575"
+                                                                               Margin="10,0,0,0"/>
+                                                                </Grid>
+                                                            </Expander.Header>
+                                                            
+                                                            <!-- Tool Details -->
+                                                            <Border Background="#FAFAFA" 
+                                                                    Padding="12" 
+                                                                    Margin="20,4,0,0"
+                                                                    CornerRadius="4"
+                                                                    BorderBrush="#E0E0E0"
+                                                                    BorderThickness="1">
+                                                                <StackPanel>
+                                                                    <!-- Arguments -->
+                                                                    <TextBlock Text="Arguments:" 
+                                                                               FontWeight="SemiBold" 
+                                                                               FontSize="11"
+                                                                               Foreground="#616161"/>
+                                                                    <TextBlock Text="{Binding ArgumentsSummary}"
+                                                                               TextWrapping="Wrap"
+                                                                               FontSize="11"
+                                                                               Foreground="#424242"
+                                                                               Margin="0,2,0,8"/>
+                                                                    
+                                                                    <!-- Result -->
+                                                                    <TextBlock Text="Result:" 
+                                                                               FontWeight="SemiBold" 
+                                                                               FontSize="11"
+                                                                               Foreground="#616161"/>
+                                                                    <TextBox Text="{Binding Result, Mode=OneWay}"
+                                                                             IsReadOnly="True"
+                                                                             TextWrapping="Wrap"
+                                                                             FontSize="11"
+                                                                             MaxHeight="150"
+                                                                             VerticalScrollBarVisibility="Auto"
+                                                                             Background="Transparent"
+                                                                             BorderThickness="0"
+                                                                             Margin="0,2,0,0"/>
+                                                                    
+                                                                    <!-- Error (if any) -->
+                                                                    <StackPanel Visibility="{Binding Error, Converter={StaticResource StringToVisibility}}">
+                                                                        <TextBlock Text="Error:" 
+                                                                                   FontWeight="SemiBold" 
+                                                                                   FontSize="11"
+                                                                                   Foreground="#D32F2F"
+                                                                                   Margin="0,8,0,0"/>
+                                                                        <TextBlock Text="{Binding Error}"
+                                                                                   TextWrapping="Wrap"
+                                                                                   FontSize="11"
+                                                                                   Foreground="#D32F2F"/>
+                                                                    </StackPanel>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </Expander>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                            
+                                            <!-- Evaluation -->
+                                            <Border Background="#E8F5E9" 
+                                                    Padding="10" 
+                                                    CornerRadius="4"
+                                                    Margin="0,12,0,0">
+                                                <StackPanel>
+                                                    <TextBlock Text="📊 Evaluation" 
+                                                               FontWeight="SemiBold" 
+                                                               FontSize="11"
+                                                               Foreground="#2E7D32"
+                                                               Margin="0,0,0,4"/>
+                                                    <TextBlock Text="{Binding Evaluation}"
+                                                               TextWrapping="Wrap"
+                                                               FontSize="12"
+                                                               Foreground="#424242"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </StackPanel>
                                     </Border>
-
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="{Binding Action}"
-                                                   FontWeight="SemiBold"
-                                                   TextWrapping="Wrap"/>
-                                        <TextBlock Text="{Binding Result}"
-                                                   Foreground="#616161"
-                                                   FontSize="12"
-                                                   TextWrapping="Wrap"
-                                                   Margin="0,2,0,0"/>
-                                        <TextBlock Text="{Binding Evaluation}"
-                                                   Foreground="#757575"
-                                                   FontSize="11"
-                                                   FontStyle="Italic"
-                                                   TextWrapping="Wrap"
-                                                   Margin="0,4,0,0"/>
-                                    </StackPanel>
-
-                                    <StackPanel Grid.Column="2" 
-                                                VerticalAlignment="Top"
-                                                Margin="12,0,0,0">
-                                        <TextBlock Text="{Binding DurationMs, StringFormat='{}{0}ms'}"
-                                                   FontSize="11"
-                                                   Foreground="#757575"/>
-                                        <TextBlock FontSize="16" 
-                                                   HorizontalAlignment="Center"
-                                                   Margin="0,4,0,0">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Text" Value="⏳"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding IsComplete}" Value="True">
-                                                            <Setter Property="Text" Value="✅"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </StackPanel>
-                                </Grid>
-                            </Border>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
+                                </Expander>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
 
                 <!-- Empty State -->
                 <StackPanel Grid.Row="1"
                             HorizontalAlignment="Center"
                             VerticalAlignment="Center"
-                            Visibility="{Binding HasTask, Converter={StaticResource InverseBoolToVisibility}}">
+                            Visibility="{Binding HasHistory, Converter={StaticResource InverseBoolToVisibility}}">
                     <TextBlock Text="🚀" FontSize="48" HorizontalAlignment="Center"/>
                     <TextBlock Text="No iterations yet"
                                FontSize="14"
