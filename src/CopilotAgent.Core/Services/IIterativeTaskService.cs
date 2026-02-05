@@ -37,6 +37,62 @@ public class IterationCompletedEventArgs : EventArgs
 }
 
 /// <summary>
+/// Event arguments for iteration progress updates (tool execution, reasoning, etc.)
+/// </summary>
+public class IterationProgressEventArgs : EventArgs
+{
+    public string SessionId { get; }
+    public int IterationNumber { get; }
+    public IterationProgressType ProgressType { get; }
+    public string? ToolName { get; }
+    public string? ToolCallId { get; }
+    public string? Message { get; }
+
+    public IterationProgressEventArgs(
+        string sessionId,
+        int iterationNumber,
+        IterationProgressType progressType,
+        string? toolName = null,
+        string? toolCallId = null,
+        string? message = null)
+    {
+        SessionId = sessionId;
+        IterationNumber = iterationNumber;
+        ProgressType = progressType;
+        ToolName = toolName;
+        ToolCallId = toolCallId;
+        Message = message;
+    }
+}
+
+/// <summary>
+/// Types of progress updates during an iteration
+/// </summary>
+public enum IterationProgressType
+{
+    /// <summary>Iteration has started</summary>
+    Started,
+    
+    /// <summary>A tool is starting execution</summary>
+    ToolStarted,
+    
+    /// <summary>A tool has completed</summary>
+    ToolCompleted,
+    
+    /// <summary>Agent is reasoning/thinking</summary>
+    Reasoning,
+    
+    /// <summary>Assistant message received</summary>
+    AssistantMessage,
+    
+    /// <summary>Iteration is waiting for approval</summary>
+    WaitingForApproval,
+    
+    /// <summary>General progress message</summary>
+    Progress
+}
+
+/// <summary>
 /// Service for managing iterative agent tasks
 /// </summary>
 public interface IIterativeTaskService
@@ -50,6 +106,11 @@ public interface IIterativeTaskService
     /// Raised when an iteration completes
     /// </summary>
     event EventHandler<IterationCompletedEventArgs>? IterationCompleted;
+
+    /// <summary>
+    /// Raised when there's progress during an iteration (tool execution, reasoning, etc.)
+    /// </summary>
+    event EventHandler<IterationProgressEventArgs>? IterationProgress;
 
     /// <summary>
     /// Gets the current task for a session, if any
@@ -67,12 +128,12 @@ public interface IIterativeTaskService
     Task StartTaskAsync(string sessionId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Stops a running task
+    /// Stops a running task gracefully (uses cancellation token and SDK abort)
     /// </summary>
-    void StopTask(string sessionId);
+    Task StopTaskAsync(string sessionId);
 
     /// <summary>
-    /// Clears a task from a session
+    /// Clears a task from a session (removes all history)
     /// </summary>
     void ClearTask(string sessionId);
 
@@ -80,4 +141,9 @@ public interface IIterativeTaskService
     /// Gets all active tasks
     /// </summary>
     IReadOnlyDictionary<string, IterativeTaskConfig> GetAllTasks();
+
+    /// <summary>
+    /// Checks if a task is currently running for the session
+    /// </summary>
+    bool IsTaskRunning(string sessionId);
 }
