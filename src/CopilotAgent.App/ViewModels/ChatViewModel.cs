@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -18,6 +19,13 @@ public partial class ChatViewModel : ViewModelBase
     private readonly ISessionManager _sessionManager;
     private readonly ILogger<ChatViewModel> _logger;
     private CancellationTokenSource? _currentCts;
+    
+    /// <summary>
+    /// Tracks active tool executions by toolCallId.
+    /// This ensures proper tracking when multiple tools run concurrently
+    /// and prevents UI from getting stuck if a complete event is missed.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, ToolExecutionInfo> _activeTools = new();
 
     [ObservableProperty]
     private Session _session = null!;
@@ -161,6 +169,8 @@ public partial class ChatViewModel : ViewModelBase
 
     /// <summary>
     /// Handles SDK session events for tool progress display.
+    /// Uses toolCallId tracking to properly handle concurrent tool executions
+    /// and prevent UI from getting stuck.
     /// </summary>
     private void OnSdkSessionEvent(object? sender, SdkSessionEventArgs args)
     {
@@ -173,33 +183,140 @@ public partial class ChatViewModel : ViewModelBase
             switch (args.Event)
             {
                 case ToolExecutionStartEvent toolStart:
-                    IsToolExecuting = true;
-                    CurrentToolName = toolStart.Data?.ToolName ?? "Unknown tool";
-                    StatusMessage = $"Executing: {CurrentToolName}";
-                    _logger.LogDebug("Tool execution started: {ToolName}", CurrentToolName);
+                    HandleToolStart(toolStart);
                     break;
 
                 case ToolExecutionCompleteEvent toolComplete:
-                    IsToolExecuting = false;
-                    CurrentToolName = string.Empty;
-                    StatusMessage = "Thinking...";
-                    _logger.LogDebug("Tool execution completed");
+                    HandleToolComplete(toolComplete);
                     break;
 
                 case SessionIdleEvent:
-                    IsToolExecuting = false;
-                    CurrentToolName = string.Empty;
-                    _logger.LogDebug("Session idle");
+                    // Session is idle - clear ALL active tools as a safety net
+                    // This ensures we never get stuck even if complete events are missed
+                    if (_activeTools.Count > 0)
+                    {
+                        _logger.LogInformation("SessionIdleEvent - clearing {Count} active tool(s) as safety net", 
+                            _activeTools.Count);
+                        _activeTools.Clear();
+                    }
+                    UpdateToolExecutionState();
+                    _logger.LogDebug("Session idle - tool tracking cleared");
                     break;
 
                 case AbortEvent:
-                    IsToolExecuting = false;
-                    CurrentToolName = string.Empty;
+                    // Abort clears all tool tracking
+                    _activeTools.Clear();
+                    UpdateToolExecutionState();
                     StatusMessage = "Aborted";
-                    _logger.LogInformation("Session aborted");
+                    _logger.LogInformation("Session aborted - tool tracking cleared");
                     break;
             }
         });
+    }
+    
+    /// <summary>
+    /// Handles tool execution start by tracking the tool by its toolCallId.
+    /// </summary>
+    private void HandleToolStart(ToolExecutionStartEvent toolStart)
+    {
+        var toolCallId = toolStart.Data?.ToolCallId;
+        var toolName = toolStart.Data?.ToolName ?? "Unknown tool";
+        
+        if (string.IsNullOrEmpty(toolCallId))
+        {
+            // Fallback: generate a temporary ID if none provided
+            toolCallId = $"temp_{Guid.NewGuid():N}";
+            _logger.LogWarning("ToolExecutionStartEvent missing toolCallId, using temp: {TempId}", toolCallId);
+        }
+        
+        var toolInfo = new ToolExecutionInfo
+        {
+            ToolCallId = toolCallId,
+            ToolName = toolName,
+            StartTime = DateTime.UtcNow
+        };
+        
+        _activeTools[toolCallId] = toolInfo;
+        _logger.LogDebug("Tool execution started: {ToolName} (id: {ToolCallId}, active: {ActiveCount})", 
+            toolName, toolCallId, _activeTools.Count);
+        
+        UpdateToolExecutionState();
+    }
+    
+    /// <summary>
+    /// Handles tool execution complete by removing the tool from tracking.
+    /// </summary>
+    private void HandleToolComplete(ToolExecutionCompleteEvent toolComplete)
+    {
+        var toolCallId = toolComplete.Data?.ToolCallId;
+        
+        if (string.IsNullOrEmpty(toolCallId))
+        {
+            _logger.LogWarning("ToolExecutionCompleteEvent missing toolCallId - cannot track completion");
+            // Don't blindly clear - wait for SessionIdleEvent
+            return;
+        }
+        
+        if (_activeTools.TryRemove(toolCallId, out var removedTool))
+        {
+            var duration = DateTime.UtcNow - removedTool.StartTime;
+            _logger.LogDebug("Tool execution completed: {ToolName} (id: {ToolCallId}, duration: {Duration}ms, remaining: {ActiveCount})", 
+                removedTool.ToolName, toolCallId, duration.TotalMilliseconds, _activeTools.Count);
+        }
+        else
+        {
+            _logger.LogDebug("ToolExecutionCompleteEvent for unknown toolCallId: {ToolCallId} (may have been cleared by SessionIdleEvent)", 
+                toolCallId);
+        }
+        
+        UpdateToolExecutionState();
+    }
+    
+    /// <summary>
+    /// Updates the tool execution UI state based on active tools.
+    /// </summary>
+    private void UpdateToolExecutionState()
+    {
+        var hasActiveTools = _activeTools.Count > 0;
+        IsToolExecuting = hasActiveTools;
+        
+        if (hasActiveTools)
+        {
+            // Show the most recently started tool (or first if multiple)
+            var latestTool = _activeTools.Values
+                .OrderByDescending(t => t.StartTime)
+                .FirstOrDefault();
+            
+            CurrentToolName = latestTool?.ToolName ?? "Unknown tool";
+            StatusMessage = _activeTools.Count > 1 
+                ? $"Executing: {CurrentToolName} (+{_activeTools.Count - 1} more)"
+                : $"Executing: {CurrentToolName}";
+        }
+        else
+        {
+            CurrentToolName = string.Empty;
+            // Only clear status if we're still busy (streaming response)
+            // Otherwise leave it alone
+            if (IsBusy)
+            {
+                StatusMessage = "Thinking...";
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Clears all active tool tracking. Called when message handling completes
+    /// to ensure UI never gets stuck, even if SessionIdleEvent is not received
+    /// (e.g., on timeout or error).
+    /// </summary>
+    private void ClearAllActiveTools()
+    {
+        if (_activeTools.Count > 0)
+        {
+            _logger.LogInformation("Clearing {Count} active tool(s) on message completion", _activeTools.Count);
+            _activeTools.Clear();
+        }
+        UpdateToolExecutionState();
     }
 
     public Task InitializeAsync(Session session)
@@ -347,6 +464,14 @@ public partial class ChatViewModel : ViewModelBase
         }
         finally
         {
+            // Clear any stuck tool tracking - this is the ultimate safety net
+            // Ensures UI never shows "Executing" after message handling completes,
+            // even if SessionIdleEvent was never received (e.g., timeout, error)
+            await Application.Current.Dispatcher.InvokeAsync(() =>
+            {
+                ClearAllActiveTools();
+            });
+            
             UpdateBusyState(false);
         }
     }
@@ -417,4 +542,25 @@ public partial class ChatViewModel : ViewModelBase
                 MessageBoxImage.Error);
         }
     }
+}
+
+/// <summary>
+/// Tracks information about a tool execution in progress.
+/// </summary>
+internal sealed class ToolExecutionInfo
+{
+    /// <summary>
+    /// Unique identifier for this tool call (from SDK).
+    /// </summary>
+    public required string ToolCallId { get; init; }
+    
+    /// <summary>
+    /// Name of the tool being executed.
+    /// </summary>
+    public required string ToolName { get; init; }
+    
+    /// <summary>
+    /// When the tool execution started.
+    /// </summary>
+    public required DateTime StartTime { get; init; }
 }

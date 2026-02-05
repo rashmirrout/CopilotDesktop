@@ -40,16 +40,18 @@ public class ToolApprovalService : IToolApprovalService
         ToolApprovalRequest request,
         CancellationToken cancellationToken = default)
     {
-        // Ensure rules are loaded
-        await EnsureLoadedAsync(cancellationToken);
-        
-        _logger.LogDebug("Approval requested for tool {Tool} in session {Session}",
+        _logger.LogInformation("[RequestApprovalAsync] START for tool {Tool} in session {Session}",
             request.ToolName, request.SessionId);
+        
+        // Ensure rules are loaded
+        _logger.LogInformation("[RequestApprovalAsync] Ensuring rules are loaded...");
+        await EnsureLoadedAsync(cancellationToken);
+        _logger.LogInformation("[RequestApprovalAsync] Rules loaded. Checking if pre-approved...");
         
         // Check if already approved
         if (IsApproved(request.SessionId, request.ToolName, request.ToolArgs))
         {
-            _logger.LogInformation("Tool {Tool} pre-approved via existing rule", request.ToolName);
+            _logger.LogInformation("[RequestApprovalAsync] Tool {Tool} pre-approved via existing rule", request.ToolName);
             return new ToolApprovalResponse
             {
                 Approved = true,
@@ -57,15 +59,15 @@ public class ToolApprovalService : IToolApprovalService
                 Reason = "Pre-approved by saved rule"
             };
         }
+        _logger.LogInformation("[RequestApprovalAsync] Tool {Tool} NOT pre-approved, will raise UI event", request.ToolName);
         
-        // Raise event for UI to handle
-        var eventArgs = new ToolApprovalRequestEventArgs { Request = request };
-        ApprovalRequested?.Invoke(this, eventArgs);
+        // Check if any handlers are registered BEFORE invoking
+        var hasHandlers = ApprovalRequested != null;
+        _logger.LogInformation("[RequestApprovalAsync] ApprovalRequested event has handlers: {HasHandlers}", hasHandlers);
         
-        // If no handlers, deny by default (safe behavior)
-        if (ApprovalRequested == null)
+        if (!hasHandlers)
         {
-            _logger.LogWarning("No approval UI handler registered, denying tool {Tool}", request.ToolName);
+            _logger.LogWarning("[RequestApprovalAsync] No approval UI handler registered, denying tool {Tool}", request.ToolName);
             return new ToolApprovalResponse
             {
                 Approved = false,
@@ -73,25 +75,65 @@ public class ToolApprovalService : IToolApprovalService
             };
         }
         
+        // Raise event for UI to handle
+        _logger.LogInformation("[RequestApprovalAsync] Creating event args and invoking ApprovalRequested event...");
+        var eventArgs = new ToolApprovalRequestEventArgs { Request = request };
+        
         try
         {
-            // Wait for UI to provide response
-            var response = await eventArgs.ResponseSource.Task.WaitAsync(cancellationToken);
+            ApprovalRequested?.Invoke(this, eventArgs);
+            _logger.LogInformation("[RequestApprovalAsync] ApprovalRequested event invoked successfully. Waiting for UI response...");
+        }
+        catch (Exception invokeEx)
+        {
+            _logger.LogError(invokeEx, "[RequestApprovalAsync] Exception during ApprovalRequested.Invoke for {Tool}", request.ToolName);
+            return new ToolApprovalResponse
+            {
+                Approved = false,
+                Reason = $"Event invoke error: {invokeEx.Message}"
+            };
+        }
+        
+        try
+        {
+            // Wait for UI to provide response (with a generous timeout to detect stuck states)
+            _logger.LogInformation("[RequestApprovalAsync] Awaiting ResponseSource.Task for {Tool}...", request.ToolName);
             
-            _logger.LogInformation("Tool {Tool} {Decision} by user (scope: {Scope})",
-                request.ToolName, 
-                response.Approved ? "approved" : "denied",
-                response.Scope);
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+            
+            var response = await eventArgs.ResponseSource.Task.WaitAsync(linkedCts.Token);
+            
+            _logger.LogInformation("[RequestApprovalAsync] Got response for {Tool}: Approved={Approved}, Scope={Scope}",
+                request.ToolName, response.Approved, response.Scope);
             
             return response;
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
-            _logger.LogInformation("Approval request for tool {Tool} was cancelled", request.ToolName);
+            _logger.LogInformation("[RequestApprovalAsync] Approval request for tool {Tool} was cancelled by caller", request.ToolName);
             return new ToolApprovalResponse
             {
                 Approved = false,
                 Reason = "Request cancelled"
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("[RequestApprovalAsync] Approval request for tool {Tool} timed out (5 min)", request.ToolName);
+            return new ToolApprovalResponse
+            {
+                Approved = false,
+                Reason = "Approval request timed out"
+            };
+        }
+        catch (Exception waitEx)
+        {
+            _logger.LogError(waitEx, "[RequestApprovalAsync] Exception waiting for response for {Tool}", request.ToolName);
+            return new ToolApprovalResponse
+            {
+                Approved = false,
+                Reason = $"Wait error: {waitEx.Message}"
             };
         }
     }
@@ -99,15 +141,29 @@ public class ToolApprovalService : IToolApprovalService
     /// <inheritdoc />
     public bool IsApproved(string sessionId, string toolName, object? args = null)
     {
+        // Ensure rules are loaded (synchronous check - rules should be loaded at startup)
+        // If not loaded yet, trigger async load but return false for now
+        if (!_isLoaded)
+        {
+            _logger.LogDebug("Rules not loaded yet, triggering async load for IsApproved check");
+            _ = Task.Run(async () => await LoadRulesAsync());
+            // Return false this time, next call will have rules loaded
+            return false;
+        }
+        
         // Check one-time approvals for this session
         if (_onceApprovals.TryGetValue(sessionId, out var onceSet))
         {
             var onceKey = GetToolKey(toolName, args);
-            if (onceSet.Contains(onceKey))
+            lock (onceSet)
             {
-                // Remove after use
-                onceSet.Remove(onceKey);
-                return true;
+                if (onceSet.Contains(onceKey))
+                {
+                    // Remove after use
+                    onceSet.Remove(onceKey);
+                    _logger.LogDebug("Tool {Tool} approved via one-time approval", toolName);
+                    return true;
+                }
             }
         }
         
@@ -119,6 +175,8 @@ public class ToolApprovalService : IToolApprovalService
                 var sessionMatch = FindMatchingRule(sessionRules, toolName, args);
                 if (sessionMatch != null)
                 {
+                    _logger.LogDebug("Tool {Tool} matched session rule (approved: {Approved})", 
+                        toolName, sessionMatch.Approved);
                     return sessionMatch.Approved;
                 }
             }
@@ -127,10 +185,13 @@ public class ToolApprovalService : IToolApprovalService
             var globalMatch = FindMatchingRule(_globalRules, toolName, args);
             if (globalMatch != null)
             {
+                _logger.LogDebug("Tool {Tool} matched global rule (approved: {Approved})", 
+                    toolName, globalMatch.Approved);
                 return globalMatch.Approved;
             }
         }
         
+        _logger.LogDebug("Tool {Tool} has no matching approval rule", toolName);
         return false;
     }
 
