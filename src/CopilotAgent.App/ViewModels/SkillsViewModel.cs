@@ -23,7 +23,11 @@ public enum SkillPendingState
 }
 
 /// <summary>
-/// ViewModel for skills management with batch apply pattern
+/// ViewModel for skills management with batch apply pattern.
+/// 
+/// Skills are disabled by default. User must explicitly enable them.
+/// Enabling a skill removes it from the session's DisabledSkills list.
+/// Changes require session recreation to take effect.
 /// </summary>
 public partial class SkillsViewModel : ObservableObject
 {
@@ -60,7 +64,16 @@ public partial class SkillsViewModel : ObservableObject
     private string _skillsFolderPath = string.Empty;
 
     [ObservableProperty]
+    private string _sdkSkillsFolderPath = string.Empty;
+
+    [ObservableProperty]
     private bool _isApplying;
+
+    [ObservableProperty]
+    private int _totalSkillsCount;
+
+    [ObservableProperty]
+    private int _enabledSkillsCount;
 
     public SkillsViewModel(
         ISkillsService skillsService,
@@ -75,12 +88,21 @@ public partial class SkillsViewModel : ObservableObject
 
         _skillsService.SkillsReloaded += OnSkillsReloaded;
         SkillsFolderPath = _skillsService.GetPersonalSkillsFolder();
+        SdkSkillsFolderPath = _skillsService.GetSdkSkillsFolder();
     }
 
     public async Task InitializeAsync()
     {
         await _skillsService.ScanSkillsAsync();
         RefreshSkillsList();
+        
+        // Initialize session's disabled skills if not already done
+        var session = _sessionManager.ActiveSession;
+        if (session != null && session.DisabledSkills == null)
+        {
+            _skillsService.InitializeSessionDisabledSkills(session);
+            RefreshSkillsList();
+        }
     }
 
     [RelayCommand]
@@ -90,6 +112,7 @@ public partial class SkillsViewModel : ObservableObject
         {
             await _skillsService.ScanSkillsAsync();
             RefreshSkillsList();
+            _logger.LogInformation("Refreshed skills list. Found {Count} skills", _skillsService.GetSkills().Count);
         }
         catch (Exception ex)
         {
@@ -108,7 +131,7 @@ public partial class SkillsViewModel : ObservableObject
         // Update pending changes tracking
         UpdatePendingChangesState();
         
-        _logger.LogDebug("Skill {SkillId} pending state: {State}", skill.Id, skill.PendingState);
+        _logger.LogDebug("Skill '{SkillName}' pending state: {State}", skill.Name, skill.PendingState);
     }
 
     [RelayCommand(CanExecute = nameof(CanApplyChanges))]
@@ -133,18 +156,24 @@ public partial class SkillsViewModel : ObservableObject
 
         try
         {
-            // Apply all pending changes to the session
+            // Apply all pending changes to the session using the new DisabledSkills model
             foreach (var skill in Skills)
             {
                 if (skill.PendingState == SkillPendingState.PendingEnable)
                 {
-                    _skillsService.SetSkillEnabled(session, skill.Id, true);
+                    // Enable = remove from DisabledSkills
+                    _skillsService.SetSkillEnabled(session, skill.Name, true);
                     skill.CommitPendingState();
+                    _logger.LogInformation("Enabled skill '{SkillName}' for session {SessionId}", 
+                        skill.Name, session.SessionId);
                 }
                 else if (skill.PendingState == SkillPendingState.PendingDisable)
                 {
-                    _skillsService.SetSkillEnabled(session, skill.Id, false);
+                    // Disable = add to DisabledSkills
+                    _skillsService.SetSkillEnabled(session, skill.Name, false);
                     skill.CommitPendingState();
+                    _logger.LogInformation("Disabled skill '{SkillName}' for session {SessionId}", 
+                        skill.Name, session.SessionId);
                 }
             }
 
@@ -155,10 +184,14 @@ public partial class SkillsViewModel : ObservableObject
             });
 
             UpdatePendingChangesState();
-            _logger.LogInformation("Applied skill changes and recreated session");
+            _logger.LogInformation("Applied skill changes and recreated session. {EnabledCount} skills enabled, {DisabledCount} skills disabled",
+                EnabledSkillsCount, TotalSkillsCount - EnabledSkillsCount);
 
             MessageBox.Show(
-                "Skills updated successfully. Session has been restarted.",
+                $"Skills updated successfully.\n\n" +
+                $"• {EnabledSkillsCount} skills enabled\n" +
+                $"• {TotalSkillsCount - EnabledSkillsCount} skills disabled\n\n" +
+                $"Session has been restarted.",
                 "Success",
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
@@ -211,18 +244,52 @@ public partial class SkillsViewModel : ObservableObject
     }
 
     [RelayCommand]
+    private void OpenSdkSkillsFolder()
+    {
+        try
+        {
+            var folder = _skillsService.GetSdkSkillsFolder();
+            if (!System.IO.Directory.Exists(folder))
+            {
+                System.IO.Directory.CreateDirectory(folder);
+            }
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = folder,
+                UseShellExecute = true
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to open SDK skills folder");
+            MessageBox.Show($"Failed to open folder: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    [RelayCommand]
     private void ViewSkillContent()
     {
         if (SelectedSkill == null) return;
 
-        var skill = _skillsService.GetSkill(SelectedSkill.Id);
+        var skill = _skillsService.GetSkillByName(SelectedSkill.Name);
         if (skill == null) return;
 
         // Show skill content in a message box for now
         // Could be enhanced with a dedicated dialog
+        var content = skill.Content;
+        if (content.Length > 2000)
+        {
+            content = content[..2000] + "\n\n... (truncated)";
+        }
+        
         MessageBox.Show(
-            skill.Content,
-            $"Skill: {skill.Name}",
+            $"Name: {skill.Name}\n" +
+            $"Display Name: {skill.EffectiveDisplayName}\n" +
+            $"Format: {skill.Format}\n" +
+            $"Source: {skill.Source}\n" +
+            $"Path: {skill.FilePath}\n\n" +
+            $"--- Content ---\n{content}",
+            $"Skill: {skill.EffectiveDisplayName}",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
     }
@@ -248,13 +315,15 @@ public partial class SkillsViewModel : ObservableObject
                 // Parse basic metadata from file
                 var (name, description) = ParseSkillMetadataFromContent(content, fileName);
 
-                // Create the skill
+                // Create the skill in SDK format
                 var skill = await _skillsService.CreateSkillAsync(name, description, content);
                 if (skill != null)
                 {
                     await RefreshSkillsAsync();
                     MessageBox.Show(
-                        $"Skill '{name}' added successfully.",
+                        $"Skill '{skill.EffectiveDisplayName}' added successfully.\n\n" +
+                        $"Created in SDK format at:\n{skill.FilePath}\n\n" +
+                        $"Note: The skill is disabled by default. Enable it to use.",
                         "Success",
                         MessageBoxButton.OK,
                         MessageBoxImage.Information);
@@ -266,6 +335,40 @@ public partial class SkillsViewModel : ObservableObject
             _logger.LogError(ex, "Failed to upload skill");
             MessageBox.Show($"Failed to upload skill: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
+    }
+
+    [RelayCommand]
+    private void EnableAllSkills()
+    {
+        foreach (var skill in Skills)
+        {
+            if (!skill.IsEnabled && skill.PendingState != SkillPendingState.PendingEnable)
+            {
+                skill.TogglePendingState(); // Will set to PendingEnable
+            }
+            else if (skill.PendingState == SkillPendingState.PendingDisable)
+            {
+                skill.ResetPendingState();
+            }
+        }
+        UpdatePendingChangesState();
+    }
+
+    [RelayCommand]
+    private void DisableAllSkills()
+    {
+        foreach (var skill in Skills)
+        {
+            if (skill.IsEnabled && skill.PendingState != SkillPendingState.PendingDisable)
+            {
+                skill.TogglePendingState(); // Will set to PendingDisable
+            }
+            else if (skill.PendingState == SkillPendingState.PendingEnable)
+            {
+                skill.ResetPendingState();
+            }
+        }
+        UpdatePendingChangesState();
     }
 
     private (string name, string description) ParseSkillMetadataFromContent(string content, string fallbackName)
@@ -317,11 +420,11 @@ public partial class SkillsViewModel : ObservableObject
     {
         var session = _sessionManager.ActiveSession;
         var workingDir = session?.WorkingDirectory;
-        var enabledSkills = session?.EnabledSkills ?? new List<string>();
 
         var allSkills = _skillsService.GetSkillsForPath(workingDir);
 
         Skills.Clear();
+        
         foreach (var skill in allSkills)
         {
             // Apply source filters
@@ -334,16 +437,23 @@ public partial class SkillsViewModel : ObservableObject
             {
                 var filter = FilterText.ToLower();
                 if (!skill.Name.ToLower().Contains(filter) &&
+                    !skill.EffectiveDisplayName.ToLower().Contains(filter) &&
                     !skill.Description.ToLower().Contains(filter))
                 {
                     continue;
                 }
             }
 
-            var isEnabled = enabledSkills.Contains(skill.Id);
+            // Use the new DisabledSkills model to determine enabled state
+            // A skill is enabled if it's NOT in the DisabledSkills list
+            var isEnabled = session != null && _skillsService.IsSkillEnabled(session, skill.Name);
             Skills.Add(new SkillItemViewModel(skill, isEnabled));
         }
 
+        // Update counts
+        TotalSkillsCount = Skills.Count;
+        EnabledSkillsCount = Skills.Count(s => s.IsEnabled);
+        
         UpdatePendingChangesState();
     }
 
@@ -352,6 +462,12 @@ public partial class SkillsViewModel : ObservableObject
         var pendingCount = Skills.Count(s => s.PendingState != SkillPendingState.None);
         PendingChangesCount = pendingCount;
         HasPendingChanges = pendingCount > 0;
+        
+        // Recalculate enabled count considering pending states
+        EnabledSkillsCount = Skills.Count(s => 
+            (s.PendingState == SkillPendingState.PendingEnable) ||
+            (s.PendingState == SkillPendingState.None && s.IsEnabled));
+        
         ApplyChangesCommand.NotifyCanExecuteChanged();
     }
 
@@ -374,9 +490,21 @@ public partial class SkillItemViewModel : ObservableObject
     public SkillDefinition Skill { get; }
 
     public string Id => Skill.Id;
+    
+    /// <summary>
+    /// Technical name used by SDK (matches skill.json "name" field)
+    /// </summary>
     public string Name => Skill.Name;
+    
+    /// <summary>
+    /// Human-friendly display name
+    /// </summary>
+    public string DisplayName => Skill.EffectiveDisplayName;
+    
     public string Description => Skill.Description;
     public SkillSource Source => Skill.Source;
+    public SkillFormat Format => Skill.Format;
+    
     public string SourceDisplay => Source switch
     {
         SkillSource.BuiltIn => "Built-in",
@@ -386,17 +514,31 @@ public partial class SkillItemViewModel : ObservableObject
         _ => "Unknown"
     };
 
+    public string FormatDisplay => Format switch
+    {
+        SkillFormat.SdkJson => "SDK Format",
+        SkillFormat.Markdown => "Markdown",
+        _ => "Unknown"
+    };
+
     public string SourceIcon => Source switch
     {
-        SkillSource.BuiltIn => "⚙",
+        SkillSource.BuiltIn => "⚙️",
         SkillSource.Personal => "👤",
         SkillSource.Repository => "📁",
-        SkillSource.Remote => "☁",
+        SkillSource.Remote => "☁️",
+        _ => "?"
+    };
+
+    public string FormatIcon => Format switch
+    {
+        SkillFormat.SdkJson => "📦",
+        SkillFormat.Markdown => "📝",
         _ => "?"
     };
 
     /// <summary>
-    /// Current actual enabled state (as saved in session)
+    /// Current actual enabled state (based on session's DisabledSkills list)
     /// </summary>
     [ObservableProperty]
     private bool _isEnabled;
@@ -428,10 +570,19 @@ public partial class SkillItemViewModel : ObservableObject
     /// </summary>
     public string StatusText => PendingState switch
     {
-        SkillPendingState.PendingEnable => "Will be enabled",
-        SkillPendingState.PendingDisable => "Will be disabled",
-        _ => IsEnabled ? "Enabled" : "Disabled"
+        SkillPendingState.PendingEnable => "⏳ Will be enabled",
+        SkillPendingState.PendingDisable => "⏳ Will be disabled",
+        _ => IsEnabled ? "✅ Enabled" : "⬜ Disabled"
     };
+
+    /// <summary>
+    /// Tooltip with full skill info
+    /// </summary>
+    public string Tooltip => $"Name: {Name}\n" +
+                            $"Display: {DisplayName}\n" +
+                            $"Format: {FormatDisplay}\n" +
+                            $"Source: {SourceDisplay}\n" +
+                            $"Status: {StatusText.Replace("⏳ ", "").Replace("✅ ", "").Replace("⬜ ", "")}";
 
     public SkillItemViewModel(SkillDefinition skill, bool isEnabled)
     {
@@ -458,6 +609,7 @@ public partial class SkillItemViewModel : ObservableObject
         OnPropertyChanged(nameof(StateColor));
         OnPropertyChanged(nameof(DisplayCheckState));
         OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(Tooltip));
     }
 
     /// <summary>
@@ -478,6 +630,7 @@ public partial class SkillItemViewModel : ObservableObject
         OnPropertyChanged(nameof(StateColor));
         OnPropertyChanged(nameof(DisplayCheckState));
         OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(Tooltip));
     }
 
     /// <summary>
@@ -489,6 +642,7 @@ public partial class SkillItemViewModel : ObservableObject
         OnPropertyChanged(nameof(StateColor));
         OnPropertyChanged(nameof(DisplayCheckState));
         OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(Tooltip));
     }
 
     partial void OnPendingStateChanged(SkillPendingState value)
@@ -496,6 +650,7 @@ public partial class SkillItemViewModel : ObservableObject
         OnPropertyChanged(nameof(StateColor));
         OnPropertyChanged(nameof(DisplayCheckState));
         OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(Tooltip));
     }
 
     partial void OnIsEnabledChanged(bool value)
@@ -503,5 +658,6 @@ public partial class SkillItemViewModel : ObservableObject
         OnPropertyChanged(nameof(StateColor));
         OnPropertyChanged(nameof(DisplayCheckState));
         OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(Tooltip));
     }
 }

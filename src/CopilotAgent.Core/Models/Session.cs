@@ -69,8 +69,30 @@ public class Session : INotifyPropertyChanged
     [JsonPropertyName("enabledMcpServers")]
     public List<string>? EnabledMcpServers { get; set; }
 
-    /// <summary>Enabled skills for this session</summary>
+    /// <summary>
+    /// Disabled skills for this session.
+    /// - null: Use default behavior (all skills disabled initially for new sessions)
+    /// - Empty list: All discovered skills are enabled
+    /// - Non-empty list: These specific skills are disabled (rest are enabled)
+    /// </summary>
+    /// <remarks>
+    /// SDK behavior: SkillDirectories lists where to find skills, DisabledSkills excludes specific ones.
+    /// By default, all skills are disabled. User must explicitly enable skills.
+    /// </remarks>
+    [JsonPropertyName("disabledSkills")]
+    public List<string>? DisabledSkills { get; set; }
+
+    /// <summary>
+    /// Skill directories to search for skills.
+    /// - null: Use default directories (~/CopilotAgent/Skills and ~/.copilot/skills)
+    /// - Non-empty list: Use only these directories
+    /// </summary>
+    [JsonPropertyName("skillDirectories")]
+    public List<string>? SkillDirectories { get; set; }
+
+    /// <summary>Enabled skills for this session (DEPRECATED - use DisabledSkills instead)</summary>
     [JsonPropertyName("enabledSkills")]
+    [Obsolete("Use DisabledSkills instead. This property is kept for backward compatibility.")]
     public List<string> EnabledSkills { get; set; } = new();
 
     /// <summary>Message history for this session</summary>
