@@ -147,12 +147,31 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
     private CopilotClient? _client;
     private readonly ConcurrentDictionary<string, CopilotSession> _sdkSessions = new();
     private readonly ConcurrentDictionary<string, Session> _appSessions = new();
+    
+    /// <summary>
+    /// Tracks observed tools per session. Key = sessionId, Value = dictionary of toolName -> toolInfo
+    /// Tools are observed through PreToolUse hooks during session execution.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, ObservedToolInfo>> _observedToolsPerSession = new();
+    
     private bool _disposed;
 
     /// <summary>
     /// Event raised when a session event occurs (assistant message, tool execution, etc.)
     /// </summary>
     public event EventHandler<SdkSessionEventArgs>? SessionEventReceived;
+
+    /// <summary>
+    /// Internal class to track observed tools during session execution.
+    /// </summary>
+    private class ObservedToolInfo
+    {
+        public string Name { get; set; } = "";
+        public string? McpServerName { get; set; }
+        public object? LastArgs { get; set; }
+        public int InvocationCount { get; set; }
+        public DateTimeOffset LastUsed { get; set; }
+    }
 
     public CopilotSdkService(
         IToolApprovalService approvalService,
@@ -549,75 +568,172 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
     }
 
     /// <summary>
-    /// Gets live MCP server information from the active SDK session.
-    /// This queries the session to get the actual MCP servers and their tools.
+    /// Tracks an observed tool for MCP server discovery.
+    /// Called from PreToolUse hook to build up knowledge of available tools.
     /// </summary>
-    public async Task<List<LiveMcpServerInfo>> GetLiveMcpServersAsync(
+    private void TrackObservedTool(string sessionId, string toolName, object? toolArgs)
+    {
+        try
+        {
+            // Get or create the tools dictionary for this session
+            var sessionTools = _observedToolsPerSession.GetOrAdd(
+                sessionId, 
+                _ => new ConcurrentDictionary<string, ObservedToolInfo>());
+            
+            // Parse MCP server name from tool name (format: "serverName/toolName" or just "toolName")
+            string? mcpServerName = null;
+            var actualToolName = toolName;
+            var slashIndex = toolName.IndexOf('/');
+            if (slashIndex > 0)
+            {
+                mcpServerName = toolName.Substring(0, slashIndex);
+                actualToolName = toolName.Substring(slashIndex + 1);
+            }
+            
+            // Update or add tool info
+            sessionTools.AddOrUpdate(
+                toolName,
+                _ => new ObservedToolInfo
+                {
+                    Name = actualToolName,
+                    McpServerName = mcpServerName,
+                    LastArgs = toolArgs,
+                    InvocationCount = 1,
+                    LastUsed = DateTimeOffset.UtcNow
+                },
+                (_, existing) =>
+                {
+                    existing.LastArgs = toolArgs;
+                    existing.InvocationCount++;
+                    existing.LastUsed = DateTimeOffset.UtcNow;
+                    return existing;
+                });
+            
+            _logger.LogInformation("[MCP_TRACK] Tracked tool: {ToolName} (server: {Server}, total tools for session: {Count})",
+                toolName, mcpServerName ?? "builtin", sessionTools.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[MCP_TRACK] Failed to track tool {ToolName}", toolName);
+        }
+    }
+
+    /// <summary>
+    /// Gets live MCP server information from the active SDK session.
+    /// This combines:
+    /// 1. Configured MCP servers that were passed to the SDK
+    /// 2. Observed tools from PreToolUse hooks
+    /// 3. Reflection inspection of the SDK session object
+    /// </summary>
+    public Task<List<LiveMcpServerInfo>> GetLiveMcpServersAsync(
         string sessionId, 
         CancellationToken cancellationToken = default)
     {
+        return Task.FromResult(GetLiveMcpServersInternal(sessionId));
+    }
+    
+    /// <summary>
+    /// Internal synchronous implementation of GetLiveMcpServersAsync.
+    /// </summary>
+    private List<LiveMcpServerInfo> GetLiveMcpServersInternal(string sessionId)
+    {
         var result = new List<LiveMcpServerInfo>();
+        
+        _logger.LogInformation("[MCP_DEBUG] GetLiveMcpServersAsync called for session {SessionId}", sessionId);
         
         // Check if we have an active SDK session
         if (!_sdkSessions.TryGetValue(sessionId, out var sdkSession))
         {
-            _logger.LogDebug("No active SDK session for {SessionId}, returning empty MCP list", sessionId);
+            _logger.LogInformation("[MCP_DEBUG] No active SDK session for {SessionId}, returning empty MCP list", sessionId);
             return result;
         }
+        
+        _logger.LogInformation("[MCP_DEBUG] Found active SDK session for {SessionId}", sessionId);
+        
+        // Log reflection info about the SDK session
+        LogSdkSessionReflectionInfo(sdkSession, sessionId);
         
         // Get the app session to find which MCP servers were configured
         if (!_appSessions.TryGetValue(sessionId, out var appSession))
         {
-            _logger.LogWarning("No app session found for {SessionId}", sessionId);
+            _logger.LogWarning("[MCP_DEBUG] No app session found for {SessionId}", sessionId);
             return result;
         }
         
-        _logger.LogInformation("Getting live MCP servers for session {SessionId}", sessionId);
+        _logger.LogInformation("[MCP_DEBUG] Getting live MCP servers for session {SessionId}", sessionId);
+        _logger.LogInformation("[MCP_DEBUG] App session EnabledMcpServers: {Servers}", 
+            appSession.EnabledMcpServers != null 
+                ? string.Join(", ", appSession.EnabledMcpServers) 
+                : "null (all enabled)");
         
         try
         {
-            // Get all tools from the session - MCP tools will be included
-            var allTools = await GetSessionToolsAsync(sdkSession, cancellationToken);
+            // Get observed tools from our tracking
+            var observedToolsByServer = new Dictionary<string, List<ObservedToolInfo>>();
+            var observedBuiltinTools = new List<ObservedToolInfo>();
             
-            // Group tools by MCP server (MCP tools typically have a prefix like "server_name/tool_name")
-            var mcpToolsByServer = new Dictionary<string, List<LiveMcpToolInfo>>();
-            var nonMcpTools = new List<LiveMcpToolInfo>();
-            
-            foreach (var tool in allTools)
+            if (_observedToolsPerSession.TryGetValue(sessionId, out var sessionTools))
             {
-                // Check if this is an MCP tool (has server prefix)
-                var slashIndex = tool.Name.IndexOf('/');
-                if (slashIndex > 0)
+                _logger.LogInformation("[MCP_DEBUG] Found {Count} observed tools for session", sessionTools.Count);
+                
+                foreach (var kvp in sessionTools)
                 {
-                    var serverName = tool.Name.Substring(0, slashIndex);
-                    var toolName = tool.Name.Substring(slashIndex + 1);
-                    
-                    if (!mcpToolsByServer.ContainsKey(serverName))
+                    var tool = kvp.Value;
+                    if (!string.IsNullOrEmpty(tool.McpServerName))
                     {
-                        mcpToolsByServer[serverName] = new List<LiveMcpToolInfo>();
+                        if (!observedToolsByServer.ContainsKey(tool.McpServerName))
+                            observedToolsByServer[tool.McpServerName] = new List<ObservedToolInfo>();
+                        observedToolsByServer[tool.McpServerName].Add(tool);
                     }
-                    
-                    mcpToolsByServer[serverName].Add(new LiveMcpToolInfo
+                    else
                     {
-                        Name = toolName,
-                        Description = tool.Description,
-                        Parameters = tool.Parameters
-                    });
+                        observedBuiltinTools.Add(tool);
+                    }
                 }
-                else
-                {
-                    nonMcpTools.Add(tool);
-                }
+                
+                _logger.LogInformation("[MCP_DEBUG] Observed tools by server: {Servers}", 
+                    string.Join(", ", observedToolsByServer.Select(kvp => $"{kvp.Key}({kvp.Value.Count} tools)")));
+            }
+            else
+            {
+                _logger.LogInformation("[MCP_DEBUG] No observed tools for session yet (tools appear when used)");
             }
             
-            // Build the result from the session's enabled MCP servers
-            var enabledServers = appSession.EnabledMcpServers ?? new List<string>();
-            var configuredServers = _mcpService.GetServers()
-                .Where(s => enabledServers.Contains(s.Name))
-                .ToList();
+            // Build the result from the session's CONFIGURED MCP servers
+            // Since these were passed to the SDK at session creation, they should be "running"
+            List<McpServerConfig> configuredServers;
+            
+            if (appSession.EnabledMcpServers == null)
+            {
+                // null = all enabled servers from config
+                configuredServers = _mcpService.GetServers()
+                    .Where(s => s.Enabled)
+                    .ToList();
+                _logger.LogInformation("[MCP_DEBUG] EnabledMcpServers is null, using ALL enabled servers: {Count}", 
+                    configuredServers.Count);
+            }
+            else if (appSession.EnabledMcpServers.Count == 0)
+            {
+                // Empty list = no servers
+                configuredServers = new List<McpServerConfig>();
+                _logger.LogInformation("[MCP_DEBUG] EnabledMcpServers is empty list, no servers");
+            }
+            else
+            {
+                // Specific servers
+                configuredServers = _mcpService.GetServers()
+                    .Where(s => s.Enabled && appSession.EnabledMcpServers.Contains(s.Name))
+                    .ToList();
+                _logger.LogInformation("[MCP_DEBUG] Using specific enabled servers: {Names}", 
+                    string.Join(", ", configuredServers.Select(s => s.Name)));
+            }
+            
+            _logger.LogInformation("[MCP_DEBUG] Building result for {Count} configured servers", configuredServers.Count);
             
             foreach (var serverConfig in configuredServers)
             {
+                _logger.LogInformation("[MCP_DEBUG] Processing server: {Name}", serverConfig.Name);
+                
                 var serverInfo = new LiveMcpServerInfo
                 {
                     Name = serverConfig.Name,
@@ -627,26 +743,37 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
                         : serverConfig.Url ?? "",
                 };
                 
-                // Check if we found tools for this server
-                if (mcpToolsByServer.TryGetValue(serverConfig.Name, out var tools))
+                // Since we passed this server to the SDK at session creation, assume it's running
+                // The SDK doesn't expose a direct way to check server status, so we mark as "running"
+                // if the session was created successfully with this server in the config
+                serverInfo.IsActive = true;
+                serverInfo.Status = "running";
+                
+                // Add observed tools for this server (if any tools have been used)
+                if (observedToolsByServer.TryGetValue(serverConfig.Name, out var observedTools))
                 {
-                    serverInfo.IsActive = true;
-                    serverInfo.Status = "running";
-                    serverInfo.Tools = tools;
+                    serverInfo.Tools = observedTools.Select(t => new LiveMcpToolInfo
+                    {
+                        Name = t.Name,
+                        Description = $"Invoked {t.InvocationCount} time(s), last used: {t.LastUsed:HH:mm:ss}"
+                    }).ToList();
+                    
+                    _logger.LogInformation("[MCP_DEBUG] Server {Name} has {Count} observed tools", 
+                        serverConfig.Name, serverInfo.Tools.Count);
                 }
                 else
                 {
-                    // Server was configured but we didn't find tools for it
-                    // It might be starting, failed, or not have any tools
-                    serverInfo.IsActive = false;
-                    serverInfo.Status = "unknown";
+                    // No tools observed yet, but server is configured/running
+                    serverInfo.Tools = new List<LiveMcpToolInfo>();
+                    _logger.LogInformation("[MCP_DEBUG] Server {Name} has no observed tools yet (tools appear when used)", 
+                        serverConfig.Name);
                 }
                 
                 result.Add(serverInfo);
             }
             
-            // If there are non-MCP tools, add them as a "builtin" server for display
-            if (nonMcpTools.Any())
+            // Add builtin tools if any were observed
+            if (observedBuiltinTools.Any())
             {
                 result.Insert(0, new LiveMcpServerInfo
                 {
@@ -655,19 +782,105 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
                     Status = "running",
                     Transport = "internal",
                     ConnectionInfo = "Built-in Copilot tools",
-                    Tools = nonMcpTools
+                    Tools = observedBuiltinTools.Select(t => new LiveMcpToolInfo
+                    {
+                        Name = t.Name,
+                        Description = $"Invoked {t.InvocationCount} time(s)"
+                    }).ToList()
                 });
             }
             
-            _logger.LogInformation("Found {Count} MCP servers with {ToolCount} total tools for session {SessionId}",
-                result.Count, result.Sum(s => s.Tools.Count), sessionId);
+            _logger.LogInformation("[MCP_DEBUG] Final result: {Count} servers, {ToolCount} total observed tools",
+                result.Count, result.Sum(s => s.Tools.Count));
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get live MCP servers for session {SessionId}", sessionId);
+            _logger.LogError(ex, "[MCP_DEBUG] Failed to get live MCP servers for session {SessionId}", sessionId);
         }
         
         return result;
+    }
+
+    /// <summary>
+    /// Uses reflection to log available properties and methods on the CopilotSession object.
+    /// This helps discover what APIs the SDK exposes for querying MCP servers/tools.
+    /// </summary>
+    private void LogSdkSessionReflectionInfo(CopilotSession sdkSession, string sessionId)
+    {
+        try
+        {
+            var sessionType = sdkSession.GetType();
+            _logger.LogInformation("[SDK_REFLECT] CopilotSession type: {TypeName}", sessionType.FullName);
+            
+            // Log public properties
+            var properties = sessionType.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+            _logger.LogInformation("[SDK_REFLECT] Public properties ({Count}):", properties.Length);
+            foreach (var prop in properties)
+            {
+                try
+                {
+                    var value = prop.GetValue(sdkSession);
+                    var valueStr = value?.ToString() ?? "null";
+                    if (valueStr.Length > 100) valueStr = valueStr.Substring(0, 100) + "...";
+                    _logger.LogInformation("[SDK_REFLECT]   - {PropName} ({PropType}): {Value}", 
+                        prop.Name, prop.PropertyType.Name, valueStr);
+                }
+                catch (Exception propEx)
+                {
+                    _logger.LogDebug("[SDK_REFLECT]   - {PropName} ({PropType}): <error reading: {Error}>", 
+                        prop.Name, prop.PropertyType.Name, propEx.Message);
+                }
+            }
+            
+            // Log public methods (excluding inherited Object methods)
+            var methods = sessionType.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+                .Where(m => m.DeclaringType == sessionType || m.DeclaringType?.FullName?.StartsWith("GitHub.Copilot") == true)
+                .Where(m => !m.IsSpecialName) // Exclude property getters/setters
+                .ToList();
+            _logger.LogInformation("[SDK_REFLECT] Public methods ({Count}):", methods.Count);
+            foreach (var method in methods)
+            {
+                var parameters = string.Join(", ", method.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name}"));
+                _logger.LogInformation("[SDK_REFLECT]   - {MethodName}({Params}) -> {ReturnType}", 
+                    method.Name, parameters, method.ReturnType.Name);
+            }
+            
+            // Look for MCP-related members specifically
+            var mcpMembers = properties.Where(p => p.Name.ToLower().Contains("mcp") || p.Name.ToLower().Contains("server") || p.Name.ToLower().Contains("tool")).ToList();
+            if (mcpMembers.Any())
+            {
+                _logger.LogInformation("[SDK_REFLECT] MCP-related properties found:");
+                foreach (var prop in mcpMembers)
+                {
+                    try
+                    {
+                        var value = prop.GetValue(sdkSession);
+                        _logger.LogInformation("[SDK_REFLECT]   *** {PropName}: {Value}", prop.Name, 
+                            value != null ? JsonSerializer.Serialize(value) : "null");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug("[SDK_REFLECT]   *** {PropName}: <error: {Error}>", prop.Name, ex.Message);
+                    }
+                }
+            }
+            
+            var mcpMethods = methods.Where(m => m.Name.ToLower().Contains("mcp") || m.Name.ToLower().Contains("server") || m.Name.ToLower().Contains("tool")).ToList();
+            if (mcpMethods.Any())
+            {
+                _logger.LogInformation("[SDK_REFLECT] MCP-related methods found:");
+                foreach (var method in mcpMethods)
+                {
+                    var parameters = string.Join(", ", method.GetParameters().Select(p => $"{p.ParameterType.Name} {p.Name}"));
+                    _logger.LogInformation("[SDK_REFLECT]   *** {MethodName}({Params}) -> {ReturnType}", 
+                        method.Name, parameters, method.ReturnType.Name);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[SDK_REFLECT] Failed to reflect on CopilotSession");
+        }
     }
 
     /// <summary>
@@ -950,6 +1163,7 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
     /// <summary>
     /// Handles pre-tool-use hook for permission gating.
     /// This is the core integration point for tool approval.
+    /// Also tracks tools for MCP server discovery.
     /// </summary>
     private async Task<PreToolUseHookOutput?> HandlePreToolUseAsync(
         Session session,
@@ -961,6 +1175,9 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
         {
             _logger.LogInformation(">>> PreToolUse hook START: {Tool} (args: {ArgsType}) in session {Session}",
                 input.ToolName, input.ToolArgs?.GetType().Name ?? "null", session.SessionId);
+            
+            // TRACK TOOL FOR MCP DISCOVERY
+            TrackObservedTool(session.SessionId, input.ToolName, input.ToolArgs);
             
             var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 

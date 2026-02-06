@@ -19,6 +19,11 @@ public partial class App : Application
 {
     private IHost? _host;
 
+    /// <summary>
+    /// Gets the service provider for resolving dependencies
+    /// </summary>
+    public IServiceProvider Services => _host?.Services ?? throw new InvalidOperationException("Host not initialized");
+
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -97,6 +102,7 @@ public partial class App : Application
                     services.AddTransient<SkillsViewModel>();
                     services.AddTransient<IterativeTaskViewModel>();
                     services.AddTransient<SessionInfoViewModel>();
+                    services.AddTransient<AddSkillDialogViewModel>();
 
                     // Main Window
                     services.AddSingleton<MainWindow>();
