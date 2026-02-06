@@ -53,6 +53,25 @@ public partial class SettingsDialogViewModel : ViewModelBase
     [ObservableProperty]
     private string _browserStorageInfo = "No browser data";
     
+    // Streaming timeout settings
+    [ObservableProperty]
+    private int _idleTimeoutSeconds;
+    
+    [ObservableProperty]
+    private int _toolExecutionTimeoutSeconds;
+    
+    [ObservableProperty]
+    private int _approvalWaitTimeoutSeconds;
+    
+    [ObservableProperty]
+    private bool _enableProgressTracking;
+    
+    [ObservableProperty]
+    private bool _showElapsedTime;
+    
+    [ObservableProperty]
+    private bool _extendTimeoutOnActivity;
+    
     public bool DefaultAllowAllNotChecked => !DefaultAllowAll;
     
     /// <summary>
@@ -97,6 +116,14 @@ public partial class SettingsDialogViewModel : ViewModelBase
         
         // Browser automation settings
         BrowserHeadless = _settings.BrowserAutomation.Headless;
+        
+        // Streaming timeout settings
+        IdleTimeoutSeconds = _settings.StreamingTimeouts.IdleTimeoutSeconds;
+        ToolExecutionTimeoutSeconds = _settings.StreamingTimeouts.ToolExecutionTimeoutSeconds;
+        ApprovalWaitTimeoutSeconds = _settings.StreamingTimeouts.ApprovalWaitTimeoutSeconds;
+        EnableProgressTracking = _settings.StreamingTimeouts.EnableProgressTracking;
+        ShowElapsedTime = _settings.StreamingTimeouts.ShowElapsedTime;
+        ExtendTimeoutOnActivity = _settings.StreamingTimeouts.ExtendTimeoutOnActivity;
     }
     
     private void UpdateBrowserStorageInfo()
@@ -213,6 +240,14 @@ public partial class SettingsDialogViewModel : ViewModelBase
         // Browser automation settings
         _settings.BrowserAutomation.Headless = BrowserHeadless;
         
+        // Streaming timeout settings
+        _settings.StreamingTimeouts.IdleTimeoutSeconds = IdleTimeoutSeconds;
+        _settings.StreamingTimeouts.ToolExecutionTimeoutSeconds = ToolExecutionTimeoutSeconds;
+        _settings.StreamingTimeouts.ApprovalWaitTimeoutSeconds = ApprovalWaitTimeoutSeconds;
+        _settings.StreamingTimeouts.EnableProgressTracking = EnableProgressTracking;
+        _settings.StreamingTimeouts.ShowElapsedTime = ShowElapsedTime;
+        _settings.StreamingTimeouts.ExtendTimeoutOnActivity = ExtendTimeoutOnActivity;
+        
         // Save to persistence
         _ = _persistenceService.SaveSettingsAsync(_settings);
         
@@ -251,6 +286,14 @@ public partial class SettingsDialogViewModel : ViewModelBase
             
             // Browser automation defaults
             BrowserHeadless = true;
+            
+            // Streaming timeout defaults (enterprise recommended for complex playbooks)
+            IdleTimeoutSeconds = 90;
+            ToolExecutionTimeoutSeconds = 240;
+            ApprovalWaitTimeoutSeconds = 0;
+            EnableProgressTracking = true;
+            ShowElapsedTime = true;
+            ExtendTimeoutOnActivity = true;
         }
     }
     

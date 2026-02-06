@@ -141,6 +141,7 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
     private readonly IToolApprovalService _approvalService;
     private readonly IMcpService _mcpService;
     private readonly ISkillsService _skillsService;
+    private readonly IPersistenceService _persistenceService;
     private readonly ILogger<CopilotSdkService> _logger;
     private readonly SemaphoreSlim _clientLock = new(1, 1);
     
@@ -149,10 +150,24 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
     private readonly ConcurrentDictionary<string, Session> _appSessions = new();
     
     /// <summary>
+    /// Tracks streaming context per session for state-aware timeout management.
+    /// Key = sessionId, Value = streaming context with state machine.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, SessionStreamingContext> _streamingContexts = new();
+    
+    /// <summary>
     /// Tracks observed tools per session. Key = sessionId, Value = dictionary of toolName -> toolInfo
     /// Tools are observed through PreToolUse hooks during session execution.
     /// </summary>
     private readonly ConcurrentDictionary<string, ConcurrentDictionary<string, ObservedToolInfo>> _observedToolsPerSession = new();
+    
+    /// <summary>
+    /// Cached settings to avoid async loads during streaming.
+    /// Refreshed periodically or when settings change.
+    /// </summary>
+    private StreamingTimeoutSettings _cachedTimeoutSettings = new();
+    private DateTime _settingsLastLoadedUtc = DateTime.MinValue;
+    private readonly TimeSpan _settingsCacheDuration = TimeSpan.FromMinutes(5);
     
     private bool _disposed;
 
@@ -160,6 +175,12 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
     /// Event raised when a session event occurs (assistant message, tool execution, etc.)
     /// </summary>
     public event EventHandler<SdkSessionEventArgs>? SessionEventReceived;
+    
+    /// <summary>
+    /// Event raised when streaming progress changes (tool started, completed, etc.)
+    /// Used by UI to show progress indicators.
+    /// </summary>
+    public event EventHandler<StreamingProgressEventArgs>? StreamingProgressChanged;
 
     /// <summary>
     /// Internal class to track observed tools during session execution.
@@ -177,13 +198,99 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
         IToolApprovalService approvalService,
         IMcpService mcpService,
         ISkillsService skillsService,
+        IPersistenceService persistenceService,
         ILogger<CopilotSdkService> logger)
     {
         _approvalService = approvalService;
         _mcpService = mcpService;
         _skillsService = skillsService;
+        _persistenceService = persistenceService;
         _logger = logger;
-        _logger.LogInformation("CopilotSdkService initialized");
+        _logger.LogInformation("CopilotSdkService initialized with configurable timeouts");
+    }
+    
+    /// <summary>
+    /// Gets the current timeout settings, using cached values when possible.
+    /// </summary>
+    private async Task<StreamingTimeoutSettings> GetTimeoutSettingsAsync()
+    {
+        // Check if we need to refresh the cache
+        if (DateTime.UtcNow - _settingsLastLoadedUtc > _settingsCacheDuration)
+        {
+            try
+            {
+                var settings = await _persistenceService.LoadSettingsAsync();
+                _cachedTimeoutSettings = settings.StreamingTimeouts ?? new StreamingTimeoutSettings();
+                _settingsLastLoadedUtc = DateTime.UtcNow;
+                _logger.LogDebug("Refreshed timeout settings cache: Idle={Idle}s, Tool={Tool}s, Approval={Approval}s",
+                    _cachedTimeoutSettings.IdleTimeoutSeconds,
+                    _cachedTimeoutSettings.ToolExecutionTimeoutSeconds,
+                    _cachedTimeoutSettings.ApprovalWaitTimeoutSeconds);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to load timeout settings, using defaults");
+                if (_cachedTimeoutSettings == null)
+                {
+                    _cachedTimeoutSettings = new StreamingTimeoutSettings();
+                }
+            }
+        }
+        
+        return _cachedTimeoutSettings;
+    }
+    
+    /// <summary>
+    /// Gets the streaming context for a session, creating one if it doesn't exist.
+    /// </summary>
+    private SessionStreamingContext GetOrCreateStreamingContext(string sessionId)
+    {
+        return _streamingContexts.GetOrAdd(sessionId, id => new SessionStreamingContext(id));
+    }
+    
+    /// <summary>
+    /// Notifies the streaming context that we're waiting for user approval.
+    /// Called from the PreToolUse hook when user approval is needed.
+    /// </summary>
+    internal void NotifyWaitingForApproval(string sessionId, string toolName)
+    {
+        if (_streamingContexts.TryGetValue(sessionId, out var context))
+        {
+            context.StartWaitingForApproval(toolName);
+            RaiseProgressChanged(sessionId, context);
+            _logger.LogDebug("Session {SessionId} waiting for approval: {Tool}", sessionId, toolName);
+        }
+    }
+    
+    /// <summary>
+    /// Notifies the streaming context that approval has completed.
+    /// Called from the PreToolUse hook after user makes a decision.
+    /// </summary>
+    internal void NotifyApprovalCompleted(string sessionId)
+    {
+        if (_streamingContexts.TryGetValue(sessionId, out var context))
+        {
+            context.CompleteApproval();
+            RaiseProgressChanged(sessionId, context);
+            _logger.LogDebug("Session {SessionId} approval completed", sessionId);
+        }
+    }
+    
+    /// <summary>
+    /// Raises the StreamingProgressChanged event.
+    /// </summary>
+    private void RaiseProgressChanged(string sessionId, SessionStreamingContext context)
+    {
+        try
+        {
+            var settings = _cachedTimeoutSettings ?? new StreamingTimeoutSettings();
+            var message = context.GetProgressMessage(settings);
+            StreamingProgressChanged?.Invoke(this, new StreamingProgressEventArgs(sessionId, context.State, message, context));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error raising progress changed event");
+        }
     }
 
     /// <summary>
@@ -347,6 +454,14 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
         _logger.LogInformation("Sending message via SDK for session {SessionId}: {Message}",
             session.SessionId, userMessage.Length > 50 ? userMessage[..50] + "..." : userMessage);
 
+        // Load timeout settings at start of streaming
+        var timeoutSettings = await GetTimeoutSettingsAsync();
+        _logger.LogDebug("Using timeout settings: Idle={Idle}s, Tool={Tool}s, Approval={Approval}s, ProgressTracking={Progress}",
+            timeoutSettings.IdleTimeoutSeconds, 
+            timeoutSettings.ToolExecutionTimeoutSeconds,
+            timeoutSettings.ApprovalWaitTimeoutSeconds,
+            timeoutSettings.EnableProgressTracking);
+
         var message = new ChatMessage
         {
             Role = MessageRole.Assistant,
@@ -378,29 +493,37 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
             yield break;
         }
 
+        // Create streaming context for state-aware timeout management
+        var streamingContext = GetOrCreateStreamingContext(session.SessionId);
+        streamingContext.TransitionTo(SessionStreamingState.Idle);
+        
         var contentBuilder = new System.Text.StringBuilder();
         var messageComplete = false;
         var errorOccurred = false;
-        var lastActivityTime = DateTime.UtcNow;
-        var eventCount = 0;
-        // Short timeout for no-activity, longer for active streaming
-        var noActivityTimeout = TimeSpan.FromSeconds(30);
+        string? lastWarningMessage = null;
 
-        // Subscribe to streaming events
+        // Subscribe to streaming events with state-aware handling
         using var subscription = sdkSession.On(evt =>
         {
-            // Update activity time on any event
-            lastActivityTime = DateTime.UtcNow;
-            eventCount++;
+            // Record event and update activity time
+            streamingContext.RecordEvent();
             
-            // Log ALL events for debugging
+            // Log events for debugging
             var eventTypeName = evt.GetType().Name;
-            _logger.LogInformation("[EVENT #{Count}] {EventType} received for session {SessionId}",
-                eventCount, eventTypeName, session.SessionId);
+            _logger.LogInformation("[EVENT #{Count}] {EventType} received for session {SessionId} (state: {State})",
+                streamingContext.EventCount, eventTypeName, session.SessionId, streamingContext.State);
             
             switch (evt)
             {
                 case AssistantMessageDeltaEvent delta:
+                    // Transition to streaming state when receiving content
+                    if (streamingContext.State != SessionStreamingState.Streaming &&
+                        streamingContext.State != SessionStreamingState.ToolExecuting)
+                    {
+                        streamingContext.TransitionTo(SessionStreamingState.Streaming);
+                        RaiseProgressChanged(session.SessionId, streamingContext);
+                    }
+                    
                     if (delta.Data?.DeltaContent != null)
                     {
                         contentBuilder.Append(delta.Data.DeltaContent);
@@ -417,11 +540,31 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
                         contentBuilder.Clear();
                         contentBuilder.Append(complete.Data.Content);
                     }
-                    // messageComplete = true; // DON'T do this - tools run in parallel
+                    break;
+
+                case ToolExecutionStartEvent toolStart:
+                    // Tool is starting - use longer timeout
+                    var toolName = toolStart.Data?.ToolName ?? "unknown";
+                    streamingContext.StartToolExecution(toolName);
+                    RaiseProgressChanged(session.SessionId, streamingContext);
+                    _logger.LogInformation("Tool execution started: {Tool} (timeout: {Timeout}s)", 
+                        toolName, timeoutSettings.ToolExecutionTimeoutSeconds);
+                    break;
+
+                case ToolExecutionCompleteEvent toolComplete:
+                    // Tool completed - return to idle timeout
+                    // Note: We use the tracked tool name from context since ToolExecutionCompleteData
+                    // may not have a ToolName property (depends on SDK version)
+                    var completedToolName = streamingContext.CurrentToolName ?? "unknown";
+                    streamingContext.CompleteToolExecution();
+                    RaiseProgressChanged(session.SessionId, streamingContext);
+                    _logger.LogInformation("Tool execution completed: {Tool} (total tools: {Count})", 
+                        completedToolName, streamingContext.ToolsExecutedCount);
                     break;
 
                 case SessionErrorEvent error:
                     _logger.LogError("SDK session error occurred - marking error");
+                    streamingContext.TransitionTo(SessionStreamingState.Error);
                     errorOccurred = true;
                     break;
 
@@ -429,6 +572,7 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
                     // Session is idle - THIS is the true completion signal
                     // Only fires after all tools have completed
                     _logger.LogInformation("SessionIdleEvent - marking complete (all tools finished)");
+                    streamingContext.TransitionTo(SessionStreamingState.Completed);
                     messageComplete = true;
                     break;
 
@@ -448,31 +592,90 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
             _logger.LogInformation("Sending message to SDK session...");
             await sdkSession.SendAsync(new MessageOptions { Prompt = userMessage }, cancellationToken);
             _logger.LogInformation("Message sent, waiting for response...");
+            
+            // Raise initial progress event
+            RaiseProgressChanged(session.SessionId, streamingContext);
 
-            // Stream the response
+            // Stream the response with state-aware timeout management
             while (!messageComplete && !errorOccurred && !cancellationToken.IsCancellationRequested)
             {
                 message.Content = contentBuilder.ToString();
                 yield return message;
                 
-                // Check for no-activity timeout
-                var timeSinceLastActivity = DateTime.UtcNow - lastActivityTime;
-                if (timeSinceLastActivity > noActivityTimeout)
+                // Check for timeout based on current state
+                if (streamingContext.IsTimedOut(timeoutSettings))
                 {
-                    _logger.LogWarning("Session {SessionId} timed out after {Timeout}s of no activity (events received: {EventCount})",
-                        session.SessionId, noActivityTimeout.TotalSeconds, eventCount);
+                    // Get detailed diagnostics BEFORE generating the message
+                    var diagnostics = streamingContext.GetTimeoutDiagnostics(timeoutSettings);
+                    var timeoutMessage = streamingContext.GetTimeoutMessage(timeoutSettings);
                     
-                    // If we have content, return it; otherwise indicate timeout
+                    // Log comprehensive timeout information for debugging
+                    _logger.LogWarning(
+                        "Session {SessionId} TIMEOUT TRIGGERED:\n" +
+                        "  Diagnostics: {Diagnostics}\n" +
+                        "  Explanation: {Explanation}\n" +
+                        "  Message: {Message}",
+                        session.SessionId, 
+                        diagnostics.ToString(),
+                        diagnostics.GetTimeoutExplanation(),
+                        timeoutMessage);
+                    
+                    // If we have content, append timeout message; otherwise set as content
                     if (contentBuilder.Length == 0)
                     {
-                        contentBuilder.Append($"Response timed out after {noActivityTimeout.TotalSeconds}s. Events received: {eventCount}");
+                        contentBuilder.Append(timeoutMessage);
                     }
                     else
                     {
                         contentBuilder.AppendLine();
-                        contentBuilder.AppendLine($"\n[Streaming stopped - no activity for {noActivityTimeout.TotalSeconds}s]");
+                        contentBuilder.Append(timeoutMessage);
                     }
+                    
+                    // Raise timeout progress event
+                    StreamingProgressChanged?.Invoke(this, new StreamingProgressEventArgs(
+                        session.SessionId, streamingContext.State, 
+                        timeoutMessage, streamingContext, isWarning: true, warningMessage: timeoutMessage));
+                    
                     break;
+                }
+                
+                // Check for warning threshold
+                if (streamingContext.ShouldShowWarning(timeoutSettings))
+                {
+                    var warningMessage = streamingContext.GetTimeoutWarningMessage(timeoutSettings);
+                    
+                    // Only log/display if this is a new warning
+                    if (warningMessage != lastWarningMessage)
+                    {
+                        lastWarningMessage = warningMessage;
+                        
+                        // Log detailed context for the warning
+                        var diagnostics = streamingContext.GetTimeoutDiagnostics(timeoutSettings);
+                        _logger.LogWarning(
+                            "Session {SessionId} TIMEOUT WARNING:\n" +
+                            "  Warning: {Warning}\n" +
+                            "  Diagnostics: {Diagnostics}\n" +
+                            "  Protection Status: {Explanation}",
+                            session.SessionId, 
+                            warningMessage,
+                            diagnostics.ToString(),
+                            diagnostics.GetTimeoutExplanation());
+                        
+                        // Raise warning progress event
+                        StreamingProgressChanged?.Invoke(this, new StreamingProgressEventArgs(
+                            session.SessionId, streamingContext.State, 
+                            warningMessage, streamingContext, isWarning: true, warningMessage: warningMessage));
+                        
+                        // Increment warning count (for max warnings limit)
+                        streamingContext.IncrementWarningCount(timeoutSettings.MaxConsecutiveWarnings);
+                    }
+                }
+                
+                // Update progress display if enabled and enough time has passed
+                if (streamingContext.ShouldUpdateProgress(timeoutSettings))
+                {
+                    streamingContext.MarkProgressUpdated();
+                    RaiseProgressChanged(session.SessionId, streamingContext);
                 }
                 
                 await Task.Delay(50, cancellationToken); // Small delay for streaming updates
@@ -484,12 +687,14 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
             message.IsError = errorOccurred;
             yield return message;
 
-            _logger.LogInformation("Response complete for session {SessionId} (events: {EventCount}, error: {Error}, cancelled: {Cancelled}, complete: {Complete})", 
-                session.SessionId, eventCount, errorOccurred, cancellationToken.IsCancellationRequested, messageComplete);
+            _logger.LogInformation("Response complete for session {SessionId} (events: {EventCount}, tools: {ToolCount}, error: {Error}, cancelled: {Cancelled}, complete: {Complete})", 
+                session.SessionId, streamingContext.EventCount, streamingContext.ToolsExecutedCount, 
+                errorOccurred, cancellationToken.IsCancellationRequested, messageComplete);
         }
         finally
         {
-            // Subscription is disposed automatically
+            // Clean up streaming context (but keep it for potential future reference)
+            _logger.LogDebug("Streaming context final state: {Context}", streamingContext);
         }
     }
 
@@ -1874,5 +2079,58 @@ public class SdkSessionEventArgs : EventArgs
     {
         SessionId = sessionId;
         Event = evt;
+    }
+}
+
+/// <summary>
+/// Event args for streaming progress changes.
+/// Provides detailed information about current streaming state.
+/// </summary>
+public class StreamingProgressEventArgs : EventArgs
+{
+    /// <summary>Session ID</summary>
+    public string SessionId { get; }
+    
+    /// <summary>Current streaming state</summary>
+    public SessionStreamingState State { get; }
+    
+    /// <summary>Human-readable progress message</summary>
+    public string ProgressMessage { get; }
+    
+    /// <summary>Current tool name (if tool is executing)</summary>
+    public string? CurrentToolName { get; }
+    
+    /// <summary>Number of tools completed so far</summary>
+    public int ToolsCompletedCount { get; }
+    
+    /// <summary>Elapsed time in the current state</summary>
+    public TimeSpan ElapsedTime { get; }
+    
+    /// <summary>Total events received so far</summary>
+    public int EventCount { get; }
+    
+    /// <summary>True if a warning threshold has been reached</summary>
+    public bool IsWarning { get; }
+    
+    /// <summary>Warning message (if any)</summary>
+    public string? WarningMessage { get; }
+
+    public StreamingProgressEventArgs(
+        string sessionId, 
+        SessionStreamingState state, 
+        string progressMessage,
+        SessionStreamingContext context,
+        bool isWarning = false,
+        string? warningMessage = null)
+    {
+        SessionId = sessionId;
+        State = state;
+        ProgressMessage = progressMessage;
+        CurrentToolName = context.CurrentToolName;
+        ToolsCompletedCount = context.ToolsExecutedCount;
+        ElapsedTime = context.GetStateElapsedTime();
+        EventCount = context.EventCount;
+        IsWarning = isWarning;
+        WarningMessage = warningMessage;
     }
 }

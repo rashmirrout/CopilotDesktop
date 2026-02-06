@@ -101,4 +101,17 @@ public class AppSettings
     /// </summary>
     [JsonPropertyName("browserAutomation")]
     public BrowserAutomationSettings BrowserAutomation { get; set; } = new();
+
+    /// <summary>
+    /// Streaming timeout and progress tracking settings.
+    /// Controls how long the application waits for different types of activity
+    /// during streaming responses and tool execution.
+    /// 
+    /// Enterprise defaults:
+    /// - IdleTimeout: 30s (waiting for LLM response)
+    /// - ToolExecutionTimeout: 120s (complex operations)
+    /// - ApprovalWaitTimeout: 0 (infinite - never rush user decisions)
+    /// </summary>
+    [JsonPropertyName("streamingTimeouts")]
+    public StreamingTimeoutSettings StreamingTimeouts { get; set; } = new();
 }
