@@ -21,5 +21,18 @@ public enum MessageRole
     ToolResult,
     
     /// <summary>Summarized context from previous messages</summary>
-    Summary
+    Summary,
+    
+    /// <summary>
+    /// Agent reasoning/thinking commentary.
+    /// Displays LLM's thought process during execution.
+    /// Shown with faded styling and collapsed after completion.
+    /// </summary>
+    Reasoning,
+    
+    /// <summary>
+    /// Collapsed group of agent work (reasoning + tool events).
+    /// Expandable summary of what the agent did during a turn.
+    /// </summary>
+    AgentWorkSummary
 }

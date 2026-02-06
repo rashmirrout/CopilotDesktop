@@ -1,8 +1,10 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using CopilotAgent.App.ViewModels;
+using CopilotAgent.Core.Models;
 
 namespace CopilotAgent.App.Views;
 
@@ -70,6 +72,59 @@ public partial class ChatView : UserControl
             {
                 _ = viewModel.SendMessageCommand.ExecuteAsync(null);
             }
+        }
+    }
+
+    /// <summary>
+    /// Handles click on agent work summary bar to expand/collapse the details.
+    /// </summary>
+    private void AgentWorkSummary_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is FrameworkElement element && element.DataContext is ChatMessage message)
+        {
+            // Toggle the IsExpanded state
+            message.IsExpanded = !message.IsExpanded;
+            
+            // Find the message in the ViewModel and update it to trigger UI refresh
+            if (DataContext is ChatViewModel viewModel)
+            {
+                var index = -1;
+                for (int i = 0; i < viewModel.Messages.Count; i++)
+                {
+                    if (viewModel.Messages[i].Id == message.Id)
+                    {
+                        index = i;
+                        break;
+                    }
+                }
+                
+                if (index >= 0)
+                {
+                    // Replace message to trigger UI update (WPF requires this for property changes)
+                    viewModel.Messages[index] = new ChatMessage
+                    {
+                        Id = message.Id,
+                        Role = message.Role,
+                        Content = message.Content,
+                        Timestamp = message.Timestamp,
+                        IsStreaming = message.IsStreaming,
+                        IsError = message.IsError,
+                        ToolCall = message.ToolCall,
+                        ToolResult = message.ToolResult,
+                        Metadata = message.Metadata,
+                        ReasoningId = message.ReasoningId,
+                        TurnId = message.TurnId,
+                        IsAgentWork = message.IsAgentWork,
+                        CollapsedMessages = message.CollapsedMessages,
+                        SummaryText = message.SummaryText,
+                        IsExpanded = message.IsExpanded,
+                        ToolCount = message.ToolCount,
+                        ReasoningCount = message.ReasoningCount
+                    };
+                }
+            }
+            
+            e.Handled = true;
         }
     }
 

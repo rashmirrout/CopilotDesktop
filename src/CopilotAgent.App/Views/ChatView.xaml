@@ -175,6 +175,208 @@
             </Border>
         </DataTemplate>
 
+        <!-- Agent Work Summary Template - Collapsed view of agent reasoning/tools -->
+        <DataTemplate x:Key="AgentWorkSummaryTemplate">
+            <StackPanel>
+                <!-- Summary bar (clickable) -->
+                <Border Background="#F3E5F5" 
+                        BorderBrush="#CE93D8"
+                        BorderThickness="1"
+                        CornerRadius="6" 
+                        Padding="8,6"
+                        Margin="20,4,80,4"
+                        HorizontalAlignment="Left"
+                        MaxWidth="600"
+                        Cursor="Hand"
+                        MouseDown="AgentWorkSummary_MouseDown"
+                        ToolTip="Click to expand/collapse agent work details">
+                    <Border.Style>
+                        <Style TargetType="Border">
+                            <Style.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter Property="Background" Value="#EDE7F6"/>
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Border.Style>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <!-- Summary icon -->
+                        <Border Grid.Column="0" 
+                                Width="20" Height="20" 
+                                CornerRadius="10"
+                                Background="#AB47BC"
+                                Margin="0,0,8,0"
+                                VerticalAlignment="Center">
+                            <emoji:TextBlock Text="⚡" 
+                                             FontSize="10" 
+                                             HorizontalAlignment="Center"
+                                             VerticalAlignment="Center"/>
+                        </Border>
+                        
+                        <!-- Summary text -->
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding SummaryText}" 
+                                       FontSize="11"
+                                       Foreground="#7B1FA2"
+                                       FontWeight="SemiBold"
+                                       VerticalAlignment="Center"/>
+                            <TextBlock FontSize="10" Foreground="#9575CD" Margin="8,0,0,0" VerticalAlignment="Center">
+                                <Run Text="("/>
+                                <Run Text="{Binding ReasoningCount}"/>
+                                <Run Text=" reasoning, "/>
+                                <Run Text="{Binding ToolCount}"/>
+                                <Run Text=" tools)"/>
+                            </TextBlock>
+                        </StackPanel>
+                        
+                        <!-- Expand/collapse indicator -->
+                        <TextBlock Grid.Column="2" 
+                                   FontSize="10" 
+                                   Foreground="#9575CD"
+                                   VerticalAlignment="Center"
+                                   Margin="8,0,0,0">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="▶"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                                            <Setter Property="Text" Value="▼"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
+                </Border>
+                
+                <!-- Expanded view (visible when IsExpanded is true) -->
+                <Border Background="#F5F5F5"
+                        BorderBrush="#E0E0E0"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="8"
+                        Margin="30,0,80,4"
+                        MaxHeight="300"
+                        Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVisibility}}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="280">
+                        <ItemsControl ItemsSource="{Binding CollapsedMessages}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="6,4" Margin="0,2" Background="#FAFAFA" CornerRadius="3">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            
+                                            <!-- Icon based on content type -->
+                                            <emoji:TextBlock Grid.Column="0" 
+                                                             FontSize="12" 
+                                                             Margin="0,0,6,0"
+                                                             VerticalAlignment="Top">
+                                                <emoji:TextBlock.Style>
+                                                    <Style TargetType="emoji:TextBlock">
+                                                        <Setter Property="Text" Value="🤔"/>
+                                                    </Style>
+                                                </emoji:TextBlock.Style>
+                                            </emoji:TextBlock>
+                                            
+                                            <!-- Content -->
+                                            <TextBlock Grid.Column="1"
+                                                       Text="{Binding Content}"
+                                                       TextWrapping="Wrap"
+                                                       FontFamily="Consolas, Courier New, monospace"
+                                                       FontSize="11"
+                                                       Foreground="#616161"
+                                                       MaxWidth="500"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </Border>
+            </StackPanel>
+        </DataTemplate>
+
+        <!-- Agent Reasoning/Commentary Template - VS Code style faded appearance -->
+        <DataTemplate x:Key="ReasoningMessageTemplate">
+            <Border Background="#FAFAFA" 
+                    BorderBrush="#E0E0E0"
+                    BorderThickness="0,0,0,0"
+                    CornerRadius="4" 
+                    Padding="10,6"
+                    Margin="20,2,80,2"
+                    Opacity="0.75"
+                    HorizontalAlignment="Left"
+                    MaxWidth="650">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <!-- Thinking indicator icon -->
+                    <Border Grid.Column="0" 
+                            Width="18" Height="18" 
+                            CornerRadius="9"
+                            Background="#F0F0F0"
+                            Margin="0,0,8,0"
+                            VerticalAlignment="Top">
+                        <emoji:TextBlock Text="🤔" 
+                                         FontSize="10" 
+                                         HorizontalAlignment="Center"
+                                         VerticalAlignment="Center"/>
+                    </Border>
+                    
+                    <StackPanel Grid.Column="1">
+                        <!-- Reasoning content with faded styling -->
+                        <TextBlock Text="{Binding Content}" 
+                                   TextWrapping="Wrap"
+                                   FontFamily="Consolas, Courier New, monospace"
+                                   FontSize="11"
+                                   FontStyle="Italic"
+                                   Foreground="#757575"
+                                   LineHeight="16"/>
+                        
+                        <!-- Streaming indicator (visible when still streaming) - Bold green for visibility -->
+                        <StackPanel Orientation="Horizontal" 
+                                    Margin="0,4,0,0"
+                                    Visibility="{Binding IsStreaming, Converter={StaticResource BoolToVisibility}}">
+                            <TextBlock Text="●●●" 
+                                       FontSize="14" 
+                                       Foreground="#4CAF50"
+                                       FontWeight="Bold">
+                                <TextBlock.Triggers>
+                                    <EventTrigger RoutedEvent="TextBlock.Loaded">
+                                        <BeginStoryboard>
+                                            <Storyboard RepeatBehavior="Forever">
+                                                <DoubleAnimation Storyboard.TargetProperty="Opacity"
+                                                                 From="1.0" To="0.4" Duration="0:0:0.6"
+                                                                 AutoReverse="True"/>
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </EventTrigger>
+                                </TextBlock.Triggers>
+                            </TextBlock>
+                            <TextBlock Text=" thinking" 
+                                       FontSize="11" 
+                                       Foreground="#66BB6A"
+                                       FontStyle="Italic"
+                                       VerticalAlignment="Center"
+                                       Margin="4,0,0,0"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
         <!-- Message Template Selector -->
         <DataTemplate x:Key="MessageTemplate">
             <ContentControl Content="{Binding}">
@@ -192,6 +394,12 @@
                             </DataTrigger>
                             <DataTrigger Binding="{Binding Role}" Value="Tool">
                                 <Setter Property="ContentTemplate" Value="{StaticResource ToolCallMessageTemplate}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Role}" Value="Reasoning">
+                                <Setter Property="ContentTemplate" Value="{StaticResource ReasoningMessageTemplate}"/>
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Role}" Value="AgentWorkSummary">
+                                <Setter Property="ContentTemplate" Value="{StaticResource AgentWorkSummaryTemplate}"/>
                             </DataTrigger>
                         </Style.Triggers>
                     </Style>

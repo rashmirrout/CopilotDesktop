@@ -114,4 +114,20 @@ public class AppSettings
     /// </summary>
     [JsonPropertyName("streamingTimeouts")]
     public StreamingTimeoutSettings StreamingTimeouts { get; set; } = new();
+
+    /// <summary>
+    /// Show agent reasoning/commentary during response generation.
+    /// When enabled, displays the LLM's thinking process in real-time
+    /// like VS Code Copilot does. Enabled by default for transparency.
+    /// </summary>
+    [JsonPropertyName("showAgentCommentary")]
+    public bool ShowAgentCommentary { get; set; } = true;
+
+    /// <summary>
+    /// Automatically collapse agent commentary after turn completion.
+    /// When enabled, reasoning messages are collapsed into a summary bar
+    /// after the assistant response is complete.
+    /// </summary>
+    [JsonPropertyName("autoCollapseCommentary")]
+    public bool AutoCollapseCommentary { get; set; } = true;
 }

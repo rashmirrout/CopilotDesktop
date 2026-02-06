@@ -72,6 +72,13 @@ public partial class SettingsDialogViewModel : ViewModelBase
     [ObservableProperty]
     private bool _extendTimeoutOnActivity;
     
+    // Agent commentary settings
+    [ObservableProperty]
+    private bool _showAgentCommentary;
+    
+    [ObservableProperty]
+    private bool _autoCollapseCommentary;
+    
     public bool DefaultAllowAllNotChecked => !DefaultAllowAll;
     
     /// <summary>
@@ -124,6 +131,10 @@ public partial class SettingsDialogViewModel : ViewModelBase
         EnableProgressTracking = _settings.StreamingTimeouts.EnableProgressTracking;
         ShowElapsedTime = _settings.StreamingTimeouts.ShowElapsedTime;
         ExtendTimeoutOnActivity = _settings.StreamingTimeouts.ExtendTimeoutOnActivity;
+        
+        // Agent commentary settings
+        ShowAgentCommentary = _settings.ShowAgentCommentary;
+        AutoCollapseCommentary = _settings.AutoCollapseCommentary;
     }
     
     private void UpdateBrowserStorageInfo()
@@ -248,6 +259,10 @@ public partial class SettingsDialogViewModel : ViewModelBase
         _settings.StreamingTimeouts.ShowElapsedTime = ShowElapsedTime;
         _settings.StreamingTimeouts.ExtendTimeoutOnActivity = ExtendTimeoutOnActivity;
         
+        // Agent commentary settings
+        _settings.ShowAgentCommentary = ShowAgentCommentary;
+        _settings.AutoCollapseCommentary = AutoCollapseCommentary;
+        
         // Save to persistence
         _ = _persistenceService.SaveSettingsAsync(_settings);
         
@@ -294,6 +309,10 @@ public partial class SettingsDialogViewModel : ViewModelBase
             EnableProgressTracking = true;
             ShowElapsedTime = true;
             ExtendTimeoutOnActivity = true;
+            
+            // Agent commentary defaults (enabled for transparency)
+            ShowAgentCommentary = true;
+            AutoCollapseCommentary = true;
         }
     }
     
