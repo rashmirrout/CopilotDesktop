@@ -42,4 +42,60 @@ public class ChatMessage
     /// <summary>Whether this message contains an error</summary>
     [JsonPropertyName("isError")]
     public bool IsError { get; set; }
+
+    #region Agent Commentary / Reasoning Properties
+
+    /// <summary>
+    /// SDK reasoning ID for this message.
+    /// Used to track and update streaming reasoning content.
+    /// Only populated for Reasoning role messages.
+    /// </summary>
+    [JsonPropertyName("reasoningId")]
+    public string? ReasoningId { get; set; }
+
+    /// <summary>
+    /// Turn ID this message belongs to.
+    /// Used to group messages for collapsing after turn completion.
+    /// </summary>
+    [JsonPropertyName("turnId")]
+    public string? TurnId { get; set; }
+
+    /// <summary>
+    /// Whether this is an agent work item (reasoning or tool event)
+    /// that should be collapsed after the turn completes.
+    /// </summary>
+    [JsonPropertyName("isAgentWork")]
+    public bool IsAgentWork { get; set; }
+
+    /// <summary>
+    /// For AgentWorkSummary messages: collection of collapsed agent work items.
+    /// </summary>
+    [JsonIgnore]
+    public List<ChatMessage>? CollapsedMessages { get; set; }
+
+    /// <summary>
+    /// For AgentWorkSummary messages: summary text (e.g., "3 tools, 2 reasoning steps")
+    /// </summary>
+    [JsonPropertyName("summaryText")]
+    public string? SummaryText { get; set; }
+
+    /// <summary>
+    /// Whether the collapsed summary is expanded in the UI.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsExpanded { get; set; }
+
+    /// <summary>
+    /// Number of tools executed (for summary display)
+    /// </summary>
+    [JsonPropertyName("toolCount")]
+    public int ToolCount { get; set; }
+
+    /// <summary>
+    /// Number of reasoning steps (for summary display)
+    /// </summary>
+    [JsonPropertyName("reasoningCount")]
+    public int ReasoningCount { get; set; }
+
+    #endregion
 }

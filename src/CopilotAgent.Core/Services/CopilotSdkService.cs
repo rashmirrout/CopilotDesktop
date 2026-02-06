@@ -502,6 +502,9 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
         var errorOccurred = false;
         string? lastWarningMessage = null;
 
+        // Track current turn ID for grouping agent work
+        string? currentTurnId = null;
+        
         // Subscribe to streaming events with state-aware handling
         using var subscription = sdkSession.On(evt =>
         {
@@ -515,6 +518,43 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
             
             switch (evt)
             {
+                // === TURN LIFECYCLE EVENTS ===
+                case AssistantTurnStartEvent turnStart:
+                    currentTurnId = turnStart.Data?.TurnId;
+                    _logger.LogInformation("Assistant turn started: {TurnId}", currentTurnId);
+                    break;
+
+                case AssistantTurnEndEvent turnEnd:
+                    _logger.LogInformation("Assistant turn ended: {TurnId}", turnEnd.Data?.TurnId);
+                    // The turn is complete - UI can now collapse agent work
+                    break;
+
+                // === REASONING/THINKING EVENTS (Agent Commentary) ===
+                case AssistantReasoningDeltaEvent reasoningDelta:
+                    // Transition to streaming state when receiving reasoning
+                    if (streamingContext.State != SessionStreamingState.Streaming &&
+                        streamingContext.State != SessionStreamingState.ToolExecuting)
+                    {
+                        streamingContext.TransitionTo(SessionStreamingState.Streaming);
+                        RaiseProgressChanged(session.SessionId, streamingContext);
+                    }
+                    
+                    _logger.LogDebug("Reasoning delta: +{Length} chars (reasoningId: {Id})", 
+                        reasoningDelta.Data?.DeltaContent?.Length ?? 0,
+                        reasoningDelta.Data?.ReasoningId);
+                    
+                    // Forward to UI via event - ChatViewModel will handle display
+                    // The event includes: reasoningId and deltaContent
+                    break;
+
+                case AssistantReasoningEvent reasoning:
+                    // Complete reasoning content (may fire instead of or after deltas)
+                    _logger.LogInformation("Reasoning complete: {Length} chars (reasoningId: {Id})",
+                        reasoning.Data?.Content?.Length ?? 0,
+                        reasoning.Data?.ReasoningId);
+                    break;
+
+                // === ASSISTANT MESSAGE EVENTS ===
                 case AssistantMessageDeltaEvent delta:
                     // Transition to streaming state when receiving content
                     if (streamingContext.State != SessionStreamingState.Streaming &&
@@ -542,6 +582,7 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
                     }
                     break;
 
+                // === TOOL EXECUTION EVENTS ===
                 case ToolExecutionStartEvent toolStart:
                     // Tool is starting - use longer timeout
                     var toolName = toolStart.Data?.ToolName ?? "unknown";
@@ -562,6 +603,7 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
                         completedToolName, streamingContext.ToolsExecutedCount);
                     break;
 
+                // === SESSION LIFECYCLE EVENTS ===
                 case SessionErrorEvent error:
                     _logger.LogError("SDK session error occurred - marking error");
                     streamingContext.TransitionTo(SessionStreamingState.Error);
@@ -582,8 +624,8 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
                     break;
             }
 
-            // Dispatch to UI
-            SessionEventReceived?.Invoke(this, new SdkSessionEventArgs(session.SessionId, evt));
+            // Dispatch to UI - includes turnId context for grouping
+            SessionEventReceived?.Invoke(this, new SdkSessionEventArgs(session.SessionId, evt, currentTurnId));
         });
 
         try
@@ -2069,16 +2111,32 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
 
 /// <summary>
 /// Event args for SDK session events.
+/// Includes context information like TurnId for grouping agent work.
 /// </summary>
 public class SdkSessionEventArgs : EventArgs
 {
+    /// <summary>Session ID</summary>
     public string SessionId { get; }
+    
+    /// <summary>The SDK session event</summary>
     public SessionEvent Event { get; }
+    
+    /// <summary>
+    /// Current assistant turn ID for grouping agent work.
+    /// Null if no turn is active or for events outside of a turn.
+    /// </summary>
+    public string? TurnId { get; }
 
     public SdkSessionEventArgs(string sessionId, SessionEvent evt)
+        : this(sessionId, evt, null)
+    {
+    }
+
+    public SdkSessionEventArgs(string sessionId, SessionEvent evt, string? turnId)
     {
         SessionId = sessionId;
         Event = evt;
+        TurnId = turnId;
     }
 }
 

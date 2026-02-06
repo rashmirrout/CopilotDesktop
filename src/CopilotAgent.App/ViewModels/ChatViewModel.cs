@@ -37,6 +37,28 @@ public partial class ChatViewModel : ViewModelBase
     /// and prevents UI from getting stuck if a complete event is missed.
     /// </summary>
     private readonly ConcurrentDictionary<string, ToolExecutionInfo> _activeTools = new();
+    
+    /// <summary>
+    /// Tracks active reasoning messages by reasoningId.
+    /// Used to update streaming reasoning content as deltas arrive.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, ChatMessage> _activeReasoningMessages = new();
+    
+    /// <summary>
+    /// Tracks active tool commentary messages by toolCallId.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, ChatMessage> _activeToolMessages = new();
+    
+    /// <summary>
+    /// Current turn ID for grouping agent work items.
+    /// </summary>
+    private string? _currentTurnId;
+    
+    /// <summary>
+    /// Tracks the message index where the current turn's agent work starts.
+    /// Used for collapsing agent work after turn completion.
+    /// </summary>
+    private int _turnAgentWorkStartIndex = -1;
 
     [ObservableProperty]
     private Session _session = null!;
@@ -244,7 +266,7 @@ public partial class ChatViewModel : ViewModelBase
     }
 
     /// <summary>
-    /// Handles SDK session events for tool progress display.
+    /// Handles SDK session events for tool progress display and agent commentary.
     /// Uses toolCallId tracking to properly handle concurrent tool executions
     /// and prevent UI from getting stuck.
     /// </summary>
@@ -258,6 +280,25 @@ public partial class ChatViewModel : ViewModelBase
         {
             switch (args.Event)
             {
+                // === TURN LIFECYCLE EVENTS ===
+                case AssistantTurnStartEvent turnStart:
+                    HandleTurnStart(turnStart, args.TurnId);
+                    break;
+
+                case AssistantTurnEndEvent turnEnd:
+                    HandleTurnEnd(turnEnd);
+                    break;
+
+                // === REASONING/COMMENTARY EVENTS ===
+                case AssistantReasoningDeltaEvent reasoningDelta:
+                    HandleReasoningDelta(reasoningDelta, args.TurnId);
+                    break;
+
+                case AssistantReasoningEvent reasoning:
+                    HandleReasoningComplete(reasoning, args.TurnId);
+                    break;
+
+                // === TOOL EXECUTION EVENTS ===
                 case ToolExecutionStartEvent toolStart:
                     HandleToolStart(toolStart);
                     break;
@@ -266,6 +307,7 @@ public partial class ChatViewModel : ViewModelBase
                     HandleToolComplete(toolComplete);
                     break;
 
+                // === SESSION LIFECYCLE EVENTS ===
                 case SessionIdleEvent:
                     // Session is idle - clear ALL active tools as a safety net
                     // This ensures we never get stuck even if complete events are missed
@@ -275,23 +317,372 @@ public partial class ChatViewModel : ViewModelBase
                             _activeTools.Count);
                         _activeTools.Clear();
                     }
+                    
+                    // Also clear reasoning tracking
+                    _activeReasoningMessages.Clear();
+                    
                     UpdateToolExecutionState();
-                    _logger.LogDebug("Session idle - tool tracking cleared");
+                    _logger.LogDebug("Session idle - tool and reasoning tracking cleared");
                     break;
 
                 case AbortEvent:
-                    // Abort clears all tool tracking
+                    // Abort clears all tracking
                     _activeTools.Clear();
+                    _activeReasoningMessages.Clear();
+                    _currentTurnId = null;
                     UpdateToolExecutionState();
                     StatusMessage = "Aborted";
-                    _logger.LogInformation("Session aborted - tool tracking cleared");
+                    _logger.LogInformation("Session aborted - all tracking cleared");
                     break;
             }
         });
     }
     
+    #region Turn Lifecycle Handlers
+    
     /// <summary>
-    /// Handles tool execution start by tracking the tool by its toolCallId.
+    /// Handles assistant turn start - marks the beginning of agent work.
+    /// </summary>
+    private void HandleTurnStart(AssistantTurnStartEvent turnStart, string? turnId)
+    {
+        _currentTurnId = turnId ?? turnStart.Data?.TurnId;
+        _turnAgentWorkStartIndex = Messages.Count; // Mark where agent work starts
+        
+        _logger.LogDebug("Turn started: {TurnId}, agent work starts at index {Index}", 
+            _currentTurnId, _turnAgentWorkStartIndex);
+    }
+    
+    /// <summary>
+    /// Handles assistant turn end - collapses agent work into a summary bar.
+    /// This happens automatically before the response is fully rendered.
+    /// </summary>
+    private void HandleTurnEnd(AssistantTurnEndEvent turnEnd)
+    {
+        var turnId = turnEnd.Data?.TurnId;
+        
+        _logger.LogDebug("Turn ended: {TurnId}, reasoning messages: {Count}", 
+            turnId, _activeReasoningMessages.Count);
+        
+        // Collapse all reasoning messages from this turn into a summary
+        CollapseAgentWorkToSummary();
+        
+        // Clear tracking
+        _activeReasoningMessages.Clear();
+        _currentTurnId = null;
+        _turnAgentWorkStartIndex = -1;
+    }
+    
+    /// <summary>
+    /// Collapses all reasoning/agent work messages from the current turn into a single summary bar.
+    /// This provides a clean, modern UX like VS Code Copilot.
+    /// </summary>
+    private void CollapseAgentWorkToSummary()
+    {
+        // Collect all agent work messages (reasoning + tool commentary)
+        var agentWorkMessages = new List<ChatMessage>();
+        var indicesToRemove = new List<int>();
+        var reasoningCount = 0;
+        var toolCount = 0;
+        
+        for (int i = 0; i < Messages.Count; i++)
+        {
+            var msg = Messages[i];
+            if (msg.Role == MessageRole.Reasoning && msg.IsAgentWork)
+            {
+                // Check if this message belongs to current turn
+                var isFromThisTurn = msg.TurnId == _currentTurnId || 
+                    _activeReasoningMessages.ContainsKey(msg.ReasoningId ?? "") ||
+                    _activeToolMessages.Values.Any(t => t.Id == msg.Id);
+                
+                if (isFromThisTurn)
+                {
+                    agentWorkMessages.Add(msg);
+                    indicesToRemove.Add(i);
+                    
+                    // Count reasoning vs tool messages by content prefix
+                    if (msg.Content?.StartsWith("🔧") == true || msg.Content?.StartsWith("✅") == true)
+                        toolCount++;
+                    else
+                        reasoningCount++;
+                }
+            }
+        }
+        
+        if (agentWorkMessages.Count == 0)
+        {
+            _logger.LogDebug("No agent work messages to collapse");
+            return;
+        }
+        
+        // Generate summary text based on what was done
+        var summaryText = GenerateSummaryText(agentWorkMessages, reasoningCount, toolCount);
+        var summaryMessage = new ChatMessage
+        {
+            Id = $"summary_{_currentTurnId ?? Guid.NewGuid().ToString()}",
+            Role = MessageRole.AgentWorkSummary,
+            Content = string.Empty,
+            Timestamp = DateTime.UtcNow,
+            IsStreaming = false,
+            IsAgentWork = true,
+            TurnId = _currentTurnId,
+            SummaryText = summaryText,
+            ReasoningCount = reasoningCount,
+            ToolCount = toolCount,
+            CollapsedMessages = agentWorkMessages,
+            IsExpanded = false
+        };
+        
+        // Find insertion point (where first message was)
+        var insertIndex = indicesToRemove.Count > 0 ? indicesToRemove[0] : Messages.Count;
+        
+        // Remove agent work messages in reverse order to preserve indices
+        for (int i = indicesToRemove.Count - 1; i >= 0; i--)
+        {
+            Messages.RemoveAt(indicesToRemove[i]);
+        }
+        
+        // Adjust insert index if items were removed before it
+        var removedBefore = indicesToRemove.Count(idx => idx < insertIndex);
+        insertIndex -= removedBefore;
+        
+        // Insert summary message
+        if (insertIndex >= 0 && insertIndex <= Messages.Count)
+        {
+            Messages.Insert(insertIndex, summaryMessage);
+        }
+        else
+        {
+            Messages.Add(summaryMessage);
+        }
+        
+        // Clear tool message tracking
+        _activeToolMessages.Clear();
+        
+        _logger.LogInformation("Collapsed {Total} agent work ({Reasoning} reasoning, {Tools} tools) into summary at index {Index}", 
+            agentWorkMessages.Count, reasoningCount, toolCount, insertIndex);
+    }
+    
+    /// <summary>
+    /// Generates a brief summary text from the agent work messages.
+    /// </summary>
+    private static string GenerateSummaryText(List<ChatMessage> messages, int reasoningCount, int toolCount)
+    {
+        if (messages.Count == 0)
+            return "Agent work completed";
+        
+        // Generate contextual summary based on what was done
+        if (reasoningCount > 0 && toolCount > 0)
+            return $"Agent analyzed and executed {toolCount} tool{(toolCount > 1 ? "s" : "")}";
+        else if (toolCount > 0)
+            return $"Agent executed {toolCount} tool{(toolCount > 1 ? "s" : "")}";
+        else if (reasoningCount > 0)
+        {
+            // Take first few words from the first reasoning message as a preview
+            var firstContent = messages.FirstOrDefault(m => 
+                !m.Content.StartsWith("🔧") && !m.Content.StartsWith("✅"))?.Content;
+            if (string.IsNullOrWhiteSpace(firstContent))
+                return "Agent analyzed the request";
+            
+            // Truncate to ~50 chars for the summary
+            var preview = firstContent.Length > 50 
+                ? firstContent.Substring(0, 47) + "..." 
+                : firstContent;
+            
+            // Clean up newlines
+            preview = preview.Replace("\n", " ").Replace("\r", "").Trim();
+            return preview;
+        }
+        
+        return "Agent work completed";
+    }
+    
+    #endregion
+    
+    #region Reasoning Event Handlers
+    
+    /// <summary>
+    /// Handles streaming reasoning delta events.
+    /// Creates or updates a reasoning message in the UI.
+    /// IMPORTANT: Reasoning messages are inserted BEFORE the streaming assistant message
+    /// to ensure correct visual order (commentary first, then response).
+    /// </summary>
+    private void HandleReasoningDelta(AssistantReasoningDeltaEvent reasoningDelta, string? turnId)
+    {
+        var reasoningId = reasoningDelta.Data?.ReasoningId;
+        var deltaContent = reasoningDelta.Data?.DeltaContent;
+        
+        if (string.IsNullOrEmpty(reasoningId))
+        {
+            _logger.LogWarning("ReasoningDeltaEvent missing reasoningId");
+            return;
+        }
+        
+        // Find or create the reasoning message
+        if (_activeReasoningMessages.TryGetValue(reasoningId, out var existingMessage))
+        {
+            // Update existing message with delta content
+            existingMessage.Content += deltaContent ?? "";
+            existingMessage.IsStreaming = true;
+            
+            // Find and update in Messages collection
+            var index = FindMessageIndex(existingMessage.Id);
+            if (index >= 0)
+            {
+                // Replace to trigger UI update
+                Messages[index] = CloneMessageWithUpdate(existingMessage);
+            }
+            
+            _logger.LogDebug("Updated reasoning message {ReasoningId}: +{Chars} chars", 
+                reasoningId, deltaContent?.Length ?? 0);
+        }
+        else
+        {
+            // Create new reasoning message
+            var message = new ChatMessage
+            {
+                Id = $"reasoning_{reasoningId}",
+                Role = MessageRole.Reasoning,
+                Content = deltaContent ?? "",
+                Timestamp = DateTime.UtcNow,
+                IsStreaming = true,
+                IsAgentWork = true,
+                ReasoningId = reasoningId,
+                TurnId = turnId ?? _currentTurnId
+            };
+            
+            _activeReasoningMessages[reasoningId] = message;
+            
+            // Insert BEFORE the streaming assistant message to maintain correct order:
+            // User message -> Reasoning/Commentary -> Assistant response
+            var insertIndex = FindStreamingAssistantMessageIndex();
+            if (insertIndex >= 0)
+            {
+                Messages.Insert(insertIndex, message);
+                _logger.LogDebug("Inserted reasoning message {ReasoningId} at index {Index} (before assistant)", 
+                    reasoningId, insertIndex);
+            }
+            else
+            {
+                // Fallback: append if no streaming assistant found
+                Messages.Add(message);
+                _logger.LogDebug("Appended reasoning message {ReasoningId} (no streaming assistant found)", 
+                    reasoningId);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Finds the index of the current streaming assistant message.
+    /// Returns -1 if not found.
+    /// </summary>
+    private int FindStreamingAssistantMessageIndex()
+    {
+        for (int i = Messages.Count - 1; i >= 0; i--)
+        {
+            if (Messages[i].Role == MessageRole.Assistant && Messages[i].IsStreaming)
+            {
+                return i;
+            }
+        }
+        return -1;
+    }
+    
+    /// <summary>
+    /// Handles complete reasoning event.
+    /// This may fire instead of or after deltas.
+    /// </summary>
+    private void HandleReasoningComplete(AssistantReasoningEvent reasoning, string? turnId)
+    {
+        var reasoningId = reasoning.Data?.ReasoningId;
+        var content = reasoning.Data?.Content;
+        
+        if (string.IsNullOrEmpty(reasoningId))
+        {
+            _logger.LogWarning("ReasoningEvent missing reasoningId");
+            return;
+        }
+        
+        if (_activeReasoningMessages.TryGetValue(reasoningId, out var existingMessage))
+        {
+            // Update existing message with complete content
+            existingMessage.Content = content ?? existingMessage.Content;
+            existingMessage.IsStreaming = false;
+            
+            // Find and update in Messages collection
+            var index = FindMessageIndex(existingMessage.Id);
+            if (index >= 0)
+            {
+                Messages[index] = CloneMessageWithUpdate(existingMessage);
+            }
+        }
+        else
+        {
+            // Create complete reasoning message (no deltas were received)
+            var message = new ChatMessage
+            {
+                Id = $"reasoning_{reasoningId}",
+                Role = MessageRole.Reasoning,
+                Content = content ?? "",
+                Timestamp = DateTime.UtcNow,
+                IsStreaming = false,
+                IsAgentWork = true,
+                ReasoningId = reasoningId,
+                TurnId = turnId ?? _currentTurnId
+            };
+            
+            _activeReasoningMessages[reasoningId] = message;
+            Messages.Add(message);
+        }
+        
+        _logger.LogDebug("Reasoning complete: {ReasoningId}, {Length} chars", 
+            reasoningId, content?.Length ?? 0);
+    }
+    
+    /// <summary>
+    /// Finds the index of a message by ID in the Messages collection.
+    /// </summary>
+    private int FindMessageIndex(string messageId)
+    {
+        for (int i = 0; i < Messages.Count; i++)
+        {
+            if (Messages[i].Id == messageId)
+                return i;
+        }
+        return -1;
+    }
+    
+    /// <summary>
+    /// Creates a clone of a message with updated properties.
+    /// This is needed to trigger UI updates in WPF.
+    /// </summary>
+    private static ChatMessage CloneMessageWithUpdate(ChatMessage source)
+    {
+        return new ChatMessage
+        {
+            Id = source.Id,
+            Role = source.Role,
+            Content = source.Content,
+            Timestamp = source.Timestamp,
+            IsStreaming = source.IsStreaming,
+            IsError = source.IsError,
+            ToolCall = source.ToolCall,
+            ToolResult = source.ToolResult,
+            Metadata = source.Metadata,
+            ReasoningId = source.ReasoningId,
+            TurnId = source.TurnId,
+            IsAgentWork = source.IsAgentWork,
+            CollapsedMessages = source.CollapsedMessages,
+            SummaryText = source.SummaryText,
+            IsExpanded = source.IsExpanded,
+            ToolCount = source.ToolCount,
+            ReasoningCount = source.ReasoningCount
+        };
+    }
+    
+    #endregion
+    
+    /// <summary>
+    /// Handles tool execution start by tracking the tool and creating commentary.
     /// </summary>
     private void HandleToolStart(ToolExecutionStartEvent toolStart)
     {
@@ -300,7 +691,6 @@ public partial class ChatViewModel : ViewModelBase
         
         if (string.IsNullOrEmpty(toolCallId))
         {
-            // Fallback: generate a temporary ID if none provided
             toolCallId = $"temp_{Guid.NewGuid():N}";
             _logger.LogWarning("ToolExecutionStartEvent missing toolCallId, using temp: {TempId}", toolCallId);
         }
@@ -313,6 +703,33 @@ public partial class ChatViewModel : ViewModelBase
         };
         
         _activeTools[toolCallId] = toolInfo;
+        
+        // Create commentary message for tool execution
+        var toolMessage = new ChatMessage
+        {
+            Id = $"tool_{toolCallId}",
+            Role = MessageRole.Reasoning,
+            Content = $"🔧 Executing: {toolName}",
+            Timestamp = DateTime.UtcNow,
+            IsStreaming = true,
+            IsAgentWork = true,
+            TurnId = _currentTurnId
+        };
+        
+        _activeToolMessages[toolCallId] = toolMessage;
+        
+        // Insert BEFORE streaming assistant message
+        var insertIndex = FindStreamingAssistantMessageIndex();
+        if (insertIndex >= 0)
+        {
+            Messages.Insert(insertIndex, toolMessage);
+            _logger.LogDebug("Inserted tool commentary at index {Index}: {ToolName}", insertIndex, toolName);
+        }
+        else
+        {
+            Messages.Add(toolMessage);
+        }
+        
         _logger.LogDebug("Tool execution started: {ToolName} (id: {ToolCallId}, active: {ActiveCount})", 
             toolName, toolCallId, _activeTools.Count);
         
@@ -320,7 +737,7 @@ public partial class ChatViewModel : ViewModelBase
     }
     
     /// <summary>
-    /// Handles tool execution complete by removing the tool from tracking.
+    /// Handles tool execution complete by updating commentary and removing from tracking.
     /// </summary>
     private void HandleToolComplete(ToolExecutionCompleteEvent toolComplete)
     {
@@ -329,8 +746,28 @@ public partial class ChatViewModel : ViewModelBase
         if (string.IsNullOrEmpty(toolCallId))
         {
             _logger.LogWarning("ToolExecutionCompleteEvent missing toolCallId - cannot track completion");
-            // Don't blindly clear - wait for SessionIdleEvent
             return;
+        }
+        
+        // Update tool commentary message
+        if (_activeToolMessages.TryGetValue(toolCallId, out var toolMessage))
+        {
+            var duration = _activeTools.TryGetValue(toolCallId, out var info) 
+                ? (int)(DateTime.UtcNow - info.StartTime).TotalMilliseconds 
+                : 0;
+            var toolName = info?.ToolName ?? "Unknown tool";
+            
+            toolMessage.Content = $"✅ Completed: {toolName} ({duration}ms)";
+            toolMessage.IsStreaming = false;
+            
+            // Update in Messages collection
+            var index = FindMessageIndex(toolMessage.Id);
+            if (index >= 0)
+            {
+                Messages[index] = CloneMessageWithUpdate(toolMessage);
+            }
+            
+            _logger.LogDebug("Updated tool commentary: {ToolName} completed in {Duration}ms", toolName, duration);
         }
         
         if (_activeTools.TryRemove(toolCallId, out var removedTool))
@@ -338,11 +775,6 @@ public partial class ChatViewModel : ViewModelBase
             var duration = DateTime.UtcNow - removedTool.StartTime;
             _logger.LogDebug("Tool execution completed: {ToolName} (id: {ToolCallId}, duration: {Duration}ms, remaining: {ActiveCount})", 
                 removedTool.ToolName, toolCallId, duration.TotalMilliseconds, _activeTools.Count);
-        }
-        else
-        {
-            _logger.LogDebug("ToolExecutionCompleteEvent for unknown toolCallId: {ToolCallId} (may have been cleared by SessionIdleEvent)", 
-                toolCallId);
         }
         
         UpdateToolExecutionState();

@@ -404,6 +404,33 @@
                     </StackPanel>
                 </Border>
                 
+                <!-- Agent Commentary Section -->
+                <TextBlock Text="🤔 Agent Commentary" Style="{StaticResource SectionHeaderStyle}"/>
+                <Border Style="{StaticResource SectionBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingsLabelStyle}"
+                                   Text="Display LLM's thinking process during response generation:"/>
+                        
+                        <CheckBox Style="{StaticResource SettingsCheckboxStyle}"
+                                  IsChecked="{Binding ShowAgentCommentary}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="Show agent reasoning/commentary " FontWeight="SemiBold"/>
+                                <TextBlock Text="(recommended)" Foreground="#4CAF50"/>
+                            </StackPanel>
+                        </CheckBox>
+                        <TextBlock Style="{StaticResource SublabelStyle}"
+                                   Text="Displays the agent's thought process in real-time, similar to VS Code Copilot. Provides transparency into how the AI is reasoning."/>
+                        
+                        <CheckBox Style="{StaticResource SettingsCheckboxStyle}"
+                                  IsChecked="{Binding AutoCollapseCommentary}"
+                                  IsEnabled="{Binding ShowAgentCommentary}">
+                            <TextBlock Text="Auto-collapse commentary after completion"/>
+                        </CheckBox>
+                        <TextBlock Style="{StaticResource SublabelStyle}"
+                                   Text="Automatically collapses reasoning into a summary bar when the response is complete, keeping the chat clean."/>
+                    </StackPanel>
+                </Border>
+                
             </StackPanel>
         </ScrollViewer>
         
