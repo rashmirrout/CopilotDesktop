@@ -297,6 +297,113 @@
                     </StackPanel>
                 </Border>
                 
+                <!-- Streaming Timeouts Section -->
+                <TextBlock Text="⏱️ Streaming Timeouts" Style="{StaticResource SectionHeaderStyle}"/>
+                <Border Style="{StaticResource SectionBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingsLabelStyle}"
+                                   Text="Configure timeouts for different streaming states:"/>
+                        
+                        <!-- Idle Timeout -->
+                        <Grid Margin="0,8,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" 
+                                       Text="Idle Timeout (waiting for LLM response)"
+                                       VerticalAlignment="Center"
+                                       FontSize="13" Foreground="#424242"/>
+                            <TextBox Grid.Column="1" 
+                                     Text="{Binding IdleTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                     VerticalAlignment="Center"
+                                     HorizontalContentAlignment="Right"
+                                     Padding="6,4" Margin="8,0"/>
+                            <TextBlock Grid.Column="2" 
+                                       Text="seconds"
+                                       VerticalAlignment="Center"
+                                       FontSize="12" Foreground="#757575"/>
+                        </Grid>
+                        <TextBlock Style="{StaticResource SublabelStyle}"
+                                   Text="Default: 30s. How long to wait for model response between events."/>
+                        
+                        <!-- Tool Execution Timeout -->
+                        <Grid Margin="0,12,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" 
+                                       Text="Tool Execution Timeout"
+                                       VerticalAlignment="Center"
+                                       FontSize="13" Foreground="#424242"/>
+                            <TextBox Grid.Column="1" 
+                                     Text="{Binding ToolExecutionTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                     VerticalAlignment="Center"
+                                     HorizontalContentAlignment="Right"
+                                     Padding="6,4" Margin="8,0"/>
+                            <TextBlock Grid.Column="2" 
+                                       Text="seconds"
+                                       VerticalAlignment="Center"
+                                       FontSize="12" Foreground="#757575"/>
+                        </Grid>
+                        <TextBlock Style="{StaticResource SublabelStyle}"
+                                   Text="Default: 120s. For long-running tools like file operations, git, or network requests."/>
+                        
+                        <!-- Approval Wait Timeout -->
+                        <Grid Margin="0,12,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" 
+                                       Text="Approval Wait Timeout (0 = infinite)"
+                                       VerticalAlignment="Center"
+                                       FontSize="13" Foreground="#424242"/>
+                            <TextBox Grid.Column="1" 
+                                     Text="{Binding ApprovalWaitTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                     VerticalAlignment="Center"
+                                     HorizontalContentAlignment="Right"
+                                     Padding="6,4" Margin="8,0"/>
+                            <TextBlock Grid.Column="2" 
+                                       Text="seconds"
+                                       VerticalAlignment="Center"
+                                       FontSize="12" Foreground="#757575"/>
+                        </Grid>
+                        <TextBlock Style="{StaticResource SublabelStyle}"
+                                   Text="Default: 0 (infinite). Recommended: Never rush user security decisions."/>
+                        
+                        <Separator Margin="0,16,0,12"/>
+                        
+                        <!-- Progress Tracking Options -->
+                        <TextBlock Style="{StaticResource SettingsLabelStyle}"
+                                   Text="Progress Tracking:"/>
+                        
+                        <CheckBox Style="{StaticResource SettingsCheckboxStyle}"
+                                  IsChecked="{Binding EnableProgressTracking}">
+                            <TextBlock Text="Enable detailed progress tracking"/>
+                        </CheckBox>
+                        <TextBlock Style="{StaticResource SublabelStyle}"
+                                   Text="Shows &quot;Executing: tool_name (2/5)&quot; and elapsed time during operations."/>
+                        
+                        <CheckBox Style="{StaticResource SettingsCheckboxStyle}"
+                                  IsChecked="{Binding ShowElapsedTime}"
+                                  IsEnabled="{Binding EnableProgressTracking}">
+                            <TextBlock Text="Show elapsed time in progress messages"/>
+                        </CheckBox>
+                        
+                        <CheckBox Style="{StaticResource SettingsCheckboxStyle}"
+                                  IsChecked="{Binding ExtendTimeoutOnActivity}">
+                            <TextBlock Text="Extend timeout on activity"/>
+                        </CheckBox>
+                        <TextBlock Style="{StaticResource SublabelStyle}"
+                                   Text="Reset timeout timer when events are received. Recommended for playbooks."/>
+                    </StackPanel>
+                </Border>
+                
             </StackPanel>
         </ScrollViewer>
         
