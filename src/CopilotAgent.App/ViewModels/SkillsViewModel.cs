@@ -3,8 +3,10 @@ using System.Diagnostics;
 using System.Windows;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CopilotAgent.App.Views;
 using CopilotAgent.Core.Models;
 using CopilotAgent.Core.Services;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace CopilotAgent.App.ViewModels;
@@ -270,70 +272,159 @@ public partial class SkillsViewModel : ObservableObject
     private void ViewSkillContent()
     {
         if (SelectedSkill == null) return;
+        ViewSkill(SelectedSkill);
+    }
 
-        var skill = _skillsService.GetSkillByName(SelectedSkill.Name);
+    [RelayCommand]
+    private void ViewSkill(SkillItemViewModel? skillItem)
+    {
+        if (skillItem == null) return;
+
+        var skill = _skillsService.GetSkillByName(skillItem.Name);
         if (skill == null) return;
 
-        // Show skill content in a message box for now
-        // Could be enhanced with a dedicated dialog
-        var content = skill.Content;
-        if (content.Length > 2000)
+        // Determine content format based on skill format
+        var contentFormat = skill.Format switch
         {
-            content = content[..2000] + "\n\n... (truncated)";
-        }
-        
-        MessageBox.Show(
-            $"Name: {skill.Name}\n" +
-            $"Display Name: {skill.EffectiveDisplayName}\n" +
-            $"Format: {skill.Format}\n" +
-            $"Source: {skill.Source}\n" +
-            $"Path: {skill.FilePath}\n\n" +
-            $"--- Content ---\n{content}",
-            $"Skill: {skill.EffectiveDisplayName}",
-            MessageBoxButton.OK,
-            MessageBoxImage.Information);
+            SkillFormat.SdkJson => ContentFormat.Json,
+            SkillFormat.Markdown => ContentFormat.Markdown,
+            _ => ContentFormat.PlainText
+        };
+
+        // Create options for the generic content viewer
+        var options = new ContentViewerOptions
+        {
+            Title = $"Skill: {skill.EffectiveDisplayName}",
+            DisplayTitle = skill.EffectiveDisplayName,
+            Subtitle = skill.Name,
+            Content = skill.Content,
+            ContentFormat = contentFormat,
+            Icon = skill.Source switch
+            {
+                SkillSource.BuiltIn => "⚙️",
+                SkillSource.Personal => "👤",
+                SkillSource.Repository => "📁",
+                SkillSource.Remote => "☁️",
+                _ => "📄"
+            },
+            IconBackground = skill.Source switch
+            {
+                SkillSource.BuiltIn => "#DBEAFE",
+                SkillSource.Personal => "#D1FAE5",
+                SkillSource.Repository => "#FEF3C7",
+                SkillSource.Remote => "#F3E8FF",
+                _ => "#F5F5F5"
+            },
+            FooterText = !string.IsNullOrWhiteSpace(skill.Description) ? skill.Description : string.Empty
+        };
+
+        // Add metadata with file path
+        options.AddMetadata("📂", skill.FilePath, "Open Folder", () =>
+        {
+            try
+            {
+                var dir = System.IO.Path.GetDirectoryName(skill.FilePath);
+                if (!string.IsNullOrEmpty(dir) && System.IO.Directory.Exists(dir))
+                {
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = dir,
+                        UseShellExecute = true
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to open folder for skill {SkillName}", skill.Name);
+            }
+        });
+
+        // Add badges
+        var formatBadge = skill.Format switch
+        {
+            SkillFormat.SdkJson => ("SDK", "#7C3AED", "#EDE9FE"),
+            SkillFormat.Markdown => ("Markdown", "#1D4ED8", "#DBEAFE"),
+            _ => ("Unknown", "#666", "#F3F4F6")
+        };
+        options.AddBadge(formatBadge.Item1, formatBadge.Item2, formatBadge.Item3);
+
+        var sourceBadge = skill.Source switch
+        {
+            SkillSource.BuiltIn => ("Built-in", "#2563EB", "#DBEAFE"),
+            SkillSource.Personal => ("Personal", "#059669", "#D1FAE5"),
+            SkillSource.Repository => ("Repository", "#D97706", "#FEF3C7"),
+            SkillSource.Remote => ("Remote", "#7C3AED", "#F3E8FF"),
+            _ => ("Unknown", "#666", "#F3F4F6")
+        };
+        options.AddBadge(sourceBadge.Item1, sourceBadge.Item2, sourceBadge.Item3);
+
+        // Show the generic content viewer
+        ContentViewerDialog.Show(options, Application.Current.MainWindow);
+    }
+
+    [RelayCommand]
+    private void ClearFilter()
+    {
+        FilterText = string.Empty;
     }
 
     [RelayCommand]
     private async Task UploadSkillAsync()
     {
+        await AddSkillAsync();
+    }
+
+    [RelayCommand]
+    private async Task AddSkillAsync()
+    {
         try
         {
-            // Open file dialog
-            var dialog = new Microsoft.Win32.OpenFileDialog
+            // Create the ViewModel with proper DI
+            var serviceProvider = ((App)Application.Current).Services;
+            var dialogViewModel = serviceProvider.GetRequiredService<AddSkillDialogViewModel>();
+
+            var dialog = new AddSkillDialog(dialogViewModel)
             {
-                Filter = "Markdown files (*.md)|*.md|All files (*.*)|*.*",
-                Title = "Select Skill File"
+                Owner = Application.Current.MainWindow
             };
 
-            if (dialog.ShowDialog() == true)
+            var result = dialog.ShowDialog();
+
+            if (result == true && dialogViewModel.CreatedSkill != null)
             {
-                var filePath = dialog.FileName;
-                var fileName = System.IO.Path.GetFileNameWithoutExtension(filePath);
-                var content = await System.IO.File.ReadAllTextAsync(filePath);
+                await RefreshSkillsAsync();
 
-                // Parse basic metadata from file
-                var (name, description) = ParseSkillMetadataFromContent(content, fileName);
-
-                // Create the skill in SDK format
-                var skill = await _skillsService.CreateSkillAsync(name, description, content);
-                if (skill != null)
+                // If user wanted to enable after create, set up pending enable
+                if (dialogViewModel.EnableAfterCreate)
                 {
-                    await RefreshSkillsAsync();
-                    MessageBox.Show(
-                        $"Skill '{skill.EffectiveDisplayName}' added successfully.\n\n" +
-                        $"Created in SDK format at:\n{skill.FilePath}\n\n" +
-                        $"Note: The skill is disabled by default. Enable it to use.",
-                        "Success",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
+                    var createdSkillVm = Skills.FirstOrDefault(s => 
+                        s.Name.Equals(dialogViewModel.CreatedSkill.Name, StringComparison.OrdinalIgnoreCase));
+                    
+                    if (createdSkillVm != null)
+                    {
+                        createdSkillVm.TogglePendingState(); // Set to PendingEnable
+                        UpdatePendingChangesState();
+                    }
                 }
+
+                _logger.LogInformation("Skill '{SkillName}' created successfully via dialog", 
+                    dialogViewModel.CreatedSkill.Name);
+
+                MessageBox.Show(
+                    $"✅ Skill '{dialogViewModel.CreatedSkill.EffectiveDisplayName}' created successfully!\n\n" +
+                    $"📂 Location: {dialogViewModel.CreatedSkill.FilePath}\n\n" +
+                    (dialogViewModel.EnableAfterCreate 
+                        ? "⚡ Skill is set to be enabled. Click 'Apply Changes' to activate it."
+                        : "💡 The skill is disabled by default. Enable it when ready to use."),
+                    "Skill Created",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to upload skill");
-            MessageBox.Show($"Failed to upload skill: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            _logger.LogError(ex, "Failed to add skill via dialog");
+            MessageBox.Show($"Failed to add skill: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -502,6 +593,7 @@ public partial class SkillItemViewModel : ObservableObject
     public string DisplayName => Skill.EffectiveDisplayName;
     
     public string Description => Skill.Description;
+    public string FilePath => Skill.FilePath;
     public SkillSource Source => Skill.Source;
     public SkillFormat Format => Skill.Format;
     
@@ -576,13 +668,16 @@ public partial class SkillItemViewModel : ObservableObject
     };
 
     /// <summary>
-    /// Tooltip with full skill info
+    /// Tooltip with full skill info including file path
     /// </summary>
-    public string Tooltip => $"Name: {Name}\n" +
-                            $"Display: {DisplayName}\n" +
+    public string Tooltip => $"{DisplayName}\n" +
+                            $"─────────────────────\n" +
+                            $"Name: {Name}\n" +
                             $"Format: {FormatDisplay}\n" +
                             $"Source: {SourceDisplay}\n" +
-                            $"Status: {StatusText.Replace("⏳ ", "").Replace("✅ ", "").Replace("⬜ ", "")}";
+                            $"Status: {StatusText.Replace("⏳ ", "").Replace("✅ ", "").Replace("⬜ ", "")}\n" +
+                            $"─────────────────────\n" +
+                            $"📂 {FilePath}";
 
     public SkillItemViewModel(SkillDefinition skill, bool isEnabled)
     {

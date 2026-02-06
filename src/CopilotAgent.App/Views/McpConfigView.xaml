@@ -4,32 +4,217 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:vm="clr-namespace:CopilotAgent.App.ViewModels"
+             xmlns:converters="clr-namespace:CopilotAgent.App.Converters"
              xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
              mc:Ignorable="d"
-             d:DesignHeight="600" d:DesignWidth="500"
-             Background="{DynamicResource BackgroundBrush}">
+             d:DesignHeight="700" d:DesignWidth="800"
+             Background="#F8F9FA">
     
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
+        <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
+        <converters:ZeroCountToVisibilityConverter x:Key="ZeroCountToVis"/>
+        <converters:NonZeroCountToVisibilityConverter x:Key="NonZeroCountToVis"/>
         
-        <!-- Status indicator colors -->
-        <SolidColorBrush x:Key="StatusRunningBrush" Color="#4CAF50"/>
-        <SolidColorBrush x:Key="StatusStoppedBrush" Color="#9E9E9E"/>
-        <SolidColorBrush x:Key="StatusErrorBrush" Color="#F44336"/>
-        <SolidColorBrush x:Key="StatusUnknownBrush" Color="#FF9800"/>
-        <SolidColorBrush x:Key="PendingChangeBrush" Color="#FF9800"/>
+        <!-- Compact Card Style - Light Theme -->
+        <Style x:Key="ServerCard" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="BorderBrush" Value="#E5E7EB"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="Padding" Value="10,8"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver" Value="True">
+                    <Setter Property="Background" Value="#F9FAFB"/>
+                    <Setter Property="BorderBrush" Value="#D1D5DB"/>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+        
+        <!-- Tool Card Style - Nested -->
+        <Style x:Key="ToolCard" TargetType="Border">
+            <Setter Property="Background" Value="#F9FAFB"/>
+            <Setter Property="BorderBrush" Value="#E5E7EB"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+            <Setter Property="Padding" Value="8,6"/>
+            <Setter Property="Margin" Value="0,0,0,4"/>
+        </Style>
+        
+        <!-- Toggle Switch Style -->
+        <Style x:Key="ToggleSwitch" TargetType="ToggleButton">
+            <Setter Property="Width" Value="36"/>
+            <Setter Property="Height" Value="20"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Grid>
+                            <Border x:Name="track" 
+                                    Background="#D1D5DB" 
+                                    CornerRadius="10"
+                                    BorderThickness="0"/>
+                            <Border x:Name="thumb" 
+                                    Width="16" Height="16" 
+                                    CornerRadius="8"
+                                    Background="White"
+                                    HorizontalAlignment="Left"
+                                    Margin="2,0,0,0">
+                                <Border.Effect>
+                                    <DropShadowEffect BlurRadius="3" ShadowDepth="1" Opacity="0.2"/>
+                                </Border.Effect>
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="track" Property="Background" Value="#10B981"/>
+                                <Setter TargetName="thumb" Property="Margin" Value="18,0,0,0"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="track" Property="Opacity" Value="0.9"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- Action Button Style -->
+        <Style x:Key="ActionButton" TargetType="Button">
+            <Setter Property="Background" Value="#2563EB"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="Medium"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" 
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="6"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#1D4ED8"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#1E40AF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- Secondary Button Style -->
+        <Style x:Key="SecondaryButton" TargetType="Button">
+            <Setter Property="Background" Value="#F3F4F6"/>
+            <Setter Property="Foreground" Value="#374151"/>
+            <Setter Property="Padding" Value="10,5"/>
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" 
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#E5E7EB"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- Icon Button Style -->
+        <Style x:Key="IconButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#6B7280"/>
+            <Setter Property="Padding" Value="6"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="border" 
+                                Background="{TemplateBinding Background}"
+                                CornerRadius="4"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="border" Property="Background" Value="#F3F4F6"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- Expand Arrow Style -->
+        <Style x:Key="ExpandArrow" TargetType="ToggleButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border Background="Transparent" Padding="4">
+                            <TextBlock x:Name="Arrow" Text="▶" FontSize="9" Foreground="#9CA3AF">
+                                <TextBlock.RenderTransform>
+                                    <RotateTransform Angle="0" CenterX="4" CenterY="5"/>
+                                </TextBlock.RenderTransform>
+                            </TextBlock>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Arrow" Property="RenderTransform">
+                                    <Setter.Value>
+                                        <RotateTransform Angle="90" CenterX="4" CenterY="5"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Arrow" Property="Foreground" Value="#374151"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        
+        <!-- Panel Header Style -->
+        <Style x:Key="PanelHeader" TargetType="Border">
+            <Setter Property="Background" Value="#FAFBFC"/>
+            <Setter Property="BorderBrush" Value="#E5E7EB"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="Padding" Value="12,10"/>
+        </Style>
     </UserControl.Resources>
     
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
         
-        <!-- Header with Session Status -->
-        <Border Grid.Row="0" Background="#2D2D2D" Padding="16,12">
+        <!-- Header -->
+        <Border Grid.Row="0" Background="White" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1" Padding="12,10">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -37,73 +222,626 @@
                 </Grid.ColumnDefinitions>
                 
                 <StackPanel Grid.Column="0">
-                    <TextBlock Text="MCP Servers - Live Session View" FontSize="18" FontWeight="SemiBold" Foreground="White"/>
-                    <TextBlock Text="{Binding SessionStatusText}" FontSize="12" Foreground="#888" Margin="0,4,0,0"/>
+                    <StackPanel Orientation="Horizontal">
+                        <emoji:TextBlock Text="🔌" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Text="MCP Servers" FontSize="16" FontWeight="SemiBold" Foreground="#111827" VerticalAlignment="Center"/>
+                    </StackPanel>
+                    <TextBlock Text="{Binding SessionStatusText}" FontSize="11" Foreground="#6B7280" Margin="24,2,0,0"/>
                 </StackPanel>
                 
-                <Button Grid.Column="1" ToolTip="Refresh"
-                        Command="{Binding RefreshCommand}"
-                        Background="Transparent"
-                        FontSize="16" Padding="8,4" VerticalAlignment="Center"
-                        BorderThickness="0" Cursor="Hand">
-                    <emoji:TextBlock Text="🔄" FontSize="16"/>
-                </Button>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <!-- Live Session Indicator -->
+                    <Border Background="#DCFCE7" 
+                            CornerRadius="4" 
+                            Padding="8,4" 
+                            Margin="0,0,12,0"
+                            Visibility="{Binding HasActiveSession, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="LIVE SESSION" 
+                                       FontSize="10" 
+                                       FontWeight="Bold" 
+                                       Foreground="#16A34A" 
+                                       VerticalAlignment="Center"/>
+                            <Ellipse Width="8" Height="8" 
+                                     Fill="#22C55E" 
+                                     Margin="6,0,0,0" 
+                                     VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Border>
+                    
+                    <Button ToolTip="Refresh servers"
+                            Command="{Binding RefreshCommand}"
+                            Style="{StaticResource IconButton}">
+                        <emoji:TextBlock Text="🔄" FontSize="13"/>
+                    </Button>
+                </StackPanel>
             </Grid>
         </Border>
         
         <!-- Config File Path Bar -->
-        <Border Grid.Row="1" Background="#252525" Padding="12,8" BorderBrush="#333" BorderThickness="0,0,0,1">
+        <Border Grid.Row="1" Background="#FAFBFC" Padding="12,6" BorderBrush="#E5E7EB" BorderThickness="0,0,0,1">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 
-                <!-- Folder icon -->
-                <emoji:TextBlock Grid.Column="0" Text="📄" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                
-                <!-- Path display -->
+                <TextBlock Grid.Column="0" Text="📄" FontSize="11" 
+                           VerticalAlignment="Center" Margin="0,0,6,0"/>
                 <TextBlock Grid.Column="1" 
                            Text="{Binding McpConfigFilePath}" 
-                           Foreground="#AAA" FontSize="12" 
-                           VerticalAlignment="Center"
+                           FontSize="10" 
+                           Foreground="#9CA3AF"
                            TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center"
                            ToolTip="{Binding McpConfigFilePath}"/>
-                
-                <!-- Open button -->
-                <Button Grid.Column="2" 
-                        Content="Open" 
+                <Button Grid.Column="2"
+                        Content="Open"
                         Command="{Binding OpenConfigFileCommand}"
-                        Background="#444" Foreground="White"
-                        Padding="10,4" Margin="8,0,0,0"
-                        BorderThickness="0" Cursor="Hand"
-                        ToolTip="Open config file in default editor">
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="Button">
-                                        <Border Background="{TemplateBinding Background}" 
-                                                CornerRadius="3" Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                            <Style.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="#555"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
+                        Style="{StaticResource SecondaryButton}"
+                        Padding="8,3"
+                        FontSize="10"
+                        ToolTip="Open config file in default editor"
+                        Margin="8,0,0,0"/>
+                <Button Grid.Column="3"
+                        ToolTip="Open folder"
+                        Command="{Binding OpenConfigFolderCommand}"
+                        Style="{StaticResource IconButton}"
+                        Padding="4"
+                        Margin="4,0,0,0">
+                    <TextBlock Text="📁" FontSize="11"/>
                 </Button>
             </Grid>
         </Border>
         
+        <!-- Main Content Area - Two Panel Layout -->
+        <Grid Grid.Row="2">
+            <!-- Loading indicator -->
+            <Border Background="White" CornerRadius="8" Padding="30" Margin="12"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}"
+                    Panel.ZIndex="10">
+                <StackPanel>
+                    <emoji:TextBlock Text="⏳" FontSize="28" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                    <TextBlock Text="Loading MCP servers..." FontSize="13" Foreground="#6B7280" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+            
+            <!-- Applying indicator -->
+            <Border Background="White" CornerRadius="8" Padding="30" Margin="12"
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Visibility="{Binding IsApplying, Converter={StaticResource BoolToVis}}"
+                    Panel.ZIndex="10">
+                <StackPanel>
+                    <emoji:TextBlock Text="🔄" FontSize="28" HorizontalAlignment="Center" Margin="0,0,0,12"/>
+                    <TextBlock Text="Applying changes and restarting session..." FontSize="13" Foreground="#D97706" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
+            
+            <!-- Two-Panel Split View -->
+            <Grid Visibility="{Binding IsLoading, Converter={StaticResource InverseBoolToVis}}"
+                  Margin="8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" MinWidth="200"/>
+                    <ColumnDefinition Width="8"/>
+                    <ColumnDefinition Width="*" MinWidth="200"/>
+                </Grid.ColumnDefinitions>
+                
+                <!-- LEFT PANEL: Configured Servers -->
+                <Border Grid.Column="0" 
+                        Background="White" 
+                        BorderBrush="#E5E7EB" 
+                        BorderThickness="1" 
+                        CornerRadius="8">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        
+                        <!-- Panel Header -->
+                        <Border Grid.Row="0" Style="{StaticResource PanelHeader}" CornerRadius="8,8,0,0">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Background="#F3F4F6" CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
+                                        <TextBlock Text="⚙️ CONFIG" FontSize="9" FontWeight="Bold" Foreground="#6B7280"/>
+                                    </Border>
+                                    <TextBlock Text="Configured Servers" FontSize="12" FontWeight="Medium" Foreground="#374151" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock FontSize="10" Foreground="#9CA3AF" Margin="0,4,0,0">
+                                    <Run Text="{Binding ConfiguredServers.Count, Mode=OneWay}"/>
+                                    <Run Text=" servers • Toggle to enable/disable"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+                        
+                        <!-- Configured Servers List -->
+                        <ScrollViewer Grid.Row="1" 
+                                      VerticalScrollBarVisibility="Auto" 
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      Padding="8">
+                            <StackPanel>
+                                <!-- Configured Server Cards -->
+                                <ItemsControl ItemsSource="{Binding ConfiguredServers}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border>
+                                                <Border.Style>
+                                                    <Style TargetType="Border" BasedOn="{StaticResource ServerCard}">
+                                                        <Style.Triggers>
+                                                            <!-- Enabled - green left border -->
+                                                            <MultiDataTrigger>
+                                                                <MultiDataTrigger.Conditions>
+                                                                    <Condition Binding="{Binding IsEnabled}" Value="True"/>
+                                                                    <Condition Binding="{Binding PendingState}" Value="None"/>
+                                                                </MultiDataTrigger.Conditions>
+                                                                <Setter Property="BorderBrush" Value="#10B981"/>
+                                                                <Setter Property="BorderThickness" Value="3,1,1,1"/>
+                                                            </MultiDataTrigger>
+                                                            <!-- Pending - amber highlight -->
+                                                            <DataTrigger Binding="{Binding PendingState}" Value="PendingEnable">
+                                                                <Setter Property="Background" Value="#FFFBEB"/>
+                                                                <Setter Property="BorderBrush" Value="#F59E0B"/>
+                                                                <Setter Property="BorderThickness" Value="3,1,1,1"/>
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding PendingState}" Value="PendingDisable">
+                                                                <Setter Property="Background" Value="#FFFBEB"/>
+                                                                <Setter Property="BorderBrush" Value="#F59E0B"/>
+                                                                <Setter Property="BorderThickness" Value="3,1,1,1"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="*"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                        <ColumnDefinition Width="Auto"/>
+                                                    </Grid.ColumnDefinitions>
+                                                    
+                                                    <!-- Server Icon -->
+                                                    <Border Grid.Column="0" 
+                                                            Width="28" Height="28" 
+                                                            CornerRadius="6"
+                                                            Margin="0,0,10,0"
+                                                            VerticalAlignment="Center">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="#F3F4F6"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsEnabled}" Value="True">
+                                                                        <Setter Property="Background" Value="#D1FAE5"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding PendingState}" Value="PendingEnable">
+                                                                        <Setter Property="Background" Value="#FEF3C7"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding PendingState}" Value="PendingDisable">
+                                                                        <Setter Property="Background" Value="#FEF3C7"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <emoji:TextBlock Text="🔌" 
+                                                                   FontSize="13" 
+                                                                   HorizontalAlignment="Center" 
+                                                                   VerticalAlignment="Center"/>
+                                                    </Border>
+                                                    
+                                                    <!-- Server Info -->
+                                                    <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0">
+                                                        <TextBlock Text="{Binding Name}" 
+                                                                   FontSize="12" 
+                                                                   FontWeight="Medium" 
+                                                                   Foreground="#111827"
+                                                                   TextTrimming="CharacterEllipsis"/>
+                                                        <TextBlock FontSize="10" Foreground="#6B7280" Margin="0,2,0,0"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   ToolTip="{Binding CommandDisplay}">
+                                                            <Run Text="{Binding TransportDisplay, Mode=OneWay}"/>
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                    
+                                                    <!-- Status Badge -->
+                                                    <Border Grid.Column="2" CornerRadius="3" Padding="6,2" VerticalAlignment="Center" Margin="0,0,8,0">
+                                                        <Border.Style>
+                                                            <Style TargetType="Border">
+                                                                <Setter Property="Background" Value="#FEE2E2"/>
+                                                                <Style.Triggers>
+                                                                    <MultiDataTrigger>
+                                                                        <MultiDataTrigger.Conditions>
+                                                                            <Condition Binding="{Binding IsEnabled}" Value="True"/>
+                                                                            <Condition Binding="{Binding PendingState}" Value="None"/>
+                                                                        </MultiDataTrigger.Conditions>
+                                                                        <Setter Property="Background" Value="#D1FAE5"/>
+                                                                    </MultiDataTrigger>
+                                                                    <DataTrigger Binding="{Binding PendingState}" Value="PendingEnable">
+                                                                        <Setter Property="Background" Value="#FEF3C7"/>
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding PendingState}" Value="PendingDisable">
+                                                                        <Setter Property="Background" Value="#FEF3C7"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <TextBlock FontSize="9" FontWeight="Medium">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="#DC2626"/>
+                                                                    <Setter Property="Text" Value="Off"/>
+                                                                    <Style.Triggers>
+                                                                        <MultiDataTrigger>
+                                                                            <MultiDataTrigger.Conditions>
+                                                                                <Condition Binding="{Binding IsEnabled}" Value="True"/>
+                                                                                <Condition Binding="{Binding PendingState}" Value="None"/>
+                                                                            </MultiDataTrigger.Conditions>
+                                                                            <Setter Property="Foreground" Value="#059669"/>
+                                                                            <Setter Property="Text" Value="On"/>
+                                                                        </MultiDataTrigger>
+                                                                        <DataTrigger Binding="{Binding PendingState}" Value="PendingEnable">
+                                                                            <Setter Property="Foreground" Value="#D97706"/>
+                                                                            <Setter Property="Text" Value="Pending"/>
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding PendingState}" Value="PendingDisable">
+                                                                            <Setter Property="Foreground" Value="#D97706"/>
+                                                                            <Setter Property="Text" Value="Pending"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Border>
+                                                    
+                                                    <!-- Toggle Switch -->
+                                                    <ToggleButton Grid.Column="3"
+                                                                  Style="{StaticResource ToggleSwitch}"
+                                                                  IsChecked="{Binding IsEnabled, Mode=OneWay}"
+                                                                  Command="{Binding DataContext.ToggleServerCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                  CommandParameter="{Binding}"
+                                                                  ToolTip="Toggle server"
+                                                                  VerticalAlignment="Center"/>
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                
+                                <!-- Empty State (no servers) -->
+                                <Border Background="#F9FAFB" CornerRadius="6" Padding="20" Margin="0,10,0,0"
+                                        Visibility="{Binding ConfiguredServers.Count, Converter={StaticResource ZeroCountToVis}}">
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <emoji:TextBlock Text="📭" FontSize="24" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                                        <TextBlock Text="No servers configured" 
+                                                   FontSize="12" 
+                                                   FontWeight="Medium" 
+                                                   Foreground="#6B7280" 
+                                                   HorizontalAlignment="Center"/>
+                                        <Button Content="Open Config" 
+                                                Command="{Binding OpenConfigFileCommand}"
+                                                Style="{StaticResource SecondaryButton}"
+                                                Margin="0,8,0,0"
+                                                HorizontalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+                
+                <!-- Divider -->
+                <Rectangle Grid.Column="1" Width="1" Fill="#E5E7EB" Margin="3,20"/>
+                
+                <!-- RIGHT PANEL: Active/Running Servers -->
+                <Border Grid.Column="2" 
+                        Background="White" 
+                        BorderBrush="#E5E7EB" 
+                        BorderThickness="1" 
+                        CornerRadius="8">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="*"/>
+                        </Grid.RowDefinitions>
+                        
+                        <!-- Panel Header -->
+                        <Border Grid.Row="0" Style="{StaticResource PanelHeader}" CornerRadius="8,8,0,0">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <Border CornerRadius="3" Padding="6,2" Margin="0,0,8,0">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="#F3F4F6"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding HasActiveSession}" Value="True">
+                                                        <Setter Property="Background" Value="#D1FAE5"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Ellipse Width="6" Height="6" Margin="0,0,4,0" VerticalAlignment="Center">
+                                                <Ellipse.Style>
+                                                    <Style TargetType="Ellipse">
+                                                        <Setter Property="Fill" Value="#9CA3AF"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasActiveSession}" Value="True">
+                                                                <Setter Property="Fill" Value="#10B981"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Ellipse.Style>
+                                            </Ellipse>
+                                            <TextBlock FontSize="9" FontWeight="Bold">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="#6B7280"/>
+                                                        <Setter Property="Text" Value="INACTIVE"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding HasActiveSession}" Value="True">
+                                                                <Setter Property="Foreground" Value="#059669"/>
+                                                                <Setter Property="Text" Value="LIVE"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                        </StackPanel>
+                                    </Border>
+                                    <TextBlock Text="Active Servers" FontSize="12" FontWeight="Medium" Foreground="#374151" VerticalAlignment="Center"/>
+                                </StackPanel>
+                                <TextBlock FontSize="10" Margin="0,4,0,0">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="#9CA3AF"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasActiveSession}" Value="True">
+                                                    <Setter Property="Foreground" Value="#059669"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                    <Run Text="{Binding LiveServers.Count, Mode=OneWay}"/>
+                                    <Run Text=" running servers"/>
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+                        
+                        <!-- Active Servers List -->
+                        <ScrollViewer Grid.Row="1" 
+                                      VerticalScrollBarVisibility="Auto" 
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      Padding="8">
+                            <StackPanel>
+                                <!-- No Active Session Message -->
+                                <Border Background="#F9FAFB" CornerRadius="6" Padding="20" Margin="0,10,0,0"
+                                        Visibility="{Binding HasActiveSession, Converter={StaticResource InverseBoolToVis}}">
+                                    <StackPanel HorizontalAlignment="Center">
+                                        <emoji:TextBlock Text="💤" FontSize="24" HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                                        <TextBlock Text="No active session" 
+                                                   FontSize="12" 
+                                                   FontWeight="Medium" 
+                                                   Foreground="#6B7280" 
+                                                   HorizontalAlignment="Center"/>
+                                        <TextBlock Text="Start a session to see running servers" 
+                                                   FontSize="10" 
+                                                   Foreground="#9CA3AF" 
+                                                   HorizontalAlignment="Center"
+                                                   Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                </Border>
+                                
+                                <!-- Live Server Cards -->
+                                <ItemsControl ItemsSource="{Binding LiveServers}"
+                                              Visibility="{Binding HasActiveSession, Converter={StaticResource BoolToVis}}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Margin="0,0,0,6">
+                                                <Border.Style>
+                                                    <Style TargetType="Border" BasedOn="{StaticResource ServerCard}">
+                                                        <Style.Triggers>
+                                                            <!-- Running - green left border -->
+                                                            <DataTrigger Binding="{Binding Status}" Value="running">
+                                                                <Setter Property="BorderBrush" Value="#10B981"/>
+                                                                <Setter Property="BorderThickness" Value="3,1,1,1"/>
+                                                            </DataTrigger>
+                                                            <!-- Error - red left border -->
+                                                            <DataTrigger Binding="{Binding Status}" Value="error">
+                                                                <Setter Property="BorderBrush" Value="#DC2626"/>
+                                                                <Setter Property="BorderThickness" Value="3,1,1,1"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                
+                                                <StackPanel>
+                                                    <!-- Server Header Row -->
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        
+                                                        <!-- Expand Arrow -->
+                                                        <ToggleButton Grid.Column="0" 
+                                                                      Style="{StaticResource ExpandArrow}"
+                                                                      IsChecked="{Binding IsExpanded}"
+                                                                      Margin="0,0,4,0"
+                                                                      VerticalAlignment="Center"/>
+                                                        
+                                                        <!-- Server Icon -->
+                                                        <Border Grid.Column="1" 
+                                                                Width="28" Height="28" 
+                                                                CornerRadius="6"
+                                                                Margin="0,0,10,0"
+                                                                VerticalAlignment="Center">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Background" Value="#DBEAFE"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding Status}" Value="running">
+                                                                            <Setter Property="Background" Value="#D1FAE5"/>
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding Status}" Value="error">
+                                                                            <Setter Property="Background" Value="#FEE2E2"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                            <emoji:TextBlock Text="🔌" 
+                                                                       FontSize="13" 
+                                                                       HorizontalAlignment="Center" 
+                                                                       VerticalAlignment="Center"/>
+                                                        </Border>
+                                                        
+                                                        <!-- Server Info -->
+                                                        <StackPanel Grid.Column="2" VerticalAlignment="Center" Margin="0,0,8,0">
+                                                            <TextBlock Text="{Binding Name}" 
+                                                                       FontSize="12" 
+                                                                       FontWeight="Medium" 
+                                                                       Foreground="#111827"
+                                                                       TextTrimming="CharacterEllipsis"/>
+                                                            <TextBlock FontSize="10" Foreground="#6B7280" Margin="0,1,0,0">
+                                                                <Run Text="{Binding ToolsCount, Mode=OneWay}"/>
+                                                                <Run Text=" tools"/>
+                                                            </TextBlock>
+                                                        </StackPanel>
+                                                        
+                                                        <!-- Status Badge -->
+                                                        <Border Grid.Column="3" CornerRadius="3" Padding="5,2" VerticalAlignment="Center" Margin="0,0,4,0">
+                                                            <Border.Style>
+                                                                <Style TargetType="Border">
+                                                                    <Setter Property="Background" Value="#F3F4F6"/>
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding Status}" Value="running">
+                                                                            <Setter Property="Background" Value="#D1FAE5"/>
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding Status}" Value="error">
+                                                                            <Setter Property="Background" Value="#FEE2E2"/>
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Border.Style>
+                                                            <TextBlock FontSize="9" FontWeight="Medium">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="Foreground" Value="#6B7280"/>
+                                                                        <Setter Property="Text" Value="{Binding Status}"/>
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding Status}" Value="running">
+                                                                                <Setter Property="Foreground" Value="#059669"/>
+                                                                                <Setter Property="Text" Value="Running"/>
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding Status}" Value="error">
+                                                                                <Setter Property="Foreground" Value="#DC2626"/>
+                                                                                <Setter Property="Text" Value="Error"/>
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                        </Border>
+                                                        
+                                                        <!-- Status Checkmark -->
+                                                        <TextBlock Grid.Column="4" 
+                                                                   Text="✓" 
+                                                                   FontSize="14"
+                                                                   FontWeight="Bold"
+                                                                   VerticalAlignment="Center"
+                                                                   Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="#10B981"/>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                    
+                                                    <!-- Expanded Tools Section -->
+                                                    <Border Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}"
+                                                            Margin="32,10,0,0">
+                                                        <StackPanel>
+                                                            <!-- Connection Info -->
+                                                            <TextBlock FontSize="10" Foreground="#9CA3AF" Margin="0,0,0,8">
+                                                                <Run Text="Transport: "/>
+                                                                <Run Text="{Binding Transport, Mode=OneWay}" Foreground="#6B7280"/>
+                                                            </TextBlock>
+                                                            
+                                                            <!-- Tools Header -->
+                                                            <TextBlock Text="Tools" FontSize="10" Foreground="#9CA3AF" 
+                                                                       FontWeight="Medium" Margin="0,0,0,6"/>
+                                                            
+                                                            <!-- Tools List -->
+                                                            <ItemsControl ItemsSource="{Binding Tools}">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <Border Style="{StaticResource ToolCard}">
+                                                                            <StackPanel>
+                                                                                <Grid>
+                                                                                    <Grid.ColumnDefinitions>
+                                                                                        <ColumnDefinition Width="Auto"/>
+                                                                                        <ColumnDefinition Width="*"/>
+                                                                                    </Grid.ColumnDefinitions>
+                                                                                    
+                                                                                    <emoji:TextBlock Grid.Column="0" Text="🔧" FontSize="10" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                                                    <TextBlock Grid.Column="1" Text="{Binding Name}" 
+                                                                                               FontSize="11" Foreground="#374151" FontWeight="Medium"
+                                                                                               VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+                                                                                </Grid>
+                                                                                
+                                                                                <!-- Tool description -->
+                                                                                <TextBlock Text="{Binding Description}" 
+                                                                                           FontSize="10" Foreground="#6B7280" 
+                                                                                           TextWrapping="Wrap" Margin="16,2,0,0"
+                                                                                           Visibility="{Binding Description, Converter={StaticResource BoolToVis}}"/>
+                                                                            </StackPanel>
+                                                                        </Border>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                            
+                                                            <!-- No tools message -->
+                                                            <TextBlock Text="No tools observed yet" 
+                                                                       FontSize="10" Foreground="#9CA3AF" FontStyle="Italic"
+                                                                       Visibility="{Binding Tools.Count, Converter={StaticResource ZeroCountToVis}}"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                
+                                <!-- Empty running servers message (session active but 0 servers) -->
+                                <Border Background="#FEF3C7" CornerRadius="6" Padding="12" Margin="0,10,0,0"
+                                        Visibility="{Binding LiveServers.Count, Converter={StaticResource ZeroCountToVis}}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <emoji:TextBlock Text="⚠️" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBlock Text="No MCP servers running in current session" 
+                                                   FontSize="11" 
+                                                   Foreground="#92400E" 
+                                                   VerticalAlignment="Center"
+                                                   TextWrapping="Wrap"/>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+        
         <!-- Pending Changes Banner -->
-        <Border Grid.Row="2" Background="#FF9800" Padding="12,8"
+        <Border Grid.Row="3" 
+                Background="#FEF3C7" 
+                BorderBrush="#F59E0B"
+                BorderThickness="0,1,0,0"
+                Padding="12,10"
                 Visibility="{Binding HasPendingChanges, Converter={StaticResource BoolToVis}}">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -113,428 +851,27 @@
                 </Grid.ColumnDefinitions>
                 
                 <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <emoji:TextBlock Text="⚠️" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                    <TextBlock Foreground="White" FontWeight="Medium" VerticalAlignment="Center">
-                        <Run Text="{Binding PendingChangesCount, Mode=OneWay}"/>
-                        <Run Text=" pending change(s) - requires session restart"/>
+                    <emoji:TextBlock Text="⚠️" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                    <TextBlock Foreground="#92400E" FontSize="12" VerticalAlignment="Center">
+                        <Run Text="{Binding PendingChangesCount, Mode=OneWay}" FontWeight="SemiBold"/>
+                        <Run Text=" pending change(s) - restart required"/>
                     </TextBlock>
                 </StackPanel>
                 
-                <!-- Discard button -->
-                <Button Grid.Column="1" 
-                        Content="Discard" 
+                <Button Grid.Column="1"
+                        Content="Discard"
                         Command="{Binding DiscardChangesCommand}"
-                        Background="#E65100" Foreground="White"
-                        Padding="12,6" Margin="0,0,8,0"
-                        BorderThickness="0" Cursor="Hand">
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="Button">
-                                        <Border Background="{TemplateBinding Background}" 
-                                                CornerRadius="4" Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                            <Style.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="#BF360C"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                </Button>
+                        Style="{StaticResource SecondaryButton}"
+                        Background="#FDE68A"
+                        Foreground="#92400E"
+                        Margin="0,0,8,0"/>
                 
-                <!-- Apply Changes button -->
-                <Button Grid.Column="2" 
-                        Content="Apply Changes" 
+                <Button Grid.Column="2"
+                        Content="Apply"
                         Command="{Binding ApplyChangesCommand}"
-                        Background="#1B5E20" Foreground="White"
-                        Padding="12,6"
-                        BorderThickness="0" Cursor="Hand">
-                    <Button.Style>
-                        <Style TargetType="Button">
-                            <Setter Property="Template">
-                                <Setter.Value>
-                                    <ControlTemplate TargetType="Button">
-                                        <Border Background="{TemplateBinding Background}" 
-                                                CornerRadius="4" Padding="{TemplateBinding Padding}">
-                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                        </Border>
-                                    </ControlTemplate>
-                                </Setter.Value>
-                            </Setter>
-                            <Style.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
-                                    <Setter Property="Background" Value="#2E7D32"/>
-                                </Trigger>
-                                <Trigger Property="IsEnabled" Value="False">
-                                    <Setter Property="Opacity" Value="0.5"/>
-                                </Trigger>
-                            </Style.Triggers>
-                        </Style>
-                    </Button.Style>
-                </Button>
+                        Style="{StaticResource ActionButton}"
+                        Background="#D97706"/>
             </Grid>
         </Border>
-        
-        <!-- Main Content Area -->
-        <Grid Grid.Row="3">
-            <!-- Loading indicator -->
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}">
-                <TextBlock Text="Loading MCP servers..." FontSize="14" Foreground="#888" HorizontalAlignment="Center"/>
-            </StackPanel>
-            
-            <!-- Applying indicator -->
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Visibility="{Binding IsApplying, Converter={StaticResource BoolToVis}}">
-                <TextBlock Text="Applying changes and restarting session..." FontSize="14" Foreground="#FF9800" HorizontalAlignment="Center"/>
-            </StackPanel>
-            
-            <!-- Live Servers List (when session is active) -->
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                <StackPanel>
-                    <!-- Live Session Section -->
-                    <Border Background="#1A1A1A" Padding="12,8" Margin="0,0,0,1"
-                            Visibility="{Binding HasActiveSession, Converter={StaticResource BoolToVis}}">
-                        <StackPanel Orientation="Horizontal">
-                            <emoji:TextBlock Text="🔴" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                            <TextBlock Text="LIVE SESSION" FontSize="11" FontWeight="Bold" Foreground="#4CAF50"/>
-                        </StackPanel>
-                    </Border>
-                    
-                    <ItemsControl ItemsSource="{Binding LiveServers}"
-                                  Visibility="{Binding HasActiveSession, Converter={StaticResource BoolToVis}}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border BorderBrush="#333" BorderThickness="0,0,0,1">
-                                    <StackPanel>
-                                        <!-- Server Header Row -->
-                                        <Grid Background="#1E1E1E" Cursor="Hand">
-                                            <Grid.InputBindings>
-                                                <MouseBinding MouseAction="LeftClick" Command="{Binding ToggleExpandedCommand, RelativeSource={RelativeSource Self}}" />
-                                            </Grid.InputBindings>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                                <ColumnDefinition Width="Auto"/>
-                                            </Grid.ColumnDefinitions>
-                                            
-                                            <!-- Expand/Collapse Arrow -->
-                                            <ToggleButton Grid.Column="0" 
-                                                          IsChecked="{Binding IsExpanded}"
-                                                          Background="Transparent" BorderThickness="0"
-                                                          Padding="12,12,4,12" Cursor="Hand"
-                                                          VerticalAlignment="Center">
-                                                <ToggleButton.Template>
-                                                    <ControlTemplate TargetType="ToggleButton">
-                                                        <Border Background="Transparent" Padding="{TemplateBinding Padding}">
-                                                            <TextBlock x:Name="Arrow" Text="▶" FontSize="10" Foreground="#888">
-                                                                <TextBlock.RenderTransform>
-                                                                    <RotateTransform Angle="0"/>
-                                                                </TextBlock.RenderTransform>
-                                                            </TextBlock>
-                                                        </Border>
-                                                        <ControlTemplate.Triggers>
-                                                            <Trigger Property="IsChecked" Value="True">
-                                                                <Setter TargetName="Arrow" Property="RenderTransform">
-                                                                    <Setter.Value>
-                                                                        <RotateTransform Angle="90"/>
-                                                                    </Setter.Value>
-                                                                </Setter>
-                                                            </Trigger>
-                                                            <Trigger Property="IsMouseOver" Value="True">
-                                                                <Setter TargetName="Arrow" Property="Foreground" Value="White"/>
-                                                            </Trigger>
-                                                        </ControlTemplate.Triggers>
-                                                    </ControlTemplate>
-                                                </ToggleButton.Template>
-                                            </ToggleButton>
-                                            
-                                            <!-- State Indicator (colored ellipse) -->
-                                            <Ellipse Grid.Column="1" Width="10" Height="10" 
-                                                     VerticalAlignment="Center" Margin="4,0,12,0">
-                                                <Ellipse.Fill>
-                                                    <SolidColorBrush Color="{Binding StateColor, Mode=OneWay}"/>
-                                                </Ellipse.Fill>
-                                            </Ellipse>
-                                            
-                                            <!-- Server Info -->
-                                            <StackPanel Grid.Column="2" Margin="0,12" VerticalAlignment="Center">
-                                                <StackPanel Orientation="Horizontal">
-                                                    <TextBlock Text="{Binding Name, Mode=OneWay}" FontWeight="Medium" FontSize="14" Foreground="White"/>
-                                                    <TextBlock Text="{Binding StatusIcon, Mode=OneWay}" FontSize="12" Foreground="#888" Margin="8,0,0,0" VerticalAlignment="Center"/>
-                                                </StackPanel>
-                                                <TextBlock FontSize="11" Foreground="#666" Margin="0,2,0,0">
-                                                    <Run Text="{Binding Transport, Mode=OneWay}"/>
-                                                    <Run Text=" • "/>
-                                                    <Run Text="{Binding ToolsCount, Mode=OneWay}"/>
-                                                    <Run Text=" tools"/>
-                                                </TextBlock>
-                                            </StackPanel>
-                                            
-                                            <!-- Status Badge -->
-                                            <Border Grid.Column="3" 
-                                                    CornerRadius="3" Padding="8,4" Margin="8,0,12,0"
-                                                    VerticalAlignment="Center">
-                                                <Border.Style>
-                                                    <Style TargetType="Border">
-                                                        <Setter Property="Background" Value="#333"/>
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding Status, Mode=OneWay}" Value="running">
-                                                                <Setter Property="Background" Value="#1B5E20"/>
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding Status, Mode=OneWay}" Value="error">
-                                                                <Setter Property="Background" Value="#B71C1C"/>
-                                                            </DataTrigger>
-                                                            <DataTrigger Binding="{Binding Status, Mode=OneWay}" Value="unknown">
-                                                                <Setter Property="Background" Value="#E65100"/>
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Border.Style>
-                                                <TextBlock Text="{Binding Status, Mode=OneWay}" 
-                                                           FontSize="11" Foreground="White"/>
-                                            </Border>
-                                        </Grid>
-                                        
-                                        <!-- Expandable Tools Section -->
-                                        <Border Background="#252525" 
-                                                Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}"
-                                                Padding="40,8,16,12">
-                                            <StackPanel>
-                                                <!-- Connection Info -->
-                                                <TextBlock FontSize="11" Foreground="#666" Margin="0,0,0,8">
-                                                    <Run Text="Connection: "/>
-                                                    <Run Text="{Binding ConnectionInfo, Mode=OneWay}" Foreground="#888"/>
-                                                </TextBlock>
-                                                
-                                                <!-- Error message if any -->
-                                                <Border Background="#3E2723" CornerRadius="4" Padding="10,8" Margin="0,0,0,8"
-                                                        Visibility="{Binding ErrorMessage, Mode=OneWay, Converter={StaticResource BoolToVis}}">
-                                                    <TextBlock Text="{Binding ErrorMessage, Mode=OneWay}" FontSize="11" Foreground="#FFAB91" TextWrapping="Wrap"/>
-                                                </Border>
-                                                
-                                                <!-- Tools Header -->
-                                                <TextBlock Text="Available Tools:" FontSize="11" Foreground="#666" 
-                                                           FontWeight="Medium" Margin="0,4,0,6"/>
-                                                
-                                                <!-- Tools List -->
-                                                <ItemsControl ItemsSource="{Binding Tools}">
-                                                    <ItemsControl.ItemTemplate>
-                                                        <DataTemplate>
-                                                            <Border Background="#1A1A1A" CornerRadius="4" Padding="10,8" Margin="0,0,0,4">
-                                                                <StackPanel>
-                                                                    <!-- Tool name and expand button -->
-                                                                    <Grid>
-                                                                        <Grid.ColumnDefinitions>
-                                                                            <ColumnDefinition Width="Auto"/>
-                                                                            <ColumnDefinition Width="*"/>
-                                                                            <ColumnDefinition Width="Auto"/>
-                                                                        </Grid.ColumnDefinitions>
-                                                                        
-                                                                        <emoji:TextBlock Grid.Column="0" Text="🔧" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                                                        <TextBlock Grid.Column="1" Text="{Binding Name, Mode=OneWay}" 
-                                                                                   FontSize="12" Foreground="#DDD" FontWeight="Medium"
-                                                                                   VerticalAlignment="Center"/>
-                                                                        <ToggleButton Grid.Column="2" 
-                                                                                      IsChecked="{Binding IsExpanded}"
-                                                                                      Background="Transparent" BorderThickness="0"
-                                                                                      Cursor="Hand" Padding="4"
-                                                                                      Visibility="{Binding HasParameters, Converter={StaticResource BoolToVis}}">
-                                                                            <ToggleButton.Template>
-                                                                                <ControlTemplate TargetType="ToggleButton">
-                                                                                    <Border Background="Transparent" Padding="{TemplateBinding Padding}">
-                                                                                        <TextBlock x:Name="ExpandText" Text="▼" FontSize="9" Foreground="#666"/>
-                                                                                    </Border>
-                                                                                    <ControlTemplate.Triggers>
-                                                                                        <Trigger Property="IsChecked" Value="True">
-                                                                                            <Setter TargetName="ExpandText" Property="Text" Value="▲"/>
-                                                                                        </Trigger>
-                                                                                    </ControlTemplate.Triggers>
-                                                                                </ControlTemplate>
-                                                                            </ToggleButton.Template>
-                                                                        </ToggleButton>
-                                                                    </Grid>
-                                                                    
-                                                                    <!-- Tool description -->
-                                                                    <TextBlock Text="{Binding Description, Mode=OneWay}" 
-                                                                               FontSize="11" Foreground="#888" 
-                                                                               TextWrapping="Wrap" Margin="18,4,0,0"
-                                                                               Visibility="{Binding Description, Mode=OneWay, Converter={StaticResource BoolToVis}}"/>
-                                                                    
-                                                                    <!-- Parameters (expanded) -->
-                                                                    <Border Background="#0D0D0D" CornerRadius="3" Padding="8,6" Margin="18,6,0,0"
-                                                                            Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}">
-                                                                        <TextBlock Text="{Binding ParametersDisplay, Mode=OneWay}" 
-                                                                                   FontSize="10" Foreground="#777"
-                                                                                   FontFamily="Consolas"
-                                                                                   TextWrapping="Wrap"/>
-                                                                    </Border>
-                                                                </StackPanel>
-                                                            </Border>
-                                                        </DataTemplate>
-                                                    </ItemsControl.ItemTemplate>
-                                                </ItemsControl>
-                                                
-                                                <!-- No tools message -->
-                                                <TextBlock Text="No tools registered" 
-                                                           FontSize="11" Foreground="#555" FontStyle="Italic"
-                                                           Visibility="{Binding Tools.Count, Converter={StaticResource BoolToVis}, ConverterParameter=Zero}"/>
-                                            </StackPanel>
-                                        </Border>
-                                    </StackPanel>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    
-                    <!-- Configured Servers Section Header (when there's no active session or to show config) -->
-                    <Border Background="#1A1A1A" Padding="12,8" Margin="0,8,0,1">
-                        <StackPanel>
-                            <StackPanel Orientation="Horizontal">
-                                <emoji:TextBlock Text="📋" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0"/>
-                                <TextBlock Text="CONFIGURED SERVERS" FontSize="11" FontWeight="Bold" Foreground="#888"/>
-                            </StackPanel>
-                            <TextBlock Text="Toggle servers to enable/disable for next session" FontSize="10" Foreground="#555" Margin="0,2,0,0"/>
-                        </StackPanel>
-                    </Border>
-                    
-                    <!-- Configured Server List -->
-                    <ItemsControl ItemsSource="{Binding ConfiguredServers}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Border BorderBrush="#333" BorderThickness="0,0,0,1">
-                                    <Grid Background="#1E1E1E" Cursor="Hand">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                            <ColumnDefinition Width="Auto"/>
-                                        </Grid.ColumnDefinitions>
-                                        
-                                        <!-- State Indicator (colored ellipse) -->
-                                        <Ellipse Grid.Column="0" Width="10" Height="10" 
-                                                 VerticalAlignment="Center" Margin="12,0,12,0">
-                                            <Ellipse.Fill>
-                                                <SolidColorBrush Color="{Binding StateColor, Mode=OneWay}"/>
-                                            </Ellipse.Fill>
-                                        </Ellipse>
-                                        
-                                        <!-- Server Info -->
-                                        <StackPanel Grid.Column="1" Margin="0,12" VerticalAlignment="Center">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding Name, Mode=OneWay}" FontWeight="Medium" FontSize="14" Foreground="White"/>
-                                            </StackPanel>
-                                            <TextBlock FontSize="11" Foreground="#666" Margin="0,2,0,0">
-                                                <Run Text="{Binding TransportDisplay, Mode=OneWay}"/>
-                                                <Run Text=" • "/>
-                                                <Run Text="{Binding CommandDisplay, Mode=OneWay}"/>
-                                            </TextBlock>
-                                        </StackPanel>
-                                        
-                                        <!-- Status Text -->
-                                        <TextBlock Grid.Column="2" 
-                                                   Text="{Binding StatusText, Mode=OneWay}" 
-                                                   FontSize="12"
-                                                   VerticalAlignment="Center"
-                                                   Margin="8,0">
-                                            <TextBlock.Style>
-                                                <Style TargetType="TextBlock">
-                                                    <Setter Property="Foreground" Value="#888"/>
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding PendingState}" Value="PendingEnable">
-                                                            <Setter Property="Foreground" Value="#FF9800"/>
-                                                            <Setter Property="FontWeight" Value="Medium"/>
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding PendingState}" Value="PendingDisable">
-                                                            <Setter Property="Foreground" Value="#FF9800"/>
-                                                            <Setter Property="FontWeight" Value="Medium"/>
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                        
-                                        <!-- Toggle Button -->
-                                        <Button Grid.Column="3" 
-                                                Command="{Binding DataContext.ToggleServerCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                CommandParameter="{Binding}"
-                                                Margin="8,0,12,0"
-                                                Padding="10,6"
-                                                BorderThickness="0" Cursor="Hand"
-                                                VerticalAlignment="Center">
-                                            <Button.Style>
-                                                <Style TargetType="Button">
-                                                    <Setter Property="Background" Value="#444"/>
-                                                    <Setter Property="Foreground" Value="White"/>
-                                                    <Setter Property="Content" Value="Enable"/>
-                                                    <Setter Property="Template">
-                                                        <Setter.Value>
-                                                            <ControlTemplate TargetType="Button">
-                                                                <Border Background="{TemplateBinding Background}" 
-                                                                        CornerRadius="3" Padding="{TemplateBinding Padding}">
-                                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                                                </Border>
-                                                            </ControlTemplate>
-                                                        </Setter.Value>
-                                                    </Setter>
-                                                    <Style.Triggers>
-                                                        <!-- Currently disabled, no pending change -->
-                                                        <MultiDataTrigger>
-                                                            <MultiDataTrigger.Conditions>
-                                                                <Condition Binding="{Binding IsEnabled}" Value="False"/>
-                                                                <Condition Binding="{Binding PendingState}" Value="None"/>
-                                                            </MultiDataTrigger.Conditions>
-                                                            <Setter Property="Content" Value="Enable"/>
-                                                            <Setter Property="Background" Value="#4CAF50"/>
-                                                        </MultiDataTrigger>
-                                                        <!-- Currently enabled, no pending change -->
-                                                        <MultiDataTrigger>
-                                                            <MultiDataTrigger.Conditions>
-                                                                <Condition Binding="{Binding IsEnabled}" Value="True"/>
-                                                                <Condition Binding="{Binding PendingState}" Value="None"/>
-                                                            </MultiDataTrigger.Conditions>
-                                                            <Setter Property="Content" Value="Disable"/>
-                                                            <Setter Property="Background" Value="#757575"/>
-                                                        </MultiDataTrigger>
-                                                        <!-- Pending enable - show undo -->
-                                                        <DataTrigger Binding="{Binding PendingState}" Value="PendingEnable">
-                                                            <Setter Property="Content" Value="↩ Undo"/>
-                                                            <Setter Property="Background" Value="#FF9800"/>
-                                                        </DataTrigger>
-                                                        <!-- Pending disable - show undo -->
-                                                        <DataTrigger Binding="{Binding PendingState}" Value="PendingDisable">
-                                                            <Setter Property="Content" Value="↩ Undo"/>
-                                                            <Setter Property="Background" Value="#FF9800"/>
-                                                        </DataTrigger>
-                                                        <Trigger Property="IsMouseOver" Value="True">
-                                                            <Setter Property="Opacity" Value="0.9"/>
-                                                        </Trigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </Button.Style>
-                                        </Button>
-                                    </Grid>
-                                </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                </StackPanel>
-            </ScrollViewer>
-            
-            <!-- Empty State (no servers) -->
-            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Visibility="{Binding ConfiguredServers.Count, Converter={StaticResource BoolToVis}, ConverterParameter=Zero}">
-                <TextBlock Text="No MCP servers configured" FontSize="16" Foreground="#666" HorizontalAlignment="Center"/>
-                <TextBlock Text="Click 'Open' above to edit the MCP config file" FontSize="12" Foreground="#555" 
-                           HorizontalAlignment="Center" Margin="0,8,0,0"/>
-            </StackPanel>
-        </Grid>
     </Grid>
 </UserControl>
