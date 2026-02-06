@@ -73,6 +73,10 @@ public partial class App : Application
                     services.AddSingleton<ISkillsService, SkillsService>();
                     services.AddSingleton<IIterativeTaskService, IterativeTaskService>();
                     
+                    // Streaming Message Manager - manages streaming operations independently of UI
+                    // Must be singleton to track streaming state across session switches
+                    services.AddSingleton<IStreamingMessageManager, StreamingMessageManager>();
+                    
                     // Browser Automation Service (for OAuth/SAML authentication)
                     services.AddSingleton<IBrowserAutomationService>(sp =>
                     {

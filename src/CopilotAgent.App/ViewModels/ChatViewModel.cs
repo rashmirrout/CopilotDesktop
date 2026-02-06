@@ -11,14 +11,25 @@ using CopilotAgent.Core.Services;
 namespace CopilotAgent.App.ViewModels;
 
 /// <summary>
-/// ViewModel for the chat interface
+/// ViewModel for the chat interface.
+/// 
+/// This ViewModel is designed to be ephemeral - it can be destroyed and recreated
+/// when switching sessions. It relies on:
+/// - Session.MessageHistory as the single source of truth for messages
+/// - StreamingMessageManager for handling streaming operations
+/// 
+/// Key responsibilities:
+/// - Binds Messages to UI for display
+/// - Delegates streaming to StreamingMessageManager
+/// - Subscribes to streaming events and updates UI
+/// - Handles tool execution display
 /// </summary>
 public partial class ChatViewModel : ViewModelBase
 {
     private readonly ICopilotService _copilotService;
     private readonly ISessionManager _sessionManager;
+    private readonly IStreamingMessageManager _streamingManager;
     private readonly ILogger<ChatViewModel> _logger;
-    private CancellationTokenSource? _currentCts;
     
     /// <summary>
     /// Tracks active tool executions by toolCallId.
@@ -66,6 +77,7 @@ public partial class ChatViewModel : ViewModelBase
     public ChatViewModel(
         ICopilotService copilotService,
         ISessionManager sessionManager,
+        IStreamingMessageManager streamingManager,
         ILogger<ChatViewModel> logger,
         TerminalViewModel terminalViewModel,
         SkillsViewModel skillsViewModel,
@@ -75,6 +87,7 @@ public partial class ChatViewModel : ViewModelBase
     {
         _copilotService = copilotService;
         _sessionManager = sessionManager;
+        _streamingManager = streamingManager;
         _logger = logger;
         _terminalViewModel = terminalViewModel;
         _skillsViewModel = skillsViewModel;
@@ -84,6 +97,73 @@ public partial class ChatViewModel : ViewModelBase
         
         // Subscribe to terminal "Add to message" events
         _terminalViewModel.AddToMessageRequested += OnTerminalAddToMessage;
+        
+        // Subscribe to streaming manager events
+        _streamingManager.StreamingUpdated += OnStreamingUpdated;
+    }
+    
+    /// <summary>
+    /// Handles streaming updates from the StreamingMessageManager.
+    /// Updates the UI to reflect message changes.
+    /// </summary>
+    private void OnStreamingUpdated(object? sender, StreamingUpdateEventArgs args)
+    {
+        // Only handle events for the current session
+        if (Session == null || args.SessionId != Session.SessionId)
+            return;
+        
+        // Marshal to UI thread
+        Application.Current.Dispatcher.Invoke(() =>
+        {
+            // Find or add the message in our Messages collection
+            var existingIndex = -1;
+            for (int i = 0; i < Messages.Count; i++)
+            {
+                if (Messages[i].Id == args.Message.Id)
+                {
+                    existingIndex = i;
+                    break;
+                }
+            }
+            
+            if (existingIndex >= 0)
+            {
+                // Update existing message by replacing it (triggers UI update)
+                Messages[existingIndex] = new ChatMessage
+                {
+                    Id = args.Message.Id,
+                    Role = args.Message.Role,
+                    Content = args.Message.Content,
+                    Timestamp = args.Message.Timestamp,
+                    IsStreaming = args.Message.IsStreaming,
+                    IsError = args.Message.IsError,
+                    ToolCall = args.Message.ToolCall,
+                    ToolResult = args.Message.ToolResult,
+                    Metadata = args.Message.Metadata
+                };
+            }
+            else
+            {
+                // Add new message
+                Messages.Add(args.Message);
+            }
+            
+            // Update busy state based on streaming
+            if (args.IsComplete)
+            {
+                UpdateBusyState(false);
+                ClearAllActiveTools();
+                
+                if (args.IsError)
+                {
+                    StatusMessage = "Error occurred";
+                }
+                else
+                {
+                    StatusMessage = string.Empty;
+                }
+            }
+        });
     }
 
     private void OnTerminalAddToMessage(object? sender, string terminalOutput)
@@ -121,24 +201,20 @@ public partial class ChatViewModel : ViewModelBase
     [RelayCommand]
     private async Task StopAsync()
     {
-        if (_currentCts != null && !_currentCts.IsCancellationRequested)
+        _logger.LogInformation("Stop requested for session {SessionId}", Session?.SessionId ?? "none");
+        StatusMessage = "Stopping...";
+        
+        // Stop via the streaming manager - this will cancel the operation and notify via events
+        if (Session != null)
         {
-            _logger.LogInformation("Stop requested - cancelling current operation");
-            _currentCts.Cancel();
-            StatusMessage = "Stopping...";
-            
-            // Also call AbortAsync on the service for SDK mode
-            if (Session != null)
+            try
             {
-                try
-                {
-                    await _copilotService.AbortAsync(Session.SessionId);
-                    _logger.LogInformation("Abort sent to Copilot service for session {SessionId}", Session.SessionId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Failed to abort Copilot service");
-                }
+                await _streamingManager.StopStreamingAsync(Session.SessionId);
+                _logger.LogInformation("Stop request sent for session {SessionId}", Session.SessionId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to stop streaming for session {SessionId}", Session.SessionId);
             }
         }
     }
@@ -326,11 +402,21 @@ public partial class ChatViewModel : ViewModelBase
         
         Session = session;
         
-        // Load existing messages
-        Messages.Clear();
-        foreach (var message in session.MessageHistory)
+        // Load existing messages from the single source of truth (Session.MessageHistory)
+        RefreshMessagesFromHistory();
+        
+        // Check if this session has active streaming
+        // If so, set busy state and ensure UI reflects streaming
+        if (_streamingManager.IsStreaming(session.SessionId))
         {
-            Messages.Add(message);
+            _logger.LogInformation("Session {SessionId} has active streaming - restoring busy state", 
+                session.SessionId);
+            UpdateBusyState(true);
+        }
+        else
+        {
+            // Ensure busy state is cleared when switching to idle session
+            UpdateBusyState(false);
         }
         
         // Set terminal working directory
@@ -352,10 +438,24 @@ public partial class ChatViewModel : ViewModelBase
         // Subscribe to SDK events for tool progress
         SubscribeToSdkEvents();
         
-        _logger.LogInformation("Chat initialized for session {SessionId} with {Count} messages", 
-            session.SessionId, session.MessageHistory.Count);
+        _logger.LogInformation("Chat initialized for session {SessionId} with {Count} messages (streaming: {IsStreaming})", 
+            session.SessionId, session.MessageHistory.Count, _streamingManager.IsStreaming(session.SessionId));
         
         return Task.CompletedTask;
+    }
+    
+    /// <summary>
+    /// Refreshes the Messages collection from Session.MessageHistory.
+    /// This is the authoritative source of message data.
+    /// </summary>
+    private void RefreshMessagesFromHistory()
+    {
+        Messages.Clear();
+        foreach (var message in Session.MessageHistory)
+        {
+            Messages.Add(message);
+        }
+        _logger.LogDebug("Refreshed {Count} messages from session history", Messages.Count);
     }
 
     [RelayCommand]
@@ -368,110 +468,36 @@ public partial class ChatViewModel : ViewModelBase
         MessageInput = string.Empty;
         UpdateBusyState(true);
 
-        // Create new CancellationTokenSource for this operation
-        _currentCts?.Dispose();
-        _currentCts = new CancellationTokenSource();
-        var cancellationToken = _currentCts.Token;
-
         try
         {
-            _logger.LogInformation("Sending message to Copilot");
+            _logger.LogInformation("Sending message via StreamingMessageManager for session {SessionId}", 
+                Session.SessionId);
             
-            // Add user message to UI immediately
-            var userChatMessage = new ChatMessage
-            {
-                Role = MessageRole.User,
-                Content = userMessage,
-                Timestamp = DateTime.UtcNow
-            };
-            Messages.Add(userChatMessage);
-            Session.MessageHistory.Add(userChatMessage);
-
-            // Create placeholder for assistant response immediately
-            var assistantMessage = new ChatMessage
-            {
-                Role = MessageRole.Assistant,
-                Content = string.Empty,
-                Timestamp = DateTime.UtcNow
-            };
-            Messages.Add(assistantMessage);
-
-            // Run the Copilot call on a background thread to keep UI responsive
-            await Task.Run(async () =>
-            {
-                // Stream response from Copilot
-                await foreach (var chunk in _copilotService.SendMessageStreamingAsync(
-                    Session, userMessage, cancellationToken))
-                {
-                    // Check for cancellation
-                    cancellationToken.ThrowIfCancellationRequested();
-                    
-                    // Update UI on dispatcher thread
-                    await Application.Current.Dispatcher.InvokeAsync(() =>
-                    {
-                        assistantMessage.Content = chunk.Content;
-                        var index = Messages.IndexOf(assistantMessage);
-                        if (index >= 0)
-                        {
-                            Messages[index] = new ChatMessage
-                            {
-                                Role = assistantMessage.Role,
-                                Content = assistantMessage.Content,
-                                Timestamp = assistantMessage.Timestamp,
-                                IsStreaming = chunk.IsStreaming
-                            };
-                            assistantMessage = Messages[index];
-                        }
-                    });
-                }
-            }, cancellationToken);
-
-            // Add final message to session
-            Session.MessageHistory.Add(assistantMessage);
+            // Delegate to StreamingMessageManager - it will:
+            // 1. Add user message to Session.MessageHistory
+            // 2. Create assistant placeholder in Session.MessageHistory  
+            // 3. Stream response and update history
+            // 4. Notify us via StreamingUpdated events
+            // 5. Save session when complete
+            var messageId = await _streamingManager.StartStreamingAsync(Session, userMessage);
             
-            // Save session
-            await _sessionManager.SaveActiveSessionAsync();
+            _logger.LogInformation("Streaming started with message ID: {MessageId}", messageId);
             
-            _logger.LogInformation("Message sent and response received");
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogInformation("Message sending was cancelled by user");
-            
-            await Application.Current.Dispatcher.InvokeAsync(() =>
-            {
-                Messages.Add(new ChatMessage
-                {
-                    Role = MessageRole.System,
-                    Content = "Operation stopped by user",
-                    Timestamp = DateTime.UtcNow
-                });
-            });
+            // Note: UpdateBusyState(false) will be called by OnStreamingUpdated when complete
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to send message");
+            _logger.LogError(ex, "Failed to start streaming message");
             
-            await Application.Current.Dispatcher.InvokeAsync(() =>
+            // Show error in UI
+            Messages.Add(new ChatMessage
             {
-                Messages.Add(new ChatMessage
-                {
-                    Role = MessageRole.System,
-                    Content = $"Error: {ex.Message}",
-                    Timestamp = DateTime.UtcNow
-                });
-            });
-        }
-        finally
-        {
-            // Clear any stuck tool tracking - this is the ultimate safety net
-            // Ensures UI never shows "Executing" after message handling completes,
-            // even if SessionIdleEvent was never received (e.g., timeout, error)
-            await Application.Current.Dispatcher.InvokeAsync(() =>
-            {
-                ClearAllActiveTools();
+                Role = MessageRole.System,
+                Content = $"Error: {ex.Message}",
+                Timestamp = DateTime.UtcNow
             });
             
+            // Reset busy state on error
             UpdateBusyState(false);
         }
     }
