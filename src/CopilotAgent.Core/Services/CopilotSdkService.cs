@@ -650,8 +650,10 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
         
         _logger.LogInformation("[MCP_DEBUG] Found active SDK session for {SessionId}", sessionId);
         
-        // Log reflection info about the SDK session
+#if DEBUG
+        // Log reflection info about the SDK session (development builds only)
         LogSdkSessionReflectionInfo(sdkSession, sessionId);
+#endif
         
         // Get the app session to find which MCP servers were configured
         if (!_appSessions.TryGetValue(sessionId, out var appSession))
