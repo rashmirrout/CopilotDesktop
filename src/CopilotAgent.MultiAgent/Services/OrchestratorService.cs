@@ -68,6 +68,9 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
     public bool IsRunning => _isRunning;
 
     /// <inheritdoc />
+    public string? OrchestratorSessionId => _orchestratorSession?.SessionId;
+
+    /// <inheritdoc />
     public event EventHandler<OrchestratorEvent>? EventReceived;
 
     // ── IOrchestratorService methods ────────────────────────────
@@ -78,12 +81,19 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
     {
         EnsureNotDisposed();
         if (_isRunning)
+        {
+            _logger.LogWarning("SubmitTaskAsync rejected — orchestration already running in phase {Phase}", _currentPhase);
             throw new InvalidOperationException("An orchestration task is already running. Cancel it first.");
+        }
 
         _activeConfig = config ?? throw new ArgumentNullException(nameof(config));
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         _isRunning = true;
         _currentPlan = null;
+
+        _logger.LogInformation(
+            "SubmitTaskAsync started. Model={Model}, MaxParallel={MaxParallel}, WorkDir={WorkDir}, PromptLength={Len}",
+            config.OrchestratorModelId, config.MaxParallelSessions, config.WorkingDirectory, taskPrompt.Length);
 
         try
         {
@@ -94,15 +104,20 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
                 OrchestratorEventType.OrchestratorCommentary).ConfigureAwait(false);
 
             // Ask the orchestrator LLM to evaluate whether clarification is needed
+            _logger.LogDebug("Sending evaluation prompt to orchestrator LLM ({Len} chars)", taskPrompt.Length);
             var evaluationPrompt = BuildEvaluationPrompt(taskPrompt);
             var llmResponse = await SendToOrchestratorLlmAsync(evaluationPrompt, _cts.Token)
                 .ConfigureAwait(false);
+
+            _logger.LogDebug("Evaluation LLM response received ({Len} chars)", llmResponse.Length);
 
             // Parse LLM response to determine next phase
             var parsed = ParseEvaluationResponse(llmResponse);
 
             if (parsed.NeedsClarification && parsed.Questions is { Count: > 0 })
             {
+                _logger.LogInformation(
+                    "LLM requested clarification with {QuestionCount} questions", parsed.Questions.Count);
                 TransitionTo(OrchestrationPhase.Clarifying);
                 return new OrchestratorResponse
                 {
@@ -113,18 +128,20 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
                 };
             }
 
+            _logger.LogInformation("No clarification needed — proceeding to planning");
             // Proceed directly to planning
             return await PlanTaskAsync(taskPrompt, _cts.Token).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
+            _logger.LogWarning("SubmitTaskAsync cancelled by user or token");
             TransitionTo(OrchestrationPhase.Cancelled);
             _isRunning = false;
             return CancelledResponse();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during task submission");
+            _logger.LogError(ex, "Error during task submission. Phase was {Phase}", _currentPhase);
             _isRunning = false;
             TransitionTo(OrchestrationPhase.Idle);
             throw;
@@ -137,7 +154,12 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
     {
         EnsureNotDisposed();
         if (_currentPhase != OrchestrationPhase.Clarifying)
+        {
+            _logger.LogWarning("RespondToClarificationAsync rejected — current phase is {Phase}, expected Clarifying", _currentPhase);
             throw new InvalidOperationException($"Cannot respond to clarification in phase {_currentPhase}.");
+        }
+
+        _logger.LogInformation("Clarification response received ({Len} chars)", userResponse.Length);
 
         var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, _cts?.Token ?? CancellationToken.None);
@@ -422,6 +444,10 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
         var sw = Stopwatch.StartNew();
         var allResults = new List<AgentResult>();
 
+        _logger.LogInformation(
+            "ExecutePlanAsync starting. PlanId={PlanId}, Chunks={ChunkCount}, MaxParallel={MaxParallel}",
+            plan.PlanId, plan.Chunks.Count, config.MaxParallelSessions);
+
         await LogAsync(plan.PlanId, null, OrchestrationLogLevel.Info, "Orchestrator",
             "Execution started.", OrchestratorEventType.StageStarted, ct).ConfigureAwait(false);
 
@@ -447,14 +473,20 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
                 InjectDependencyOutputs(stage.Chunks, allResults);
 
                 // Dispatch all chunks in this stage in parallel
+                var stageSw = Stopwatch.StartNew();
                 var stageResults = await _agentPool
                     .DispatchBatchAsync(stage.Chunks, _context.OrchestratorSessionId, config, ct)
                     .ConfigureAwait(false);
+                stageSw.Stop();
 
                 allResults.AddRange(stageResults);
 
                 var succeeded = stageResults.Count(r => r.IsSuccess);
                 var failed = stageResults.Count(r => !r.IsSuccess);
+
+                _logger.LogInformation(
+                    "Stage {StageIdx}/{Total} finished in {Elapsed:F1}s — succeeded={Succeeded}, failed={Failed}",
+                    i + 1, stages.Count, stageSw.Elapsed.TotalSeconds, succeeded, failed);
 
                 EmitEvent(OrchestratorEventType.StageCompleted,
                     $"Stage {stage.StageIndex + 1} completed: {succeeded} succeeded, {failed} failed");
@@ -484,6 +516,11 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
 
         sw.Stop();
 
+        _logger.LogInformation(
+            "All execution stages completed in {Elapsed:F1}s. Total results={ResultCount}, Succeeded={Succeeded}, Failed={Failed}",
+            sw.Elapsed.TotalSeconds, allResults.Count,
+            allResults.Count(r => r.IsSuccess), allResults.Count(r => !r.IsSuccess));
+
         // ── Aggregation phase ──
         return await AggregateResultsAsync(plan, allResults, sw.Elapsed, ct).ConfigureAwait(false);
     }
@@ -492,6 +529,11 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
         OrchestrationPlan plan, List<AgentResult> results, TimeSpan duration, CancellationToken ct)
     {
         TransitionTo(OrchestrationPhase.Aggregating);
+
+        _logger.LogInformation(
+            "AggregateResultsAsync starting for PlanId={PlanId}. ResultCount={Count}, Duration={Duration:F1}s",
+            plan.PlanId, results.Count, duration.TotalSeconds);
+
         EmitEvent(OrchestratorEventType.AggregationStarted, "Aggregating worker results...");
 
         await LogAsync(plan.PlanId, null, OrchestrationLogLevel.Info, "Orchestrator",
@@ -749,6 +791,9 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
 
     private EvaluationResult ParseEvaluationResponse(string llmResponse)
     {
+        _logger.LogDebug("Parsing evaluation response ({Len} chars): {Preview}",
+            llmResponse.Length, Truncate(llmResponse, 120));
+
         try
         {
             // Try to extract JSON from the response
@@ -793,10 +838,13 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
         }
         catch (JsonException ex)
         {
-            _logger.LogDebug(ex, "Could not parse LLM evaluation response as JSON, treating as proceed.");
+            _logger.LogWarning(ex,
+                "Could not parse LLM evaluation response as JSON — defaulting to proceed. Response preview: {Preview}",
+                Truncate(llmResponse, 200));
         }
 
         // Default: proceed to planning (LLM didn't return structured JSON)
+        _logger.LogDebug("Evaluation parse fallback: treating response as 'proceed to planning'");
         return new EvaluationResult { NeedsClarification = false, IsNewTask = true };
     }
 

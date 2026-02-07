@@ -170,6 +170,13 @@ public sealed class ResultAggregator : IResultAggregator
         sb.AppendLine("3. If any workers failed, explain what went wrong and suggest next steps.");
         sb.AppendLine("4. Keep the summary concise but comprehensive.");
         sb.AppendLine("5. Use markdown formatting for readability.");
+        sb.AppendLine("6. At the end, include a section titled '### Recommended Next Steps' with 2-5 actionable next steps.");
+        sb.AppendLine("   Each next step MUST be formatted as a markdown list item with an [ACTION:description] marker.");
+        sb.AppendLine("   Example:");
+        sb.AppendLine("   ### Recommended Next Steps");
+        sb.AppendLine("   - [ACTION:Run the full test suite to verify all changes]");
+        sb.AppendLine("   - [ACTION:Review the generated code for edge cases]");
+        sb.AppendLine("   - [ACTION:Deploy to staging environment for integration testing]");
 
         return sb.ToString();
     }

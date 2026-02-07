@@ -64,6 +64,10 @@ public sealed class AgentPool : IAgentPool
         ArgumentException.ThrowIfNullOrWhiteSpace(orchestratorSessionId);
         ArgumentNullException.ThrowIfNull(config);
 
+        _logger.LogInformation(
+            "DispatchAsync called. ChunkId={ChunkId}, Title='{Title}', Role={Role}, Strategy={Strategy}, MaxRetries={MaxRetries}",
+            chunk.ChunkId, chunk.Title, chunk.AssignedRole, config.WorkspaceStrategy, config.RetryPolicy.MaxRetriesPerChunk);
+
         var workspaceStrategy = _strategyFactory(config.WorkspaceStrategy);
         var retryPolicy = config.RetryPolicy;
         var attempt = 0;
@@ -80,15 +84,17 @@ public sealed class AgentPool : IAgentPool
                 chunk.RetryCount = attempt;
 
                 _logger.LogInformation(
-                    "Retrying chunk {ChunkId} (attempt {Attempt}/{MaxRetries}) after {Delay}s delay",
+                    "Retrying chunk {ChunkId} (attempt {Attempt}/{MaxRetries}) after {Delay}s delay. PrevError={PrevError}",
                     chunk.ChunkId, attempt, retryPolicy.MaxRetriesPerChunk,
-                    retryPolicy.RetryDelay.TotalSeconds);
+                    retryPolicy.RetryDelay.TotalSeconds,
+                    lastResult?.ErrorMessage ?? "(none)");
 
                 await Task.Delay(retryPolicy.RetryDelay, cancellationToken);
 
                 // Re-prompt with error context if configured
                 if (retryPolicy.RepromptOnRetry && lastResult != null)
                 {
+                    _logger.LogDebug("Re-prompting chunk {ChunkId} with error context for retry", chunk.ChunkId);
                     chunk.Prompt = BuildRetryPrompt(originalPrompt, lastResult);
                 }
             }
@@ -97,13 +103,16 @@ public sealed class AgentPool : IAgentPool
             string workspacePath;
             try
             {
+                _logger.LogDebug("Preparing workspace for chunk {ChunkId} in {WorkDir}", chunk.ChunkId, config.WorkingDirectory);
                 workspacePath = await workspaceStrategy.PrepareWorkspaceAsync(
                     chunk, config.WorkingDirectory, cancellationToken);
+                _logger.LogDebug("Workspace prepared for chunk {ChunkId}: {Path}", chunk.ChunkId, workspacePath);
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex,
-                    "Failed to prepare workspace for chunk {ChunkId}", chunk.ChunkId);
+                    "Failed to prepare workspace for chunk {ChunkId}. Strategy={Strategy}, WorkDir={WorkDir}",
+                    chunk.ChunkId, config.WorkspaceStrategy, config.WorkingDirectory);
                 chunk.Status = AgentStatus.Failed;
                 return new AgentResult
                 {
@@ -130,17 +139,21 @@ public sealed class AgentPool : IAgentPool
                 {
                     // Store result for future dependency lookups
                     _accumulatedResults.TryAdd(chunk.ChunkId, lastResult);
+                    _logger.LogDebug("Stored result for chunk {ChunkId} in accumulated results (for dependency lookups)", chunk.ChunkId);
 
                     // Merge results back
                     try
                     {
+                        _logger.LogDebug("Merging workspace results for chunk {ChunkId}", chunk.ChunkId);
                         await workspaceStrategy.MergeResultsAsync(
                             workspacePath, config.WorkingDirectory, chunk, cancellationToken);
+                        _logger.LogDebug("Workspace merge succeeded for chunk {ChunkId}", chunk.ChunkId);
                     }
                     catch (Exception ex)
                     {
                         _logger.LogError(ex,
-                            "Failed to merge results for chunk {ChunkId}", chunk.ChunkId);
+                            "Failed to merge results for chunk {ChunkId}. WorkspacePath={Path}",
+                            chunk.ChunkId, workspacePath);
                     }
 
                     // Restore original prompt in case it was modified for retry
@@ -149,8 +162,8 @@ public sealed class AgentPool : IAgentPool
                 }
 
                 _logger.LogWarning(
-                    "Worker {WorkerId} failed chunk {ChunkId}: {Error}",
-                    workerId, chunk.ChunkId, lastResult.ErrorMessage);
+                    "Worker {WorkerId} failed chunk {ChunkId} (attempt {Attempt}): {Error}",
+                    workerId, chunk.ChunkId, attempt, lastResult.ErrorMessage);
             }
             finally
             {
@@ -178,8 +191,8 @@ public sealed class AgentPool : IAgentPool
         chunk.Prompt = originalPrompt;
 
         _logger.LogError(
-            "Chunk {ChunkId} failed after {Attempts} attempts",
-            chunk.ChunkId, attempt);
+            "Chunk {ChunkId} ('{Title}') PERMANENTLY FAILED after {Attempts} attempts. LastError={Error}",
+            chunk.ChunkId, chunk.Title, attempt, lastResult?.ErrorMessage ?? "(unknown)");
 
         chunk.Status = AgentStatus.Failed;
         return lastResult ?? new AgentResult
@@ -202,6 +215,7 @@ public sealed class AgentPool : IAgentPool
 
         if (chunks.Count == 0)
         {
+            _logger.LogDebug("DispatchBatchAsync called with 0 chunks — returning empty");
             return new List<AgentResult>();
         }
 
@@ -209,8 +223,9 @@ public sealed class AgentPool : IAgentPool
         EnsureConcurrencyGate(config.MaxParallelSessions);
 
         _logger.LogInformation(
-            "Dispatching batch of {Count} chunks with max parallelism {MaxParallel}",
-            chunks.Count, config.MaxParallelSessions);
+            "DispatchBatchAsync starting. ChunkCount={Count}, MaxParallel={MaxParallel}, AbortThreshold={AbortThreshold}, Chunks=[{ChunkIds}]",
+            chunks.Count, config.MaxParallelSessions, config.RetryPolicy.AbortFailureThreshold,
+            string.Join(", ", chunks.Select(c => c.ChunkId)));
 
         var results = new ConcurrentBag<AgentResult>();
         var failureCount = 0;
@@ -255,9 +270,17 @@ public sealed class AgentPool : IAgentPool
         await Task.WhenAll(tasks);
 
         var resultList = results.ToList();
+        var successCount = resultList.Count(r => r.IsSuccess);
+        var failCount = resultList.Count(r => !r.IsSuccess);
         _logger.LogInformation(
-            "Batch complete: {Success}/{Total} chunks succeeded",
-            resultList.Count(r => r.IsSuccess), chunks.Count);
+            "DispatchBatchAsync complete. Succeeded={Success}, Failed={Failed}, Total={Total}, ActiveWorkers={Active}",
+            successCount, failCount, chunks.Count, _activeWorkers.Count);
+
+        if (failCount > 0)
+        {
+            var failedIds = resultList.Where(r => !r.IsSuccess).Select(r => $"{r.ChunkId}: {r.ErrorMessage}");
+            _logger.LogWarning("Failed chunks in batch: [{FailedChunks}]", string.Join(" | ", failedIds));
+        }
 
         return resultList;
     }

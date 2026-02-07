@@ -32,16 +32,24 @@
                     Padding="12"
                     Margin="40,5,10,5"
                     HorizontalAlignment="Right"
-                    MaxWidth="600">
+                    MaxWidth="600"
+                    Focusable="False">
                 <StackPanel>
                     <TextBlock Text="You" 
                                FontWeight="SemiBold" 
                                FontSize="11"
                                Foreground="#1976D2"
                                Margin="0,0,0,4"/>
-                    <emoji:TextBlock Text="{Binding Content}" 
-                                     TextWrapping="Wrap"
-                                     FontSize="14"/>
+                    <TextBox Text="{Binding Content, Mode=OneWay}" 
+                             TextWrapping="Wrap"
+                             FontSize="14"
+                             FontFamily="Segoe UI Emoji, Segoe UI, Segoe UI Symbol"
+                             IsReadOnly="True"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             Padding="0"
+                             Cursor="IBeam"
+                             Foreground="#212121"/>
                     <TextBlock Text="{Binding Timestamp, Converter={StaticResource UtcToLocalTime}, StringFormat='{}{0:HH:mm}'}" 
                                FontSize="10"
                                Foreground="#666"
@@ -58,6 +66,7 @@
                     Margin="10,5,40,5"
                     HorizontalAlignment="Left"
                     MaxWidth="700"
+                    Focusable="False"
                     x:Name="AssistantMessageBorder">
                 <StackPanel>
                     <TextBlock Text="Copilot" 
@@ -67,8 +76,9 @@
                                Margin="0,0,0,4"/>
                     <mdxaml:MarkdownScrollViewer Markdown="{Binding Content}"
                                                  VerticalScrollBarVisibility="Disabled"
+                                                 IsSelectionEnabled="True"
                                                  Background="Transparent"
-                                                 FontFamily="Segoe UI, Segoe UI Emoji, Segoe UI Symbol"
+                                                 FontFamily="Segoe UI Emoji, Segoe UI, Segoe UI Symbol"
                                                  FontSize="14"
                                                  Foreground="#212121"/>
                     <!-- Bottom row with timestamp and copy button -->
@@ -140,15 +150,22 @@
                     CornerRadius="8" 
                     Padding="10"
                     Margin="60,5,60,5"
-                    HorizontalAlignment="Center">
+                    HorizontalAlignment="Center"
+                    Focusable="False">
                 <StackPanel Orientation="Horizontal">
                     <emoji:TextBlock Text="ℹ️" 
                                FontSize="12"
                                Margin="0,0,6,0"/>
-                    <emoji:TextBlock Text="{Binding Content}" 
-                                     TextWrapping="Wrap"
-                                     FontSize="12"
-                                     Foreground="#F57F17"/>
+                    <TextBox Text="{Binding Content, Mode=OneWay}" 
+                             TextWrapping="Wrap"
+                             FontSize="12"
+                             FontFamily="Segoe UI Emoji, Segoe UI, Segoe UI Symbol"
+                             IsReadOnly="True"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             Padding="0"
+                             Cursor="IBeam"
+                             Foreground="#F57F17"/>
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -158,7 +175,8 @@
                     CornerRadius="8" 
                     Padding="10"
                     Margin="60,5,60,5"
-                    HorizontalAlignment="Stretch">
+                    HorizontalAlignment="Stretch"
+                    Focusable="False">
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                         <emoji:TextBlock Text="🔧" FontSize="11" Margin="0,0,4,0"/>
@@ -167,10 +185,16 @@
                                    FontSize="11"
                                    Foreground="#3F51B5"/>
                     </StackPanel>
-                    <emoji:TextBlock Text="{Binding Content}" 
-                                     TextWrapping="Wrap"
-                                     FontSize="12"
-                                     Foreground="#5C6BC0"/>
+                    <TextBox Text="{Binding Content, Mode=OneWay}" 
+                             TextWrapping="Wrap"
+                             FontSize="12"
+                             FontFamily="Segoe UI Emoji, Segoe UI, Segoe UI Symbol"
+                             IsReadOnly="True"
+                             BorderThickness="0"
+                             Background="Transparent"
+                             Padding="0"
+                             Cursor="IBeam"
+                             Foreground="#5C6BC0"/>
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -336,14 +360,18 @@
                     </Border>
                     
                     <StackPanel Grid.Column="1">
-                        <!-- Reasoning content with faded styling -->
-                        <TextBlock Text="{Binding Content}" 
-                                   TextWrapping="Wrap"
-                                   FontFamily="Consolas, Courier New, monospace"
-                                   FontSize="11"
-                                   FontStyle="Italic"
-                                   Foreground="#757575"
-                                   LineHeight="16"/>
+                    <!-- Reasoning content with faded styling -->
+                        <TextBox Text="{Binding Content, Mode=OneWay}" 
+                                 TextWrapping="Wrap"
+                                 FontFamily="Consolas, Courier New, monospace"
+                                 FontSize="11"
+                                 FontStyle="Italic"
+                                 Foreground="#757575"
+                                 IsReadOnly="True"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 Padding="0"
+                                 Cursor="IBeam"/>
                         
                         <!-- Streaming indicator (visible when still streaming) - Bold green for visibility -->
                         <StackPanel Orientation="Horizontal" 

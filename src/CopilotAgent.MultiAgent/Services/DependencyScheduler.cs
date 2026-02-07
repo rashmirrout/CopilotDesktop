@@ -22,18 +22,27 @@ public sealed class DependencyScheduler : IDependencyScheduler
     {
         ArgumentNullException.ThrowIfNull(plan);
 
+        _logger.LogInformation(
+            "BuildSchedule called for PlanId={PlanId}, ChunkCount={Count}",
+            plan.PlanId, plan.Chunks.Count);
+
         if (plan.Chunks.Count == 0)
         {
-            _logger.LogWarning("BuildSchedule called with empty plan {PlanId}", plan.PlanId);
+            _logger.LogWarning("BuildSchedule called with empty plan {PlanId} — returning empty schedule", plan.PlanId);
             return [];
         }
 
         var validation = ValidateDependencies(plan);
         if (!validation.IsValid)
         {
+            _logger.LogError(
+                "Dependency validation FAILED for plan {PlanId}: {Errors}",
+                plan.PlanId, string.Join("; ", validation.Errors));
             throw new InvalidOperationException(
                 $"Cannot build schedule for plan {plan.PlanId}: {string.Join("; ", validation.Errors)}");
         }
+
+        _logger.LogDebug("Dependency validation passed for plan {PlanId}", plan.PlanId);
 
         // Build adjacency and in-degree maps
         var chunkMap = plan.Chunks.ToDictionary(c => c.ChunkId);
@@ -120,13 +129,18 @@ public sealed class DependencyScheduler : IDependencyScheduler
         // (should not happen since ValidateDependencies already checks for cycles)
         if (processedCount != plan.Chunks.Count)
         {
+            _logger.LogError(
+                "Cycle detected during scheduling for plan {PlanId}: processed {Processed} of {Total} chunks",
+                plan.PlanId, processedCount, plan.Chunks.Count);
             throw new InvalidOperationException(
                 $"Cycle detected during scheduling: processed {processedCount} of {plan.Chunks.Count} chunks");
         }
 
         _logger.LogInformation(
-            "Built schedule for plan {PlanId}: {StageCount} stages, {ChunkCount} total chunks",
-            plan.PlanId, stages.Count, plan.Chunks.Count);
+            "Schedule built for plan {PlanId}: {StageCount} stages, {ChunkCount} total chunks. " +
+            "Stage breakdown: [{StageSummary}]",
+            plan.PlanId, stages.Count, plan.Chunks.Count,
+            string.Join(", ", stages.Select(s => $"S{s.StageIndex}:{s.Chunks.Count}chunks")));
 
         return stages;
     }
@@ -135,6 +149,10 @@ public sealed class DependencyScheduler : IDependencyScheduler
     public DependencyValidationResult ValidateDependencies(OrchestrationPlan plan)
     {
         ArgumentNullException.ThrowIfNull(plan);
+
+        _logger.LogDebug(
+            "ValidateDependencies called for PlanId={PlanId}, ChunkCount={Count}",
+            plan.PlanId, plan.Chunks.Count);
 
         var errors = new List<string>();
         var chunkIds = new HashSet<string>(plan.Chunks.Select(c => c.ChunkId));
@@ -198,8 +216,15 @@ public sealed class DependencyScheduler : IDependencyScheduler
         if (!result.IsValid)
         {
             _logger.LogWarning(
-                "Dependency validation failed for plan {PlanId}: {Errors}",
-                plan.PlanId, string.Join("; ", errors));
+                "Dependency validation failed for plan {PlanId} with {ErrorCount} errors: {Errors}",
+                plan.PlanId, errors.Count, string.Join("; ", errors));
+        }
+        else
+        {
+            var totalDeps = plan.Chunks.Sum(c => c.DependsOnChunkIds.Count);
+            _logger.LogDebug(
+                "Dependency validation passed for plan {PlanId}. Chunks={ChunkCount}, TotalEdges={Edges}",
+                plan.PlanId, plan.Chunks.Count, totalDeps);
         }
 
         return result;

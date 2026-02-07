@@ -431,6 +431,39 @@
                     </StackPanel>
                 </Border>
                 
+                <!-- Multi-Agent Section -->
+                <TextBlock Text="🤖 Multi-Agent" Style="{StaticResource SectionHeaderStyle}"/>
+                <Border Style="{StaticResource SectionBorderStyle}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource SettingsLabelStyle}"
+                                   Text="Settings for the Agent Team orchestration feature:"/>
+                        
+                        <!-- Session Health Check Interval -->
+                        <Grid Margin="0,8,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="80"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" 
+                                       Text="Session Health Check Interval"
+                                       VerticalAlignment="Center"
+                                       FontSize="13" Foreground="#424242"/>
+                            <TextBox Grid.Column="1" 
+                                     Text="{Binding SessionHealthCheckIntervalSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                     VerticalAlignment="Center"
+                                     HorizontalContentAlignment="Right"
+                                     Padding="6,4" Margin="8,0"/>
+                            <TextBlock Grid.Column="2" 
+                                       Text="seconds"
+                                       VerticalAlignment="Center"
+                                       FontSize="12" Foreground="#757575"/>
+                        </Grid>
+                        <TextBlock Style="{StaticResource SublabelStyle}"
+                                   Text="Default: 15s. Range: 5–60s. How often the session liveness indicator polls the LLM session health. Lower values give faster feedback but increase overhead."/>
+                    </StackPanel>
+                </Border>
+                
             </StackPanel>
         </ScrollViewer>
         

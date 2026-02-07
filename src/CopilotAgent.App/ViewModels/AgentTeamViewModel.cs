@@ -4,6 +4,7 @@ using System.Windows.Media;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CopilotAgent.App.Helpers;
 using CopilotAgent.Core.Models;
 using CopilotAgent.Core.Services;
 using CopilotAgent.MultiAgent.Events;
@@ -21,6 +22,7 @@ namespace CopilotAgent.App.ViewModels;
 public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
 {
     private readonly IOrchestratorService _orchestrator;
+    private readonly ICopilotService _copilotService;
     private readonly ISessionManager _sessionManager;
     private readonly IApprovalQueue _approvalQueue;
     private readonly AppSettings _appSettings;
@@ -29,19 +31,30 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
 
     // Animation infrastructure
     private readonly DispatcherTimer _pulseTimer;
+    private readonly DispatcherTimer _sessionHealthTimer;
     private CancellationTokenSource? _cts;
     private int _animationDotCount;
     private DateTime _executionStartTime;
     private bool _pulseToggle;
 
+    /// <summary>
+    /// Guard flag: true between SubmitTaskAsync setting the "Planning" UI state
+    /// and HandleOrchestratorResponse processing the first response. While set,
+    /// OnOrchestratorEvent will not overwrite phase/team-status when the
+    /// orchestrator's CurrentPhase still reads as Idle (race window).
+    /// </summary>
+    private bool _isAwaitingInitialResponse;
+
     public AgentTeamViewModel(
         IOrchestratorService orchestrator,
+        ICopilotService copilotService,
         ISessionManager sessionManager,
         IApprovalQueue approvalQueue,
         AppSettings appSettings,
         ILogger<AgentTeamViewModel> logger)
     {
         _orchestrator = orchestrator ?? throw new ArgumentNullException(nameof(orchestrator));
+        _copilotService = copilotService ?? throw new ArgumentNullException(nameof(copilotService));
         _sessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
         _approvalQueue = approvalQueue ?? throw new ArgumentNullException(nameof(approvalQueue));
         _appSettings = appSettings ?? throw new ArgumentNullException(nameof(appSettings));
@@ -56,7 +69,15 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         _pulseTimer.Tick += OnPulseTimerTick;
         _pulseTimer.Start(); // Always running for session indicator
 
-        _logger.LogInformation("[AgentTeamVM] ViewModel initialized.");
+        // Session health polling timer — configurable interval, clamped [5, 60]s
+        var healthIntervalSec = Math.Clamp(appSettings.SessionHealthCheckIntervalSeconds, 5, 60);
+        _sessionHealthTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(healthIntervalSec) };
+        _sessionHealthTimer.Tick += OnSessionHealthTimerTick;
+        _sessionHealthTimer.Start();
+
+        _logger.LogInformation(
+            "[AgentTeamVM] ViewModel initialized. Health check interval={Interval}s",
+            healthIntervalSec);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -69,6 +90,14 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     private string _currentPhaseDisplay = "Idle";
+
+    /// <summary>Hex color for the phase badge, driven by the current orchestration phase.</summary>
+    [ObservableProperty]
+    private string _currentPhaseColor = "#9E9E9E";
+
+    /// <summary>Opacity for the phase badge — animated for non-idle phases to create a pulse/blink effect.</summary>
+    [ObservableProperty]
+    private double _currentPhaseBadgeOpacity = 1.0;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SubmitTaskCommand))]
@@ -114,15 +143,33 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private bool _isExecutionIndicatorVisible;
 
+    // ── Team status display (center header) ─────────────────────
+
+    /// <summary>Compact status text like "Coordinating • 2/3 Active".</summary>
+    [ObservableProperty]
+    private string _teamStatusText = "Waiting for task \u2022 0/3 Active";
+
+    /// <summary>Emoji icon displayed to the left of the status text.</summary>
+    [ObservableProperty]
+    private string _teamStatusIcon = "\u2699\uFE0F";
+
+    /// <summary>Hex color for the team status text, driven by orchestration phase.</summary>
+    [ObservableProperty]
+    private string _teamStatusColor = "#9E9E9E";
+
+    /// <summary>Whether the team status icon should animate (rotate). True only during active execution with running workers.</summary>
+    [ObservableProperty]
+    private bool _teamStatusIconRotating;
+
     // ── Session health indicator ────────────────────────────────
 
-    /// <summary>"LIVE" or "IDLE" or "ERROR" etc.</summary>
+    /// <summary>"LIVE", "IDLE", "CLOSED", "ERROR", or "DISCONNECTED".</summary>
     [ObservableProperty]
-    private string _sessionIndicatorText = "IDLE";
+    private string _sessionIndicatorText = "WAITING";
 
-    /// <summary>Brush color for the indicator dot (green=live, gray=idle, red=error).</summary>
+    /// <summary>Brush color for the indicator dot (green=live, gray=idle, red=error/closed).</summary>
     [ObservableProperty]
-    private string _sessionIndicatorColor = "#9E9E9E";
+    private string _sessionIndicatorColor = "#FFC107";
 
     /// <summary>Opacity toggled for blinking effect on LIVE state.</summary>
     [ObservableProperty]
@@ -165,6 +212,21 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private bool _showReport;
 
+    // ── Event Log ───────────────────────────────────────────────
+
+    /// <summary>Controls the expanded/collapsed state of the event log expander. Auto-collapsed when report is shown.</summary>
+    [ObservableProperty]
+    private bool _isEventLogExpanded;
+
+    // ── Next Steps ──────────────────────────────────────────────
+
+    /// <summary>Clickable next-step actions parsed from the orchestrator's completion summary.</summary>
+    public ObservableCollection<string> NextStepActions { get; } = new();
+
+    /// <summary>Whether the next steps section is visible (at least one action available).</summary>
+    [ObservableProperty]
+    private bool _hasNextSteps;
+
     // ── Collections ─────────────────────────────────────────────
 
     public ObservableCollection<string> EventLog { get; } = new();
@@ -189,8 +251,23 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         ClearState();
         TaskPrompt = string.Empty;
         IsOrchestrating = true;
-        UpdateSessionIndicator("LIVE", "#4CAF50");
+
+        // Immediate visual feedback — show "Planning" state before the async LLM call.
+        // NOTE: We set team status properties directly instead of calling UpdateTeamStatus()
+        // because the orchestrator's CurrentPhase is still Idle at this point (the async
+        // call hasn't started yet). UpdateTeamStatus() reads _orchestrator.CurrentPhase
+        // which would overwrite our Planning state with "Waiting for task".
+        CurrentPhaseDisplay = "Planning";
+        CurrentPhaseColor = GetPhaseColor(OrchestrationPhase.Planning);
+        OrchestratorMessage = "📋 Analyzing task and creating execution plan...";
+        AddEvent($"[{DateTime.UtcNow:HH:mm:ss}] 🚀 Task submitted. Planning...");
+        TeamStatusIcon = "";
+        TeamStatusText = $"Planning  0/{SettingsMaxParallelWorkers} Active";
+        TeamStatusColor = "#9C27B0";
+        TeamStatusIconRotating = false;
+
         _cts = new CancellationTokenSource();
+        _isAwaitingInitialResponse = true;
 
         try
         {
@@ -200,40 +277,41 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
 
             var response = await _orchestrator.SubmitTaskAsync(prompt, config, _cts.Token);
             _logger.LogInformation("[AgentTeamVM] SubmitTask response: phase={Phase}", response.Phase);
+            _isAwaitingInitialResponse = false;
             HandleOrchestratorResponse(response);
         }
         catch (OperationCanceledException)
         {
+            _isAwaitingInitialResponse = false;
             _logger.LogInformation("[AgentTeamVM] Task cancelled by user.");
             AddEvent("🛑 Task cancelled.");
             StopExecutionAnimation();
-            UpdateSessionIndicator("IDLE", "#9E9E9E");
             IsOrchestrating = false;
         }
         catch (TimeoutException tex)
         {
+            _isAwaitingInitialResponse = false;
             _logger.LogWarning(tex, "[AgentTeamVM] Orchestrator LLM call timed out.");
             StopExecutionAnimation();
             AddEvent("⏱ Operation timed out. The task may be too complex or the connection was lost.");
             SetError($"Timeout: {tex.Message}");
-            UpdateSessionIndicator("TIMEOUT", "#FF9800");
             IsOrchestrating = false;
         }
         catch (InvalidOperationException iex) when (IsConnectionError(iex))
         {
+            _isAwaitingInitialResponse = false;
             _logger.LogWarning(iex, "[AgentTeamVM] Connection lost to Copilot service.");
             StopExecutionAnimation();
             AddEvent("⚠ Lost connection to Copilot service. Please reset and try again.");
             SetError($"Connection lost: {iex.Message}");
-            UpdateSessionIndicator("DISCONNECTED", "#F44336");
             IsOrchestrating = false;
         }
         catch (Exception ex)
         {
+            _isAwaitingInitialResponse = false;
             _logger.LogError(ex, "[AgentTeamVM] Unexpected error during task submission.");
             StopExecutionAnimation();
             SetError($"Error: {ex.Message}");
-            UpdateSessionIndicator("ERROR", "#F44336");
             IsOrchestrating = false;
         }
     }
@@ -252,6 +330,21 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
                 ClarificationResponse, _cts?.Token ?? CancellationToken.None);
             ClarificationResponse = string.Empty;
             HandleOrchestratorResponse(response);
+        }
+        catch (InvalidOperationException iex) when (iex.Message.Contains("Cannot respond to clarification", StringComparison.OrdinalIgnoreCase))
+        {
+            // Backend phase moved away from Clarifying before user submitted response.
+            // Gracefully dismiss the clarification panel and inform the user.
+            _logger.LogWarning(iex, "[AgentTeamVM] Clarification response rejected — phase already changed.");
+            ShowClarification = false;
+            ClarifyingQuestions.Clear();
+            ClarificationResponse = string.Empty;
+
+            var currentPhase = _orchestrator.CurrentPhase;
+            CurrentPhaseDisplay = currentPhase.ToString();
+            CurrentPhaseColor = GetPhaseColor(currentPhase);
+            OrchestratorMessage = $"⚠ Could not send clarification — the orchestrator already moved to {currentPhase}. Your response was not processed.";
+            AddEvent($"⚠ Clarification send failed: orchestrator phase is now {currentPhase}");
         }
         catch (Exception ex)
         {
@@ -351,7 +444,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         {
             await _orchestrator.CancelAsync();
             StopExecutionAnimation();
-            UpdateSessionIndicator("CANCELLED", "#FF9800");
             IsOrchestrating = false;
             AddEvent("🛑 Orchestration cancelled by user.");
         }
@@ -371,7 +463,8 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         TaskPrompt = string.Empty;
         EventLog.Clear();
         Workers.Clear();
-        UpdateSessionIndicator("IDLE", "#9E9E9E");
+        // After reset, session is destroyed - health poll will pick up WAITING on next tick
+        ApplySessionHealth("WAITING", "#FFC107");
         AddEvent("🔄 Orchestrator reset.");
     }
 
@@ -383,9 +476,152 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand]
+    private void RestoreDefaultSettings()
+    {
+        _logger.LogInformation("[AgentTeamVM] Restoring default settings.");
+        SettingsMaxParallelWorkers = 3;
+        SettingsWorkspaceStrategy = "InMemory";
+        SettingsWorkerTimeoutMinutes = 10;
+        SettingsMaxRetries = 2;
+        SettingsRetryDelaySeconds = 5;
+        SettingsAutoApproveReadOnly = true;
+    }
+
+    [RelayCommand]
     private void DismissReport()
     {
         ShowReport = false;
+    }
+
+    /// <summary>
+    /// Copies the orchestrator response message text to the system clipboard.
+    /// </summary>
+    [RelayCommand]
+    private void CopyOrchestratorMessage()
+    {
+        var text = OrchestratorMessage;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _logger.LogDebug("[AgentTeamVM] CopyOrchestratorMessage: no text to copy.");
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(text);
+            _logger.LogInformation("[AgentTeamVM] Orchestrator message copied to clipboard ({Length} chars).", text.Length);
+            AddEvent("📋 Response text copied to clipboard.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[AgentTeamVM] Failed to copy orchestrator message to clipboard.");
+        }
+    }
+
+    /// <summary>
+    /// Copies the raw report summary text to the system clipboard.
+    /// </summary>
+    [RelayCommand]
+    private void CopyReportText()
+    {
+        var text = LastReport?.ConversationalSummary;
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            _logger.LogDebug("[AgentTeamVM] CopyReportText: no text to copy.");
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(text);
+            _logger.LogInformation("[AgentTeamVM] Report text copied to clipboard ({Length} chars).", text.Length);
+            AddEvent("📋 Report text copied to clipboard.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[AgentTeamVM] Failed to copy report text to clipboard.");
+        }
+    }
+
+    /// <summary>
+    /// Populates the task input with the selected next-step action text
+    /// so the user can submit it as a follow-up task with one click.
+    /// </summary>
+    [RelayCommand]
+    private void SelectNextStep(string? action)
+    {
+        if (string.IsNullOrWhiteSpace(action)) return;
+
+        _logger.LogInformation("[AgentTeamVM] Next step selected: {Action}", Truncate(action, 100));
+        TaskPrompt = action;
+
+        // Clear the next steps UI since user has made a selection
+        NextStepActions.Clear();
+        HasNextSteps = false;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // Session Health Polling (Ground Truth)
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Fires on the configurable health check interval (default 15s).
+    /// Queries ICopilotService.HasActiveSession as ground truth and
+    /// combines with IOrchestratorService.IsRunning to determine state:
+    ///   No session ID        → WAITING (yellow solid)
+    ///   HasActiveSession=false → DISCONNECTED (red solid)
+    ///   HasActiveSession=true + IsRunning=true  → LIVE (green blink)
+    ///   HasActiveSession=true + IsRunning=false → IDLE (gray solid)
+    ///   Exception            → ERROR   (red solid)
+    /// </summary>
+    private void OnSessionHealthTimerTick(object? sender, EventArgs e)
+    {
+        try
+        {
+            var sessionId = _orchestrator.OrchestratorSessionId;
+
+            if (string.IsNullOrEmpty(sessionId))
+            {
+                ApplySessionHealth("WAITING", "#FFC107");
+                return;
+            }
+
+            var isAlive = _copilotService.HasActiveSession(sessionId);
+
+            if (!isAlive)
+            {
+                ApplySessionHealth("DISCONNECTED", "#F44336");
+                return;
+            }
+
+            if (_orchestrator.IsRunning)
+            {
+                ApplySessionHealth("LIVE", "#4CAF50");
+            }
+            else
+            {
+                ApplySessionHealth("IDLE", "#9E9E9E");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[AgentTeamVM] Session health check failed.");
+            ApplySessionHealth("ERROR", "#F44336");
+        }
+    }
+
+    /// <summary>
+    /// Applies session health indicator state. Only logs on state transitions
+    /// to avoid flooding the log every 15 seconds.
+    /// </summary>
+    private void ApplySessionHealth(string text, string color)
+    {
+        if (SessionIndicatorText == text && SessionIndicatorColor == color)
+            return; // No change — skip update and log noise
+
+        SessionIndicatorText = text;
+        SessionIndicatorColor = color;
+        _logger.LogDebug("[AgentTeamVM] Session health: [{Text}] color={Color}", text, color);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -397,12 +633,58 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         _dispatcher.InvokeAsync(() =>
         {
             var phase = _orchestrator.CurrentPhase;
-            CurrentPhaseDisplay = phase.ToString();
 
-            _logger.LogDebug("[AgentTeamVM] Event: type={EventType}, msg={Message}",
-                e.EventType, Truncate(e.Message, 150));
+            // Guard: During the SubmitTaskAsync await window, the orchestrator may fire
+            // events while its CurrentPhase still reads as Idle. If we're awaiting the
+            // initial response, do NOT overwrite the manually-set "Planning" UI state
+            // with Idle. Allow real phase transitions (non-Idle) to flow through.
+            var suppressPhaseOverwrite = _isAwaitingInitialResponse && phase == OrchestrationPhase.Idle;
+
+            if (!suppressPhaseOverwrite)
+            {
+                CurrentPhaseDisplay = phase.ToString();
+                CurrentPhaseColor = GetPhaseColor(phase);
+            }
+
+            _logger.LogDebug("[AgentTeamVM] Event: type={EventType}, phase={Phase}, suppress={Suppress}, msg={Message}",
+                e.EventType, phase, suppressPhaseOverwrite, Truncate(e.Message, 150));
 
             AddEvent($"[{e.TimestampUtc:HH:mm:ss}] {e.EventType}: {e.Message}");
+
+            // ── Sync UI panels with phase transitions ──
+            // If the backend transitioned away from Clarifying but the panel is still showing,
+            // dismiss it and inform the user. This prevents orphaned clarification UI.
+            if (!suppressPhaseOverwrite && ShowClarification && phase != OrchestrationPhase.Clarifying)
+            {
+                _logger.LogWarning(
+                    "[AgentTeamVM] Phase moved to {Phase} while clarification panel was visible. Dismissing.",
+                    phase);
+                ShowClarification = false;
+                ClarifyingQuestions.Clear();
+                ClarificationResponse = string.Empty;
+                OrchestratorMessage = $"⚠ Clarification was dismissed — the orchestrator moved to {phase}.";
+                AddEvent($"⚠ Clarification auto-dismissed: phase transitioned to {phase}");
+            }
+
+            // Same guard for plan review panel
+            if (!suppressPhaseOverwrite && ShowPlanReview && phase != OrchestrationPhase.AwaitingApproval)
+            {
+                _logger.LogWarning(
+                    "[AgentTeamVM] Phase moved to {Phase} while plan review panel was visible. Dismissing.",
+                    phase);
+                ShowPlanReview = false;
+                IsAwaitingApproval = false;
+                PlanFeedback = string.Empty;
+                AddEvent($"⚠ Plan review auto-dismissed: phase transitioned to {phase}");
+            }
+
+            // Keep team status display in sync with every orchestrator event —
+            // but skip when we're suppressing phase overwrites to preserve the
+            // manually-set "Planning" state during the initial submit window.
+            if (!suppressPhaseOverwrite)
+            {
+                UpdateTeamStatus();
+            }
 
             if (e is WorkerProgressEvent workerEvent)
             {
@@ -414,7 +696,7 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
                     completedEvent.Report != null);
 
                 StopExecutionAnimation();
-                UpdateSessionIndicator("COMPLETED", "#4CAF50");
+                CurrentPhaseColor = GetPhaseColor(OrchestrationPhase.Completed);
                 LastReport = completedEvent.Report;
                 ShowReport = completedEvent.Report != null;
                 IsOrchestrating = false;
@@ -428,6 +710,10 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
 
                 // Mark all remaining workers as completed
                 FinalizeWorkerStates();
+                ProcessNextSteps(completedEvent.Report);
+
+                // Auto-collapse event log when report is shown
+                if (ShowReport) IsEventLogExpanded = false;
             }
         });
     }
@@ -461,6 +747,9 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
             existing.Activity = e.CurrentActivity ?? string.Empty;
             existing.StatusColor = GetWorkerStatusColor(e.WorkerStatus);
             existing.RetryAttempt = e.RetryAttempt;
+
+            // Worker state changed — refresh team status counts
+            UpdateTeamStatus();
         }
         else
         {
@@ -479,6 +768,9 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
             };
             Workers.Add(worker);
             _logger.LogDebug("[AgentTeamVM] New worker added: {ChunkId} ({Title})", chunkId, worker.Title);
+
+            // New worker added — refresh team status counts
+            UpdateTeamStatus();
         }
     }
 
@@ -542,17 +834,27 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
             response.Phase, Truncate(response.Message ?? "", 100));
 
         CurrentPhaseDisplay = response.Phase.ToString();
-        OrchestratorMessage = response.Message ?? string.Empty;
+        CurrentPhaseColor = GetPhaseColor(response.Phase);
+
+        // Only overwrite OrchestratorMessage when the response carries actual content.
+        // This prevents the "📋 Analyzing task..." feedback set during SubmitTaskAsync()
+        // from being cleared by an empty/null response.Message on the first callback.
+        if (!string.IsNullOrWhiteSpace(response.Message))
+        {
+            OrchestratorMessage = response.Message;
+        }
 
         ShowClarification = false;
         ShowPlanReview = false;
         ShowReport = false;
 
+        // Refresh team status display for every response phase transition
+        UpdateTeamStatus();
+
         switch (response.Phase)
         {
             case OrchestrationPhase.Clarifying:
                 StopExecutionAnimation();
-                UpdateSessionIndicator("LIVE", "#4CAF50");
                 ShowClarification = true;
                 ClarifyingQuestions.Clear();
                 foreach (var q in response.ClarifyingQuestions ?? Enumerable.Empty<string>())
@@ -562,7 +864,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
 
             case OrchestrationPhase.AwaitingApproval:
                 StopExecutionAnimation();
-                UpdateSessionIndicator("LIVE", "#4CAF50");
                 ShowPlanReview = true;
                 CurrentPlan = response.Plan;
                 IsAwaitingApproval = true;
@@ -575,13 +876,11 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
 
             case OrchestrationPhase.Executing:
                 IsAwaitingApproval = false;
-                UpdateSessionIndicator("LIVE", "#4CAF50");
                 StartExecutionAnimation();
                 break;
 
             case OrchestrationPhase.Completed:
                 StopExecutionAnimation();
-                UpdateSessionIndicator("COMPLETED", "#4CAF50");
                 IsOrchestrating = false;
                 LastReport = response.Report;
                 ShowReport = response.Report != null;
@@ -592,17 +891,18 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
                         BuildLocalFallbackSummary(response.Report);
                 }
                 FinalizeWorkerStates();
+                ProcessNextSteps(response.Report);
+                // Auto-collapse event log when report is shown
+                if (ShowReport) IsEventLogExpanded = false;
                 break;
 
             case OrchestrationPhase.Cancelled:
                 StopExecutionAnimation();
-                UpdateSessionIndicator("CANCELLED", "#FF9800");
                 IsOrchestrating = false;
                 break;
 
             case OrchestrationPhase.Idle:
                 StopExecutionAnimation();
-                UpdateSessionIndicator("IDLE", "#9E9E9E");
                 IsOrchestrating = false;
                 break;
         }
@@ -664,6 +964,7 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     /// 1) Execution status text animation (dots + elapsed time)
     /// 2) Execution indicator pulsing opacity
     /// 3) Session indicator blinking when LIVE
+    /// 4) Phase badge pulsing for non-idle phases
     /// </summary>
     private void OnPulseTimerTick(object? sender, EventArgs e)
     {
@@ -677,6 +978,22 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         else
         {
             SessionIndicatorOpacity = 1.0;
+        }
+
+        // ── Phase badge pulse (non-idle, non-completed, non-cancelled) ──
+        var phase = ParseCurrentPhase();
+        if (phase is OrchestrationPhase.Clarifying or OrchestrationPhase.Planning
+            or OrchestrationPhase.AwaitingApproval or OrchestrationPhase.Executing
+            or OrchestrationPhase.Aggregating)
+        {
+            // Faster pulse for executing phase
+            CurrentPhaseBadgeOpacity = phase == OrchestrationPhase.Executing
+                ? (_pulseToggle ? 1.0 : 0.35)
+                : (_pulseToggle ? 1.0 : 0.5);
+        }
+        else
+        {
+            CurrentPhaseBadgeOpacity = 1.0;
         }
 
         // ── Execution indicator animation ──
@@ -697,15 +1014,73 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         }
     }
 
+    /// <summary>
+    /// Parses the current phase display string back to the enum for animation logic.
+    /// </summary>
+    private OrchestrationPhase ParseCurrentPhase()
+    {
+        return Enum.TryParse<OrchestrationPhase>(CurrentPhaseDisplay, out var phase)
+            ? phase
+            : OrchestrationPhase.Idle;
+    }
+
     // ══════════════════════════════════════════════════════════════
-    // Session Indicator
+    // Phase Color Mapping
     // ══════════════════════════════════════════════════════════════
 
-    private void UpdateSessionIndicator(string text, string color)
+    /// <summary>
+    /// Maps an orchestration phase to its display color (hex).
+    /// Used for the phase badge background tinting and pulsing.
+    /// </summary>
+    private static string GetPhaseColor(OrchestrationPhase phase) => phase switch
     {
-        SessionIndicatorText = text;
-        SessionIndicatorColor = color;
-        _logger.LogDebug("[AgentTeamVM] Session indicator: [{Text}] color={Color}", text, color);
+        OrchestrationPhase.Idle => "#9E9E9E",            // Gray
+        OrchestrationPhase.Clarifying => "#FFA726",       // Amber
+        OrchestrationPhase.Planning => "#9C27B0",         // Purple
+        OrchestrationPhase.AwaitingApproval => "#2196F3", // Blue
+        OrchestrationPhase.Executing => "#4CAF50",        // Green
+        OrchestrationPhase.Aggregating => "#00897B",      // Teal
+        OrchestrationPhase.Completed => "#66BB6A",        // Light green
+        OrchestrationPhase.Cancelled => "#FF9800",        // Orange
+        _ => "#9E9E9E"
+    };
+
+    // ══════════════════════════════════════════════════════════════
+    // Next Steps Processing
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Extracts next-step actions from the report summary and populates
+    /// the <see cref="NextStepActions"/> collection for UI button rendering.
+    /// Also strips the [ACTION:...] markers from the summary for clean display.
+    /// </summary>
+    private void ProcessNextSteps(ConsolidatedReport? report)
+    {
+        NextStepActions.Clear();
+        HasNextSteps = false;
+
+        if (report is null || string.IsNullOrWhiteSpace(report.ConversationalSummary))
+        {
+            _logger.LogDebug("[AgentTeamVM] No report or summary to extract next steps from.");
+            return;
+        }
+
+        var actions = NextStepsParser.ExtractNextSteps(report.ConversationalSummary);
+        _logger.LogInformation("[AgentTeamVM] Extracted {Count} next-step actions from summary.", actions.Count);
+
+        // Store parsed next steps on the report model
+        report.NextSteps = actions;
+
+        // Strip ACTION markers from the displayed summary for clean markdown rendering
+        report.ConversationalSummary = NextStepsParser.StripActionMarkers(report.ConversationalSummary);
+
+        foreach (var action in actions)
+        {
+            NextStepActions.Add(action);
+            _logger.LogDebug("[AgentTeamVM] Next step: {Action}", action);
+        }
+
+        HasNextSteps = actions.Count > 0;
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -738,6 +1113,48 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     }
 
     // ══════════════════════════════════════════════════════════════
+    // Team Status Display (Center Header)
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Recomputes the compact team status display based on the current orchestration
+    /// phase and active worker count. Called from multiple lifecycle points to keep
+    /// the header indicator in sync with the orchestrator state machine.
+    /// </summary>
+    private void UpdateTeamStatus()
+    {
+        var phase = _orchestrator.CurrentPhase;
+        var activeWorkers = Workers.Count(w => w.Status is AgentStatus.Running or AgentStatus.Retrying);
+        var poolCapacity = SettingsMaxParallelWorkers;
+
+        var (action, icon, color, rotating) = phase switch
+        {
+            OrchestrationPhase.Executing when activeWorkers > 0
+                => ("Coordinating", "\u2699\uFE0F", "#4CAF50", true),
+            OrchestrationPhase.Executing
+                => ("Starting", "\u26A1", "#4CAF50", false),
+            OrchestrationPhase.Planning
+                => ("Planning", "\uD83D\uDCCB", "#9C27B0", false),
+            OrchestrationPhase.Clarifying
+                => ("Clarifying", "\uD83D\uDCAC", "#FFA726", false),
+            OrchestrationPhase.AwaitingApproval
+                => ("Awaiting Approval", "\u23F3", "#2196F3", false),
+            OrchestrationPhase.Aggregating
+                => ("Aggregating", "\uD83D\uDCCA", "#00897B", false),
+            OrchestrationPhase.Completed
+                => ("Completed", "\u2705", "#66BB6A", false),
+            OrchestrationPhase.Cancelled
+                => ("Cancelled", "\u26D4", "#FF9800", false),
+            _ => ("Waiting for task", "\u2699\uFE0F", "#9E9E9E", false)
+        };
+
+        TeamStatusIcon = icon;
+        TeamStatusText = $"{action} \u2022 {activeWorkers}/{poolCapacity} Active";
+        TeamStatusColor = color;
+        TeamStatusIconRotating = rotating;
+    }
+
+    // ══════════════════════════════════════════════════════════════
     // Helpers
     // ══════════════════════════════════════════════════════════════
 
@@ -759,7 +1176,15 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         LastReport = null;
         Workers.Clear();
         ClarifyingQuestions.Clear();
+        NextStepActions.Clear();
+        HasNextSteps = false;
         CurrentPhaseDisplay = "Idle";
+        CurrentPhaseColor = GetPhaseColor(OrchestrationPhase.Idle);
+        CurrentPhaseBadgeOpacity = 1.0;
+        IsEventLogExpanded = false;
+
+        // Reset team status to idle defaults
+        UpdateTeamStatus();
     }
 
     private void AddEvent(string message)
@@ -801,6 +1226,15 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
             lines.Add($"- {icon} **{result.ChunkId}**: {summary}");
         }
 
+        // Add generic next steps for the fallback case
+        lines.Add("");
+        lines.Add("### Recommended Next Steps");
+        lines.Add("- [ACTION:Review the results and verify correctness]");
+        lines.Add("- [ACTION:Run tests to validate the changes]");
+
+        if (report.Stats.FailedChunks > 0)
+            lines.Add("- [ACTION:Investigate and fix failed chunks]");
+
         return string.Join("\n", lines);
     }
 
@@ -812,6 +1246,8 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         _logger.LogInformation("[AgentTeamVM] Disposing.");
         _pulseTimer.Stop();
         _pulseTimer.Tick -= OnPulseTimerTick;
+        _sessionHealthTimer.Stop();
+        _sessionHealthTimer.Tick -= OnSessionHealthTimerTick;
         _orchestrator.EventReceived -= OnOrchestratorEvent;
         _approvalQueue.PendingCountChanged -= OnPendingApprovalsChanged;
         _cts?.Cancel();

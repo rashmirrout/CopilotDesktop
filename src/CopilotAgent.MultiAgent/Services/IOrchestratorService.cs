@@ -51,6 +51,12 @@ public interface IOrchestratorService
     /// <summary>Whether the orchestrator is actively processing a task.</summary>
     bool IsRunning { get; }
 
+    /// <summary>
+    /// The session ID of the orchestrator's long-lived LLM session, or null if no session exists.
+    /// Used by the UI to poll session health via <c>ICopilotService.HasActiveSession</c>.
+    /// </summary>
+    string? OrchestratorSessionId { get; }
+
     /// <summary>Cancel the current orchestration, aborting all active workers.</summary>
     Task CancelAsync();
 
