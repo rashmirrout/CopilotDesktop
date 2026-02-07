@@ -9,6 +9,8 @@ using CopilotAgent.Core.Services;
 using CopilotAgent.Persistence;
 using CopilotAgent.App.ViewModels;
 using CopilotAgent.App.Services;
+using CopilotAgent.MultiAgent.Models;
+using CopilotAgent.MultiAgent.Services;
 
 namespace CopilotAgent.App;
 
@@ -81,6 +83,39 @@ public partial class App : Application
                     // Streaming Message Manager - manages streaming operations independently of UI
                     // Must be singleton to track streaming state across session switches
                     services.AddSingleton<IStreamingMessageManager, StreamingMessageManager>();
+
+                    // Multi-Agent Orchestration Services
+                    services.AddSingleton<IDependencyScheduler, DependencyScheduler>();
+                    services.AddSingleton<IAgentRoleProvider, AgentRoleProvider>();
+                    services.AddSingleton<IApprovalQueue, ApprovalQueue>();
+                    services.AddSingleton<ITaskLogStore, JsonTaskLogStore>();
+                    services.AddSingleton<ITaskDecomposer, LlmTaskDecomposer>();
+                    services.AddSingleton<IResultAggregator, ResultAggregator>();
+
+                    // Workspace strategies
+                    services.AddSingleton<GitWorktreeStrategy>();
+                    services.AddSingleton<FileLockingStrategy>();
+                    services.AddSingleton<InMemoryStrategy>();
+
+                    // Factory delegate: maps WorkspaceStrategyType enum → IWorkspaceStrategy
+                    services.AddSingleton<Func<WorkspaceStrategyType, IWorkspaceStrategy>>(sp =>
+                    {
+                        var git = sp.GetRequiredService<GitWorktreeStrategy>();
+                        var fileLock = sp.GetRequiredService<FileLockingStrategy>();
+                        var inMemory = sp.GetRequiredService<InMemoryStrategy>();
+                        return strategyType => strategyType switch
+                        {
+                            WorkspaceStrategyType.GitWorktree => git,
+                            WorkspaceStrategyType.FileLocking => fileLock,
+                            WorkspaceStrategyType.InMemory => inMemory,
+                            _ => throw new ArgumentOutOfRangeException(
+                                nameof(strategyType), strategyType,
+                                $"Unknown workspace strategy: {strategyType}")
+                        };
+                    });
+
+                    services.AddSingleton<IAgentPool, AgentPool>();
+                    services.AddSingleton<IOrchestratorService, OrchestratorService>();
                     
                     // Browser Automation Service (for OAuth/SAML authentication)
                     services.AddSingleton<IBrowserAutomationService>(sp =>
@@ -103,6 +138,7 @@ public partial class App : Application
                     services.AddTransient<IterativeTaskViewModel>();
                     services.AddTransient<SessionInfoViewModel>();
                     services.AddTransient<AddSkillDialogViewModel>();
+                    services.AddTransient<AgentTeamViewModel>();
 
                     // Main Window
                     services.AddSingleton<MainWindow>();
