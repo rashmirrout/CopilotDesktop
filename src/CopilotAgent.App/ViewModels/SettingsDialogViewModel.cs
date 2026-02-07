@@ -79,6 +79,10 @@ public partial class SettingsDialogViewModel : ViewModelBase
     [ObservableProperty]
     private bool _autoCollapseCommentary;
     
+    // Multi-Agent settings
+    [ObservableProperty]
+    private int _sessionHealthCheckIntervalSeconds;
+    
     public bool DefaultAllowAllNotChecked => !DefaultAllowAll;
     
     /// <summary>
@@ -135,6 +139,9 @@ public partial class SettingsDialogViewModel : ViewModelBase
         // Agent commentary settings
         ShowAgentCommentary = _settings.ShowAgentCommentary;
         AutoCollapseCommentary = _settings.AutoCollapseCommentary;
+        
+        // Multi-Agent settings
+        SessionHealthCheckIntervalSeconds = _settings.SessionHealthCheckIntervalSeconds;
     }
     
     private void UpdateBrowserStorageInfo()
@@ -263,6 +270,9 @@ public partial class SettingsDialogViewModel : ViewModelBase
         _settings.ShowAgentCommentary = ShowAgentCommentary;
         _settings.AutoCollapseCommentary = AutoCollapseCommentary;
         
+        // Multi-Agent settings
+        _settings.SessionHealthCheckIntervalSeconds = Math.Clamp(SessionHealthCheckIntervalSeconds, 5, 60);
+        
         // Save to persistence
         _ = _persistenceService.SaveSettingsAsync(_settings);
         
@@ -313,6 +323,9 @@ public partial class SettingsDialogViewModel : ViewModelBase
             // Agent commentary defaults (enabled for transparency)
             ShowAgentCommentary = true;
             AutoCollapseCommentary = true;
+            
+            // Multi-Agent defaults
+            SessionHealthCheckIntervalSeconds = 15;
         }
     }
     

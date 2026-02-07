@@ -87,6 +87,11 @@ public sealed class WorkerAgent : IWorkerAgent
         ExecutionContext.StartedAtUtc = DateTime.UtcNow;
         Chunk.StartedAtUtc = DateTime.UtcNow;
 
+        _logger.LogInformation(
+            "Worker {WorkerId} ExecuteAsync invoked. Chunk={ChunkId}, Title='{Title}', Role={Role}, Workspace={Workspace}, Dependencies=[{Deps}]",
+            WorkerId, Chunk.ChunkId, Chunk.Title, Chunk.AssignedRole, _workspacePath,
+            string.Join(", ", Chunk.DependsOnChunkIds));
+
         try
         {
             UpdateStatus(AgentStatus.Running);
@@ -97,12 +102,13 @@ public sealed class WorkerAgent : IWorkerAgent
                 $"Worker {WorkerId} starting chunk '{Chunk.Title}' in {_workspacePath}");
 
             // 1. Create a Session model for the worker
+            var modelId = _config.WorkerModelId ?? _config.OrchestratorModelId ?? string.Empty;
             _session = new Session
             {
                 SessionId = Guid.NewGuid().ToString(),
                 DisplayName = $"Worker-{Chunk.Title}",
                 WorkingDirectory = _workspacePath,
-                ModelId = _config.WorkerModelId ?? _config.OrchestratorModelId ?? string.Empty,
+                ModelId = modelId,
                 CreatedAt = DateTime.UtcNow,
                 LastActiveAt = DateTime.UtcNow
             };
@@ -112,11 +118,14 @@ public sealed class WorkerAgent : IWorkerAgent
             Chunk.AssignedWorkspace = _workspacePath;
 
             _logger.LogInformation(
-                "Worker {WorkerId} created session {SessionId} for role {Role}, chunk {ChunkId}",
-                WorkerId, _session.SessionId, Chunk.AssignedRole, Chunk.ChunkId);
+                "Worker {WorkerId} created session {SessionId} for role {Role}, chunk {ChunkId}, model={Model}",
+                WorkerId, _session.SessionId, Chunk.AssignedRole, Chunk.ChunkId, modelId);
 
             // 2. Build the worker prompt (includes role system instructions + task + dependency context)
             var prompt = BuildWorkerPrompt();
+            _logger.LogDebug(
+                "Worker {WorkerId} built prompt ({PromptLen} chars) with {DepCount} dependency results injected",
+                WorkerId, prompt.Length, _dependencyResults.Count);
 
             // 3. Send prompt and collect response
             var response = await SendPromptAsync(prompt, cancellationToken);
@@ -124,6 +133,10 @@ public sealed class WorkerAgent : IWorkerAgent
             stopwatch.Stop();
             ExecutionContext.CompletedAtUtc = DateTime.UtcNow;
             Chunk.CompletedAtUtc = DateTime.UtcNow;
+
+            _logger.LogInformation(
+                "Worker {WorkerId} succeeded. Chunk={ChunkId}, Duration={Duration:F1}s, ResponseLen={RespLen}",
+                WorkerId, Chunk.ChunkId, stopwatch.Elapsed.TotalSeconds, response.Length);
 
             var result = new AgentResult
             {
@@ -150,6 +163,10 @@ public sealed class WorkerAgent : IWorkerAgent
             ExecutionContext.CompletedAtUtc = DateTime.UtcNow;
             Chunk.CompletedAtUtc = DateTime.UtcNow;
             UpdateStatus(AgentStatus.Aborted);
+
+            _logger.LogWarning(
+                "Worker {WorkerId} cancelled. Chunk={ChunkId}, ElapsedBeforeCancel={Elapsed:F1}s",
+                WorkerId, Chunk.ChunkId, stopwatch.Elapsed.TotalSeconds);
 
             await LogEntryAsync(
                 OrchestrationLogLevel.Warning,

@@ -138,4 +138,12 @@ public class AppSettings
     /// </summary>
     [JsonPropertyName("multiAgent")]
     public MultiAgentSettings MultiAgent { get; set; } = new();
+
+    /// <summary>
+    /// Interval in seconds between session health checks for the orchestrator
+    /// session liveness indicator. Clamped to [5, 60] at usage site.
+    /// Default: 15 seconds.
+    /// </summary>
+    [JsonPropertyName("sessionHealthCheckIntervalSeconds")]
+    public int SessionHealthCheckIntervalSeconds { get; set; } = 15;
 }

@@ -4,6 +4,8 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:converters="clr-namespace:CopilotAgent.App.Converters"
+             xmlns:mdxaml="clr-namespace:MdXaml;assembly=MdXaml"
+             xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
              xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              mc:Ignorable="d"
              d:DesignHeight="700" d:DesignWidth="950"
@@ -17,11 +19,19 @@
         <converters:StringToBrushConverter x:Key="StringToBrush"/>
         <converters:StringToColorConverter x:Key="StringToColor"/>
 
+        <!-- MdXaml Markdown style overrides for dark-on-light rendering -->
+        <Style x:Key="MdXamlStyle" TargetType="mdxaml:MarkdownScrollViewer">
+            <Setter Property="MarkdownStyleName" Value="Standard"/>
+            <Setter Property="Foreground" Value="#424242"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+
         <!-- Phase badge style -->
         <Style x:Key="PhaseBadge" TargetType="Border">
             <Setter Property="CornerRadius" Value="10"/>
             <Setter Property="Padding" Value="10,4"/>
-            <Setter Property="Background" Value="#E3F2FD"/>
             <Setter Property="HorizontalAlignment" Value="Left"/>
         </Style>
 
@@ -34,15 +44,29 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border Background="{TemplateBinding Background}"
+                        <Border x:Name="ActionBorder"
+                                Background="{TemplateBinding Background}"
                                 CornerRadius="4"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center"
                                               VerticalAlignment="Center"/>
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ActionBorder" Property="Opacity" Value="0.4"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="ActionBorder" Property="Opacity" Value="0.85"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <Trigger Property="IsEnabled" Value="False">
+                    <Setter Property="Cursor" Value="Arrow"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
 
         <!-- Small icon button (settings, etc.) -->
@@ -64,6 +88,45 @@
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter Property="Background" Value="#E0E0E0"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Next Step action button style -->
+        <Style x:Key="NextStepButton" TargetType="Button">
+            <Setter Property="Padding" Value="12,6"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Background" Value="#E3F2FD"/>
+            <Setter Property="Foreground" Value="#1565C0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#90CAF9"/>
+            <Setter Property="Margin" Value="0,0,8,6"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="16"
+                                Padding="{TemplateBinding Padding}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="▶" FontSize="10" Margin="0,0,6,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="{TemplateBinding Foreground}"/>
+                                <ContentPresenter VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#BBDEFB"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="#42A5F5"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#90CAF9"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -99,28 +162,84 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>  <!-- Title -->
                     <ColumnDefinition Width="Auto"/>  <!-- Phase badge -->
-                    <ColumnDefinition Width="Auto"/>  <!-- Session indicator -->
                     <ColumnDefinition Width="*"/>     <!-- Spacer -->
                     <ColumnDefinition Width="Auto"/>  <!-- Pending approvals -->
+                    <ColumnDefinition Width="Auto"/>  <!-- Session indicator -->
                     <ColumnDefinition Width="Auto"/>  <!-- Settings button -->
                     <ColumnDefinition Width="Auto"/>  <!-- Reset button -->
                 </Grid.ColumnDefinitions>
 
                 <!-- Title -->
-                <TextBlock Grid.Column="0" Text="🤖 Agent Team"
+                <emoji:TextBlock Grid.Column="0" Text="🤖 Agent Team"
                            FontSize="16" FontWeight="SemiBold"
                            VerticalAlignment="Center" Foreground="#212121"/>
 
-                <!-- Phase Badge -->
+                <!-- Phase Badge (color-coded + pulsing) -->
                 <Border Grid.Column="1" Style="{StaticResource PhaseBadge}"
-                        Margin="12,0,0,0" VerticalAlignment="Center">
+                        Margin="12,0,0,0" VerticalAlignment="Center"
+                        Opacity="{Binding CurrentPhaseBadgeOpacity}"
+                        Background="{Binding CurrentPhaseColor, Converter={StaticResource StringToBrush}}">
                     <TextBlock Text="{Binding CurrentPhaseDisplay}"
-                               FontSize="12" FontWeight="SemiBold" Foreground="#1976D2"/>
+                               FontSize="12" FontWeight="SemiBold" Foreground="White"/>
                 </Border>
 
-                <!-- Session Health Indicator (LIVE/IDLE/ERROR with blinking dot) -->
-                <Border Grid.Column="2" CornerRadius="10" Padding="8,4"
-                        Margin="10,0,0,0" VerticalAlignment="Center"
+                <!-- Team Status Display (center) -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal"
+                            HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <!-- Rotating icon wrapper — Border handles the rotation Storyboard,
+                         emoji:TextBlock inside renders color emoji icons -->
+                    <Border x:Name="TeamStatusIconWrapper"
+                            VerticalAlignment="Center" Margin="0,0,6,0"
+                            RenderTransformOrigin="0.5,0.5">
+                        <Border.RenderTransform>
+                            <RotateTransform Angle="0"/>
+                        </Border.RenderTransform>
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding TeamStatusIconRotating}" Value="True">
+                                        <DataTrigger.EnterActions>
+                                            <BeginStoryboard x:Name="SpinStoryboard">
+                                                <Storyboard>
+                                                    <DoubleAnimation
+                                                        Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                        From="0" To="360"
+                                                        Duration="0:0:2"
+                                                        RepeatBehavior="Forever"/>
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </DataTrigger.EnterActions>
+                                        <DataTrigger.ExitActions>
+                                            <StopStoryboard BeginStoryboardName="SpinStoryboard"/>
+                                        </DataTrigger.ExitActions>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <emoji:TextBlock Text="{Binding TeamStatusIcon}" FontSize="16"/>
+                    </Border>
+                    <!-- Status text -->
+                    <TextBlock Text="{Binding TeamStatusText}" FontSize="12"
+                               FontWeight="SemiBold" VerticalAlignment="Center"
+                               Foreground="{Binding TeamStatusColor, Converter={StaticResource StringToBrush}}"/>
+                </StackPanel>
+
+                <!-- Pending Approvals -->
+                <Border Grid.Column="3" CornerRadius="10" Padding="8,4"
+                        Background="#FFF3E0" Margin="0,0,4,0" VerticalAlignment="Center"
+                        Visibility="{Binding PendingApprovals, Converter={StaticResource NonZeroCountToVis}}">
+                    <StackPanel Orientation="Horizontal">
+                        <emoji:TextBlock Text="⚠ " FontSize="11" VerticalAlignment="Center"/>
+                        <TextBlock FontSize="11" Foreground="#E65100" VerticalAlignment="Center">
+                            <Run Text="{Binding PendingApprovals, Mode=OneWay}"/>
+                            <Run Text=" pending"/>
+                        </TextBlock>
+                    </StackPanel>
+                </Border>
+
+                <!-- Session Health Indicator (LIVE/IDLE/ERROR with blinking dot) — right side before settings -->
+                <Border Grid.Column="4" CornerRadius="10" Padding="8,4"
+                        Margin="4,0" VerticalAlignment="Center"
                         Background="#FAFAFA" BorderBrush="#E0E0E0" BorderThickness="1"
                         Opacity="{Binding SessionIndicatorOpacity}">
                     <StackPanel Orientation="Horizontal">
@@ -133,29 +252,22 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Pending Approvals -->
-                <Border Grid.Column="4" CornerRadius="10" Padding="8,4"
-                        Background="#FFF3E0" Margin="0,0,4,0" VerticalAlignment="Center"
-                        Visibility="{Binding PendingApprovals, Converter={StaticResource NonZeroCountToVis}}">
-                    <TextBlock FontSize="11" Foreground="#E65100">
-                        <Run Text="⚠ "/>
-                        <Run Text="{Binding PendingApprovals, Mode=OneWay}"/>
-                        <Run Text=" pending"/>
-                    </TextBlock>
-                </Border>
-
-                <!-- Settings toggle button -->
-                <Button Grid.Column="5" Content="⚙" ToolTip="Multi-Agent Settings"
-                        Style="{StaticResource IconButton}"
-                        Command="{Binding ToggleSettingsCommand}"
-                        Margin="4,0"/>
-
                 <!-- Reset button -->
-                <Button Grid.Column="6" Content="🔄 Reset"
+                <Button Grid.Column="5"
                         Style="{StaticResource ActionButton}"
                         Background="#EEEEEE" Foreground="#424242"
                         Command="{Binding ResetOrchestratorCommand}"
-                        ToolTip="Reset orchestrator context"/>
+                        ToolTip="Reset orchestrator context">
+                    <emoji:TextBlock Text="🔄 Reset"/>
+                </Button>
+
+                <!-- Settings toggle button (extreme right) -->
+                <Button Grid.Column="6" ToolTip="Multi-Agent Settings"
+                        Style="{StaticResource IconButton}"
+                        Command="{Binding ToggleSettingsCommand}"
+                        Margin="4,0">
+                    <emoji:TextBlock Text="⚙" FontSize="15"/>
+                </Button>
             </Grid>
         </Border>
 
@@ -166,8 +278,22 @@
                 BorderBrush="#E0E0E0" BorderThickness="0,0,0,1"
                 Visibility="{Binding ShowSettings, Converter={StaticResource BoolToVis}}">
             <StackPanel>
-                <TextBlock Text="⚙ Multi-Agent Settings" FontSize="14"
-                           FontWeight="SemiBold" Foreground="#424242" Margin="0,0,0,10"/>
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <emoji:TextBlock Grid.Column="0" Text="⚙ Multi-Agent Settings" FontSize="14"
+                               FontWeight="SemiBold" Foreground="#424242" VerticalAlignment="Center"/>
+                    <Button Grid.Column="1"
+                            Style="{StaticResource ActionButton}"
+                            Background="#E0E0E0" Foreground="#616161"
+                            Padding="10,5" FontSize="11"
+                            Command="{Binding RestoreDefaultSettingsCommand}"
+                            ToolTip="Reset all settings to their default values">
+                        <emoji:TextBlock Text="↩ Restore Defaults"/>
+                    </Button>
+                </Grid>
 
                 <!-- Row 1: Parallelism + Strategy -->
                 <WrapPanel Margin="0,0,0,8">
@@ -283,18 +409,54 @@
                                TextWrapping="Wrap" FontSize="13"/>
                 </Border>
 
-                <!-- Orchestrator Message -->
+                <!-- Orchestrator Message (Markdown rendered) -->
                 <Border Background="#F3E5F5" CornerRadius="6" Padding="14,10" Margin="0,0,0,12"
                         Visibility="{Binding OrchestratorMessage, Converter={StaticResource StringToVis}}">
-                    <TextBlock Text="{Binding OrchestratorMessage}" TextWrapping="Wrap"
-                               FontSize="13" Foreground="#4A148C"/>
+                    <StackPanel>
+                        <mdxaml:MarkdownScrollViewer Markdown="{Binding OrchestratorMessage}"
+                                                      Style="{StaticResource MdXamlStyle}"
+                                                      Foreground="#4A148C"
+                                                      VerticalScrollBarVisibility="Disabled"/>
+                        <!-- Copy response button at bottom-right -->
+                        <Grid Margin="0,6,0,0" HorizontalAlignment="Stretch">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="1"
+                                    ToolTip="Copy response text to clipboard"
+                                    Command="{Binding CopyOrchestratorMessageCommand}"
+                                    Cursor="Hand" Padding="6"
+                                    Background="Transparent" BorderThickness="0">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Opacity" Value="0.5"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Opacity" Value="1.0"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                                <Grid Width="16" Height="16">
+                                    <!-- Copy icon: two overlapping squares -->
+                                    <Canvas>
+                                        <Rectangle Canvas.Left="3" Canvas.Top="0" Width="13" Height="13"
+                                                   Stroke="#7B1FA2" StrokeThickness="1.5" Fill="Transparent" RadiusX="1.5" RadiusY="1.5"/>
+                                        <Rectangle Canvas.Left="0" Canvas.Top="3" Width="13" Height="13"
+                                                   Stroke="#7B1FA2" StrokeThickness="1.5" Fill="#F3E5F5" RadiusX="1.5" RadiusY="1.5"/>
+                                    </Canvas>
+                                </Grid>
+                            </Button>
+                        </Grid>
+                    </StackPanel>
                 </Border>
 
                 <!-- Clarification Panel -->
                 <Border Background="#FFF8E1" CornerRadius="6" Padding="14" Margin="0,0,0,12"
                         Visibility="{Binding ShowClarification, Converter={StaticResource BoolToVis}}">
                     <StackPanel>
-                        <TextBlock Text="🤔 Clarification Needed" FontSize="14"
+                        <emoji:TextBlock Text="🤔 Clarification Needed" FontSize="14"
                                    FontWeight="SemiBold" Foreground="#F57F17" Margin="0,0,0,8"/>
 
                         <ItemsControl ItemsSource="{Binding ClarifyingQuestions}" Margin="0,0,0,10">
@@ -327,7 +489,7 @@
                 <Border Background="#E8EAF6" CornerRadius="6" Padding="14" Margin="0,0,0,12"
                         Visibility="{Binding ShowPlanReview, Converter={StaticResource BoolToVis}}">
                     <StackPanel>
-                        <TextBlock Text="📋 Plan Review" FontSize="14"
+                        <emoji:TextBlock Text="📋 Plan Review" FontSize="14"
                                    FontWeight="SemiBold" Foreground="#283593" Margin="0,0,0,8"/>
 
                         <TextBlock Text="{Binding CurrentPlan.PlanSummary}" TextWrapping="Wrap"
@@ -376,18 +538,23 @@
 
                         <!-- Approval buttons -->
                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                            <Button Content="✅ Approve" Margin="0,0,8,0"
+                            <Button Margin="0,0,8,0"
                                     Style="{StaticResource ActionButton}"
                                     Background="#4CAF50" Foreground="White"
-                                    Command="{Binding ApprovePlanCommand}"/>
-                            <Button Content="✏️ Request Changes" Margin="0,0,8,0"
+                                    Command="{Binding ApprovePlanCommand}">
+                                <emoji:TextBlock Text="✅ Approve"/>
+                            </Button>
+                            <Button Margin="0,0,8,0"
                                     Style="{StaticResource ActionButton}"
                                     Background="#FF9800" Foreground="White"
-                                    Command="{Binding RequestPlanChangesCommand}"/>
-                            <Button Content="❌ Reject"
-                                    Style="{StaticResource ActionButton}"
+                                    Command="{Binding RequestPlanChangesCommand}">
+                                <emoji:TextBlock Text="✏️ Request Changes"/>
+                            </Button>
+                            <Button Style="{StaticResource ActionButton}"
                                     Background="#F44336" Foreground="White"
-                                    Command="{Binding RejectPlanCommand}"/>
+                                    Command="{Binding RejectPlanCommand}">
+                                <emoji:TextBlock Text="❌ Reject"/>
+                            </Button>
                         </StackPanel>
                     </StackPanel>
                 </Border>
@@ -400,7 +567,7 @@
                           Visibility="{Binding ShowReport, Converter={StaticResource BoolToVis}}">
                     <Expander.Header>
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="📊 Completion Report" FontSize="14"
+                            <emoji:TextBlock Text="📊 Completion Report" FontSize="14"
                                        FontWeight="SemiBold" Foreground="#2E7D32"
                                        VerticalAlignment="Center"/>
                             <!-- Inline stats summary visible even when collapsed -->
@@ -416,7 +583,7 @@
                                 </TextBlock>
                             </Border>
                             <!-- Dismiss button -->
-                            <Button Content="✕" Margin="10,0,0,0"
+                            <Button Content="✕" Margin="6,0,0,0"
                                     Style="{StaticResource IconButton}"
                                     FontSize="12" Foreground="#757575"
                                     Command="{Binding DismissReportCommand}"
@@ -426,10 +593,12 @@
 
                     <Border Background="#E8F5E9" CornerRadius="0,0,6,6" Padding="14,10">
                         <StackPanel>
-                            <!-- Summary text -->
-                            <TextBlock Text="{Binding LastReport.ConversationalSummary}"
-                                       TextWrapping="Wrap" FontSize="13" Foreground="#424242"
-                                       Margin="0,0,0,10"/>
+                            <!-- Summary text (Markdown rendered) -->
+                            <mdxaml:MarkdownScrollViewer Markdown="{Binding LastReport.ConversationalSummary}"
+                                                          Style="{StaticResource MdXamlStyle}"
+                                                          Foreground="#424242"
+                                                          VerticalScrollBarVisibility="Disabled"
+                                                          Margin="0,0,0,10"/>
 
                             <!-- Per-worker result list -->
                             <ItemsControl ItemsSource="{Binding LastReport.WorkerResults}" Margin="0,4,0,0">
@@ -456,14 +625,77 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
+
+                            <!-- Copy button at bottom-right (ChatView pattern) -->
+                            <Grid Margin="0,8,0,0" HorizontalAlignment="Stretch">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="1"
+                                        ToolTip="Copy report text to clipboard"
+                                        Command="{Binding CopyReportTextCommand}"
+                                        Cursor="Hand" Padding="6"
+                                        Background="Transparent" BorderThickness="0">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Setter Property="Opacity" Value="0.5"/>
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Opacity" Value="1.0"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                    <Grid Width="16" Height="16">
+                                        <!-- Copy icon: two overlapping squares -->
+                                        <Canvas>
+                                            <Rectangle Canvas.Left="3" Canvas.Top="0" Width="13" Height="13"
+                                                       Stroke="#555" StrokeThickness="1.5" Fill="Transparent" RadiusX="1.5" RadiusY="1.5"/>
+                                            <Rectangle Canvas.Left="0" Canvas.Top="3" Width="13" Height="13"
+                                                       Stroke="#555" StrokeThickness="1.5" Fill="#E8F5E9" RadiusX="1.5" RadiusY="1.5"/>
+                                        </Canvas>
+                                    </Grid>
+                                </Button>
+                            </Grid>
                         </StackPanel>
                     </Border>
                 </Expander>
 
                 <!-- ═══════════════════════════════════════════════ -->
-                <!-- Event Log (Collapsible Expander)                -->
+                <!-- Next Steps Action Buttons                       -->
                 <!-- ═══════════════════════════════════════════════ -->
-                <Expander Header="📝 Event Log" IsExpanded="False" Margin="0,0,0,12"
+                <Border Background="#E8F5E9" CornerRadius="6" Padding="14,10" Margin="0,0,0,12"
+                        Visibility="{Binding HasNextSteps, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <emoji:TextBlock Text="🚀 Recommended Next Steps" FontSize="13"
+                                   FontWeight="SemiBold" Foreground="#2E7D32" Margin="0,0,0,8"/>
+                        <TextBlock Text="Click a step to populate it as your next task:"
+                                   FontSize="11" Foreground="#757575" Margin="0,0,0,8"/>
+                        <ItemsControl ItemsSource="{Binding NextStepActions}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal"/>
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Content="{Binding}"
+                                            Style="{StaticResource NextStepButton}"
+                                            Command="{Binding DataContext.SelectNextStepCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                            CommandParameter="{Binding}"/>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- ═══════════════════════════════════════════════ -->
+                <!-- Event Log (Collapsible Expander, data-bound)    -->
+                <!-- ═══════════════════════════════════════════════ -->
+                <Expander Header="📝 Event Log"
+                          IsExpanded="{Binding IsEventLogExpanded, Mode=TwoWay}"
+                          Margin="0,0,0,12"
                           FontSize="13" Foreground="#424242">
                     <Border Background="#FAFAFA" CornerRadius="4" Padding="8" MaxHeight="250">
                         <ListBox ItemsSource="{Binding EventLog}"
@@ -510,25 +742,31 @@
                          KeyDown="InjectionInput_KeyDown"/>
 
                 <!-- Submit button (when not orchestrating) -->
-                <Button Grid.Column="1" Content="🚀 Submit" Margin="8,0,0,0"
+                <Button Grid.Column="1" Margin="8,0,0,0"
                         Style="{StaticResource ActionButton}"
                         Background="#1976D2" Foreground="White"
                         Command="{Binding SubmitTaskCommand}"
-                        Visibility="{Binding IsOrchestrating, Converter={StaticResource InverseBoolToVis}}"/>
+                        Visibility="{Binding IsOrchestrating, Converter={StaticResource InverseBoolToVis}}">
+                    <emoji:TextBlock Text="🚀 Submit"/>
+                </Button>
 
                 <!-- Inject button (when orchestrating) -->
-                <Button Grid.Column="1" Content="💉 Inject" Margin="8,0,0,0"
+                <Button Grid.Column="1" Margin="8,0,0,0"
                         Style="{StaticResource ActionButton}"
                         Background="#7B1FA2" Foreground="White"
                         Command="{Binding InjectInstructionCommand}"
-                        Visibility="{Binding IsOrchestrating, Converter={StaticResource BoolToVis}}"/>
+                        Visibility="{Binding IsOrchestrating, Converter={StaticResource BoolToVis}}">
+                    <emoji:TextBlock Text="💉 Inject"/>
+                </Button>
 
                 <!-- Cancel button (when orchestrating) -->
-                <Button Grid.Column="2" Content="⏹ Cancel" Margin="8,0,0,0"
+                <Button Grid.Column="2" Margin="8,0,0,0"
                         Style="{StaticResource ActionButton}"
                         Background="#D32F2F" Foreground="White"
                         Command="{Binding CancelOrchestrationCommand}"
-                        Visibility="{Binding IsOrchestrating, Converter={StaticResource BoolToVis}}"/>
+                        Visibility="{Binding IsOrchestrating, Converter={StaticResource BoolToVis}}">
+                    <emoji:TextBlock Text="⏹ Cancel"/>
+                </Button>
             </Grid>
         </Border>
     </Grid>

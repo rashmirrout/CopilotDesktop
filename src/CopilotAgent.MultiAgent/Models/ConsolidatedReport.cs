@@ -11,6 +11,13 @@ public sealed class ConsolidatedReport
     public List<AgentResult> WorkerResults { get; set; } = new();
     public OrchestrationStats Stats { get; set; } = new();
     public DateTime CompletedAtUtc { get; set; } = DateTime.UtcNow;
+
+    /// <summary>
+    /// Recommended next steps extracted from the LLM synthesis response.
+    /// Each entry is a user-facing action description (e.g., "Run unit tests", "Deploy to staging").
+    /// Parsed from <c>[ACTION:description]</c> markers in the summary.
+    /// </summary>
+    public List<string> NextSteps { get; set; } = new();
 }
 
 /// <summary>
