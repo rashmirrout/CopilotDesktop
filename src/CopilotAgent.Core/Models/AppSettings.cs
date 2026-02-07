@@ -130,4 +130,12 @@ public class AppSettings
     /// </summary>
     [JsonPropertyName("autoCollapseCommentary")]
     public bool AutoCollapseCommentary { get; set; } = true;
+
+    /// <summary>
+    /// Multi-agent orchestration settings.
+    /// Controls parallel worker sessions, workspace strategy, retry policies,
+    /// and model overrides for the Agent Team feature.
+    /// </summary>
+    [JsonPropertyName("multiAgent")]
+    public MultiAgentSettings MultiAgent { get; set; } = new();
 }

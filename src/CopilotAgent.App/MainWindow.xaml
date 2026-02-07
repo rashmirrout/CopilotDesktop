@@ -206,6 +206,27 @@
                             </Style>
                         </Button.Style>
                     </Button>
+                    <Button Command="{Binding ShowAgentTeamViewCommand}"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Padding="10,6"
+                            FontSize="12"
+                            Cursor="Hand"
+                            ToolTip="Agent Team (Multi-Agent Orchestration)">
+                        <StackPanel Orientation="Horizontal">
+                            <emoji:TextBlock Text="🤖" FontSize="14" Margin="0,0,4,0"/>
+                            <TextBlock Text="Team" VerticalAlignment="Center" Foreground="#424242"/>
+                        </StackPanel>
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#E0E0E0"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                     <Button Command="{Binding ShowSettingsCommand}"
                             Background="Transparent"
                             BorderThickness="0"
@@ -228,7 +249,7 @@
             </Grid>
         </Border>
 
-        <!-- Active Chat View -->
+        <!-- Active Chat View (visible when not in Agent Team mode) -->
         <views:ChatView Grid.Row="1" 
                         DataContext="{Binding ActiveChatViewModel}">
             <views:ChatView.Style>
@@ -238,10 +259,58 @@
                         <DataTrigger Binding="{Binding DataContext.HasActiveSession, RelativeSource={RelativeSource AncestorType=Window}}" Value="False">
                             <Setter Property="Visibility" Value="Collapsed"/>
                         </DataTrigger>
+                        <DataTrigger Binding="{Binding DataContext.ShowAgentTeam, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
                     </Style.Triggers>
                 </Style>
             </views:ChatView.Style>
         </views:ChatView>
+
+        <!-- Agent Team View (visible when ShowAgentTeam is true) -->
+        <Grid Grid.Row="1">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding ShowAgentTeam}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <!-- Back to Chat button -->
+            <Border Grid.Row="0" Background="#E8EAF6" Padding="8,4"
+                    BorderBrush="#C5CAE9" BorderThickness="0,0,0,1">
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="← Back to Chat" 
+                            Command="{Binding ShowChatCommand}"
+                            Background="Transparent" BorderThickness="0"
+                            Foreground="#3F51B5" FontSize="12" Cursor="Hand"
+                            Padding="8,4">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#C5CAE9"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <TextBlock Text="Multi-Agent Orchestration" 
+                               FontSize="12" FontWeight="SemiBold"
+                               Foreground="#3F51B5" VerticalAlignment="Center"
+                               Margin="8,0,0,0"/>
+                </StackPanel>
+            </Border>
+            <views:AgentTeamView Grid.Row="1" 
+                                 DataContext="{Binding AgentTeamViewModel}"/>
+        </Grid>
 
         <!-- No Session Placeholder -->
         <Border Grid.Row="1" 

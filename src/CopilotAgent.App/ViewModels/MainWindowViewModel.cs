@@ -33,6 +33,12 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _hasActiveSession;
 
+    [ObservableProperty]
+    private AgentTeamViewModel? _agentTeamViewModel;
+
+    [ObservableProperty]
+    private bool _showAgentTeam;
+
     public MainWindowViewModel(
         ISessionManager sessionManager,
         IServiceProvider serviceProvider,
@@ -66,6 +72,9 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             await SetActiveSessionAsync(_sessionManager.ActiveSession);
         }
+
+        // Initialize Agent Team ViewModel
+        AgentTeamViewModel = _serviceProvider.GetRequiredService<AgentTeamViewModel>();
         
         _logger.LogInformation("MainWindow initialized with {Count} sessions", Sessions.Count);
     }
@@ -151,6 +160,18 @@ public partial class MainWindowViewModel : ViewModelBase
                 _sessionManager.ActiveSession = null;
             }
         }
+    }
+
+    [RelayCommand]
+    private void ShowChat()
+    {
+        ShowAgentTeam = false;
+    }
+
+    [RelayCommand]
+    private void ShowAgentTeamView()
+    {
+        ShowAgentTeam = true;
     }
 
     [RelayCommand]
