@@ -29,7 +29,7 @@ public class OfficeSettings
 
     /// <summary>Default timeout in seconds for individual assistant task execution.</summary>
     [JsonPropertyName("defaultAssistantTimeoutSeconds")]
-    public int DefaultAssistantTimeoutSeconds { get; set; } = 120;
+    public int DefaultAssistantTimeoutSeconds { get; set; } = 600;
 
     /// <summary>Default timeout in seconds for Manager LLM calls.</summary>
     [JsonPropertyName("defaultManagerLlmTimeoutSeconds")]
@@ -46,4 +46,12 @@ public class OfficeSettings
     /// <summary>Maximum number of live commentary entries to keep in memory.</summary>
     [JsonPropertyName("maxCommentaryEntries")]
     public int MaxCommentaryEntries { get; set; } = 200;
+
+    /// <summary>
+    /// Default commentary streaming mode: "StreamingTokens" for word-by-word,
+    /// "CompleteThought" for buffered complete responses.
+    /// Stored as string to avoid Core→Office project dependency on the enum.
+    /// </summary>
+    [JsonPropertyName("defaultCommentaryStreamingMode")]
+    public string DefaultCommentaryStreamingMode { get; set; } = "CompleteThought";
 }

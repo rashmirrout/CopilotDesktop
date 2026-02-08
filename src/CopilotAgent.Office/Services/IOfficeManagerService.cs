@@ -58,4 +58,7 @@ public interface IOfficeManagerService
 
     /// <summary>Update the check interval for the next rest period.</summary>
     void UpdateCheckInterval(int minutes);
+
+    /// <summary>Skip the current rest period immediately, starting the next iteration.</summary>
+    void SkipRest();
 }

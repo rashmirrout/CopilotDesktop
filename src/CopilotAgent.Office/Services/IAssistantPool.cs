@@ -26,4 +26,7 @@ public interface IAssistantPool
 
     /// <summary>Raised for scheduling decisions.</summary>
     event Action<SchedulingEvent>? OnSchedulingEvent;
+
+    /// <summary>Raised for assistant reasoning/progress commentary (for Live Commentary sidebar).</summary>
+    event Action<CommentaryEvent>? OnCommentaryEvent;
 }

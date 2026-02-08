@@ -162,3 +162,58 @@ public sealed class ClarificationRequestedEvent : OfficeEvent
     /// <summary>The clarification question.</summary>
     public required string Question { get; init; }
 }
+
+/// <summary>
+/// Classification of activity status updates for the live status panel.
+/// Drives the status text shown above the input area.
+/// </summary>
+public enum ActivityStatusType
+{
+    /// <summary>No active work — panel should be hidden.</summary>
+    Idle,
+
+    /// <summary>Manager is thinking/planning (LLM call in progress).</summary>
+    ManagerThinking,
+
+    /// <summary>Manager is waiting for user clarification.</summary>
+    ManagerClarifying,
+
+    /// <summary>Manager has delegated tasks to assistants.</summary>
+    Delegated,
+
+    /// <summary>Assistants are actively working on tasks.</summary>
+    AssistantsWorking,
+
+    /// <summary>An assistant finished its task (update active list).</summary>
+    AssistantFinished,
+
+    /// <summary>Manager is aggregating/preparing the response.</summary>
+    ManagerAggregating,
+
+    /// <summary>Manager is waiting for plan approval.</summary>
+    AwaitingApproval,
+
+    /// <summary>Session resting between iterations.</summary>
+    Resting
+}
+
+/// <summary>
+/// Raised when the activity status changes. Consumed by the ViewModel to drive
+/// the blinking status panel that shows real-time progress to the user.
+/// </summary>
+public sealed class ActivityStatusEvent : OfficeEvent
+{
+    public override OfficeEventType EventType => OfficeEventType.ActivityStatus;
+
+    /// <summary>The type of activity.</summary>
+    public required ActivityStatusType StatusType { get; init; }
+
+    /// <summary>Human-readable status message (e.g. "Manager thinking...", "Assistants [1, 2] working...").</summary>
+    public required string StatusMessage { get; init; }
+
+    /// <summary>Indices of currently active assistants (empty when not in execution phase).</summary>
+    public IReadOnlyList<int> ActiveAssistantIndices { get; init; } = [];
+
+    /// <summary>Total number of assistants dispatched this iteration.</summary>
+    public int TotalAssistantsDispatched { get; init; }
+}

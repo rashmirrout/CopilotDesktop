@@ -6,6 +6,7 @@
              xmlns:converters="clr-namespace:CopilotAgent.App.Converters"
              xmlns:helpers="clr-namespace:CopilotAgent.App.Helpers"
              xmlns:emoji="clr-namespace:Emoji.Wpf;assembly=Emoji.Wpf"
+             xmlns:mdxaml="clr-namespace:MdXaml;assembly=MdXaml"
              mc:Ignorable="d"
              d:DesignHeight="700" d:DesignWidth="950"
              Background="White">
@@ -14,6 +15,41 @@
         <converters:BoolToVisibilityConverter x:Key="BoolToVis"/>
         <converters:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis"/>
         <converters:StringToBrushConverter x:Key="StringToBrush"/>
+        <converters:StringToVisibilityConverter x:Key="StringToVis"/>
+        <converters:ZeroCountToVisibilityConverter x:Key="NonZeroToVis"/>
+
+        <!-- MdXaml Markdown style for modern rich-text rendering in chat bubbles -->
+        <Style x:Key="OfficeMdStyle" TargetType="mdxaml:MarkdownScrollViewer">
+            <Setter Property="MarkdownStyleName" Value="Standard"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Margin" Value="0"/>
+            <Setter Property="FontSize" Value="13"/>
+        </Style>
+
+        <!-- Selectable read-only TextBox style: enables mouse selection + right-click Copy everywhere -->
+        <Style x:Key="SelectableText" TargetType="TextBox">
+            <Setter Property="IsReadOnly" Value="True"/>
+            <Setter Property="IsReadOnlyCaretVisible" Value="True"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Padding" Value="0"/>
+            <Setter Property="Cursor" Value="IBeam"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="SelectionBrush" Value="#FF3399FF"/>
+            <Setter Property="SelectionOpacity" Value="0.4"/>
+            <Setter Property="ContextMenu">
+                <Setter.Value>
+                    <ContextMenu>
+                        <MenuItem Header="Copy" Command="ApplicationCommands.Copy"/>
+                        <MenuItem Header="Select All" Command="ApplicationCommands.SelectAll"/>
+                    </ContextMenu>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
         <!-- Action button style (reused from AgentTeamView pattern) -->
         <Style x:Key="ActionButton" TargetType="Button">
@@ -78,18 +114,19 @@
             <Border HorizontalAlignment="Right" MaxWidth="600" Margin="80,4,16,4"
                     Background="#E8F5E9" CornerRadius="12,12,2,12" Padding="14,10">
                 <StackPanel>
-                    <TextBlock Text="{Binding SenderName}" FontSize="11" FontWeight="SemiBold"
-                               Foreground="#2E7D32" Margin="0,0,0,4"/>
-                    <TextBlock Text="{Binding Content}" TextWrapping="Wrap" FontSize="13"
-                               Foreground="#212121"/>
-                    <TextBlock Text="{Binding Timestamp, StringFormat='{}{0:HH:mm}'}"
-                               FontSize="10" Foreground="#9E9E9E" HorizontalAlignment="Right"
-                               Margin="0,4,0,0"/>
+                    <TextBox Style="{StaticResource SelectableText}" Text="{Binding SenderName, Mode=OneWay}"
+                             FontSize="11" FontWeight="SemiBold" Foreground="#2E7D32" Margin="0,0,0,4"/>
+                    <mdxaml:MarkdownScrollViewer Markdown="{Binding Content, Mode=OneWay}"
+                                                 Style="{StaticResource OfficeMdStyle}"
+                                                 Foreground="#212121"/>
+                    <TextBox Style="{StaticResource SelectableText}" Text="{Binding Timestamp, StringFormat='{}{0:HH:mm}', Mode=OneWay}"
+                             FontSize="10" Foreground="#9E9E9E" HorizontalAlignment="Right"
+                             Margin="0,4,0,0"/>
                 </StackPanel>
             </Border>
         </DataTemplate>
 
-        <!-- MANAGER message: left-aligned, blue accent, collapsible -->
+        <!-- MANAGER message: left-aligned, blue accent, collapsible, with copy button -->
         <DataTemplate x:Key="ManagerMessageTemplate">
             <Border HorizontalAlignment="Left" MaxWidth="650" Margin="16,4,80,4"
                     CornerRadius="12,12,12,2" Padding="14,10"
@@ -97,19 +134,33 @@
                 <StackPanel>
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                         <emoji:TextBlock Text="🧑‍💼" FontSize="13" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                        <TextBlock Text="{Binding SenderName}" FontSize="11" FontWeight="SemiBold"
-                                   Foreground="#1565C0"/>
-                        <TextBlock Text="{Binding Timestamp, StringFormat=' · {0:HH:mm}'}"
-                                   FontSize="10" Foreground="#9E9E9E" VerticalAlignment="Center"
-                                   Margin="6,0,0,0"/>
+                        <TextBox Style="{StaticResource SelectableText}" Text="{Binding SenderName, Mode=OneWay}"
+                                 FontSize="11" FontWeight="SemiBold" Foreground="#1565C0"
+                                 VerticalAlignment="Center"/>
+                        <TextBox Style="{StaticResource SelectableText}" Text="{Binding Timestamp, StringFormat=' · {0:HH:mm}', Mode=OneWay}"
+                                 FontSize="10" Foreground="#9E9E9E" VerticalAlignment="Center"
+                                 Margin="6,0,0,0"/>
                     </StackPanel>
-                    <TextBlock Text="{Binding Content}" TextWrapping="Wrap" FontSize="13"
-                               Foreground="#212121"/>
+                    <mdxaml:MarkdownScrollViewer Markdown="{Binding Content, Mode=OneWay}"
+                                                 Style="{StaticResource OfficeMdStyle}"
+                                                 Foreground="#212121"/>
+                    <!-- Copy to clipboard button -->
+                    <Button HorizontalAlignment="Right" Margin="0,6,0,0"
+                            Style="{StaticResource IconButton}"
+                            ToolTip="Copy to clipboard"
+                            Tag="{Binding Content, Mode=OneWay}"
+                            Click="CopyContent_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="📋" FontSize="12" Margin="0,0,4,0"/>
+                            <TextBlock Text="Copy" FontSize="10" Foreground="#757575"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Border>
         </DataTemplate>
 
-        <!-- ASSISTANT message: left-aligned, indented, per-color accent, collapsible -->
+        <!-- ASSISTANT message: left-aligned, indented, per-color accent, collapsible, with copy button -->
         <DataTemplate x:Key="AssistantMessageTemplate">
             <Border HorizontalAlignment="Left" MaxWidth="600" Margin="40,4,80,4"
                     CornerRadius="8" Padding="12,10"
@@ -120,14 +171,29 @@
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
                         <Ellipse Width="8" Height="8" Margin="0,0,6,0" VerticalAlignment="Center"
                                  Fill="{Binding AccentColor, Converter={StaticResource StringToBrush}}"/>
-                        <TextBlock Text="{Binding SenderName}" FontSize="11" FontWeight="SemiBold"
-                                   Foreground="{Binding AccentColor, Converter={StaticResource StringToBrush}}"/>
-                        <TextBlock Text="{Binding Timestamp, StringFormat=' · {0:HH:mm}'}"
-                                   FontSize="10" Foreground="#9E9E9E" VerticalAlignment="Center"
-                                   Margin="6,0,0,0"/>
+                        <TextBox Style="{StaticResource SelectableText}" Text="{Binding SenderName, Mode=OneWay}"
+                                 FontSize="11" FontWeight="SemiBold"
+                                 Foreground="{Binding AccentColor, Converter={StaticResource StringToBrush}}"
+                                 VerticalAlignment="Center"/>
+                        <TextBox Style="{StaticResource SelectableText}" Text="{Binding Timestamp, StringFormat=' · {0:HH:mm}', Mode=OneWay}"
+                                 FontSize="10" Foreground="#9E9E9E" VerticalAlignment="Center"
+                                 Margin="6,0,0,0"/>
                     </StackPanel>
-                    <TextBlock Text="{Binding Content}" TextWrapping="Wrap" FontSize="13"
-                               Foreground="#424242"/>
+                    <mdxaml:MarkdownScrollViewer Markdown="{Binding Content, Mode=OneWay}"
+                                                 Style="{StaticResource OfficeMdStyle}"
+                                                 Foreground="#424242"/>
+                    <!-- Copy to clipboard button -->
+                    <Button HorizontalAlignment="Right" Margin="0,6,0,0"
+                            Style="{StaticResource IconButton}"
+                            ToolTip="Copy to clipboard"
+                            Tag="{Binding Content, Mode=OneWay}"
+                            Click="CopyContent_Click">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="📋" FontSize="12" Margin="0,0,4,0"/>
+                            <TextBlock Text="Copy" FontSize="10" Foreground="#757575"
+                                       VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
                 </StackPanel>
             </Border>
         </DataTemplate>
@@ -136,21 +202,22 @@
         <DataTemplate x:Key="SystemMessageTemplate">
             <Border HorizontalAlignment="Center" Margin="16,8,16,8"
                     Background="#F5F5F5" CornerRadius="16" Padding="16,6">
-                <TextBlock Text="{Binding Content}" TextWrapping="Wrap" FontSize="12"
-                           Foreground="#757575" HorizontalAlignment="Center"
-                           FontStyle="Italic"/>
+                <mdxaml:MarkdownScrollViewer Markdown="{Binding Content, Mode=OneWay}"
+                                             Style="{StaticResource OfficeMdStyle}"
+                                             Foreground="#757575" FontSize="12"
+                                             HorizontalAlignment="Center"/>
             </Border>
         </DataTemplate>
 
         <!-- ITERATION HEADER: separator with iteration number -->
         <DataTemplate x:Key="IterationHeaderTemplate">
-            <Border Margin="0,12,0,4">
+            <Border Margin="0,6,0,2">
                 <Grid>
                     <Separator VerticalAlignment="Center" Background="#E0E0E0"/>
-                    <Border HorizontalAlignment="Center" Background="White" Padding="12,2">
+                    <Border HorizontalAlignment="Center" Background="White" Padding="8,1">
                         <StackPanel Orientation="Horizontal">
-                            <emoji:TextBlock Text="🔄" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                            <TextBlock FontSize="12" FontWeight="SemiBold" Foreground="#1976D2">
+                            <emoji:TextBlock Text="🔄" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0"/>
+                            <TextBlock FontSize="11" FontWeight="SemiBold" Foreground="#1976D2">
                                 <Run Text="Iteration #"/>
                                 <Run Text="{Binding IterationNumber, Mode=OneWay}"/>
                             </TextBlock>
@@ -198,6 +265,17 @@
             <DoubleAnimation Storyboard.TargetName="Backdrop"
                              Storyboard.TargetProperty="Opacity"
                              From="0" To="1" Duration="0:0:0.25"/>
+        </Storyboard>
+
+        <!-- Activity status pulse animation (Issue #7): opacity 1.0 ↔ 0.4 over 1.5s -->
+        <Storyboard x:Key="PulseStoryboard" RepeatBehavior="Forever" AutoReverse="True">
+            <DoubleAnimation Storyboard.TargetName="ActivityStatusPanel"
+                             Storyboard.TargetProperty="Opacity"
+                             From="1.0" To="0.4" Duration="0:0:1.5">
+                <DoubleAnimation.EasingFunction>
+                    <SineEase EasingMode="EaseInOut"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
         </Storyboard>
 
         <Storyboard x:Key="SlideOutStoryboard">
@@ -278,12 +356,30 @@
                     <!-- Queue Depth -->
                     <Border Grid.Column="3" CornerRadius="8" Padding="8,3"
                             Background="#FFF3E0" VerticalAlignment="Center" Margin="0,0,14,0"
-                            Visibility="{Binding QueueDepth, Converter={StaticResource BoolToVis}}">
+                            Visibility="{Binding QueueDepth, Converter={StaticResource NonZeroToVis}}">
                         <TextBlock FontSize="11" Foreground="#E65100">
                             <Run Text="Q: "/>
                             <Run Text="{Binding QueueDepth, Mode=OneWay}" FontWeight="SemiBold"/>
                         </TextBlock>
                     </Border>
+
+                    <!-- Model Indicators (center-left of spacer) -->
+                    <StackPanel Grid.Column="4" Orientation="Horizontal" VerticalAlignment="Center"
+                                HorizontalAlignment="Left" Margin="8,0,0,0"
+                                Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}">
+                        <Border Background="#E8EAF6" CornerRadius="6" Padding="6,3" Margin="0,0,6,0">
+                            <TextBlock FontSize="10" Foreground="#3F51B5" FontFamily="Cascadia Code, Consolas">
+                                <Run Text="M:" FontWeight="Bold"/>
+                                <Run Text="{Binding SelectedManagerModel, Mode=OneWay}"/>
+                            </TextBlock>
+                        </Border>
+                        <Border Background="#F3E5F5" CornerRadius="6" Padding="6,3">
+                            <TextBlock FontSize="10" Foreground="#7B1FA2" FontFamily="Cascadia Code, Consolas">
+                                <Run Text="A:" FontWeight="Bold"/>
+                                <Run Text="{Binding SelectedAssistantModel, Mode=OneWay}"/>
+                            </TextBlock>
+                        </Border>
+                    </StackPanel>
 
                     <!-- Rest Countdown (center area) -->
                     <StackPanel Grid.Column="4" Orientation="Horizontal" HorizontalAlignment="Center"
@@ -316,13 +412,14 @@
             <!-- ══════════════════════════════════════════════ -->
             <ScrollViewer x:Name="ChatScrollViewer" Grid.Row="1"
                           VerticalScrollBarVisibility="Auto"
-                          Padding="0,8,0,8">
+                          Padding="0,8,0,8"
+                          PreviewMouseWheel="ChatScrollViewer_PreviewMouseWheel">
                 <StackPanel>
                     <!-- Error message -->
                     <Border Background="#FFEBEE" CornerRadius="4" Padding="12,8" Margin="16,4,16,4"
-                            Visibility="{Binding ErrorMessage, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="{Binding ErrorMessage}" Foreground="#C62828"
-                                   TextWrapping="Wrap" FontSize="13"/>
+                            Visibility="{Binding ErrorMessage, Converter={StaticResource StringToVis}}">
+                        <TextBox Style="{StaticResource SelectableText}" Text="{Binding ErrorMessage, Mode=OneWay}"
+                                 Foreground="#C62828" FontSize="13"/>
                     </Border>
 
                     <!-- Messages ItemsControl (Bug #6 fix: moved before approval panel) -->
@@ -368,12 +465,26 @@
                     BorderBrush="#E0E0E0" BorderThickness="0,1,0,0">
                 <Grid>
                     <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>  <!-- Activity status -->
+                        <RowDefinition Height="Auto"/>  <!-- Clarification -->
+                        <RowDefinition Height="Auto"/>  <!-- Input row -->
                     </Grid.RowDefinitions>
 
+                    <!-- Issue #7: Activity Status Panel (pulsing indicator) -->
+                    <Border x:Name="ActivityStatusPanel" Grid.Row="0"
+                            CornerRadius="6" Padding="10,7" Margin="0,0,0,6"
+                            Background="#EDE7F6" BorderBrush="#B39DDB" BorderThickness="1"
+                            Visibility="{Binding IsActivityStatusVisible, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Orientation="Horizontal">
+                            <emoji:TextBlock Text="⚡" FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Text="{Binding ActivityStatusText}"
+                                       FontSize="12" Foreground="#4527A0" FontWeight="SemiBold"
+                                       VerticalAlignment="Center" TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Clarification indicator -->
-                    <Border Grid.Row="0" CornerRadius="6" Padding="10,6" Margin="0,0,0,6"
+                    <Border Grid.Row="1" CornerRadius="6" Padding="10,6" Margin="0,0,0,6"
                             Background="#FFF8E1" BorderBrush="#FFE082" BorderThickness="1"
                             Visibility="{Binding IsWaitingForClarification, Converter={StaticResource BoolToVis}}">
                         <StackPanel Orientation="Horizontal">
@@ -385,7 +496,7 @@
                     </Border>
 
                     <!-- Input row: either objective (when idle) or message (when running) -->
-                    <Grid Grid.Row="1">
+                    <Grid Grid.Row="2">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*"/>
                             <ColumnDefinition Width="Auto"/>
@@ -531,38 +642,120 @@
                                 <emoji:TextBlock Text="💭 Live Commentary" FontSize="13"
                                            FontWeight="SemiBold" Foreground="#424242"/>
                             </Expander.Header>
-                            <Border Background="#FAFAFA" CornerRadius="4" Padding="8" MaxHeight="200"
+                            <!-- Bug #3 fix: ScrollViewer for scrollable commentary + increased height -->
+                            <Border Background="#FAFAFA" CornerRadius="4" Padding="8" MaxHeight="300"
                                     Margin="0,4,0,0">
-                                <ItemsControl ItemsSource="{Binding LiveCommentaries}">
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Margin="0,1" FontSize="11"
-                                                       FontFamily="Cascadia Code, Consolas, Courier New"
-                                                       Foreground="#616161" TextWrapping="Wrap">
-                                                <Run Text="{Binding Emoji, Mode=OneWay}"/>
-                                                <Run Text=" "/>
-                                                <Run Text="{Binding AgentName, Mode=OneWay}" FontWeight="SemiBold"/>
-                                                <Run Text=": "/>
-                                                <Run Text="{Binding Message, Mode=OneWay}"/>
-                                            </TextBlock>
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
+                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled">
+                                    <ItemsControl ItemsSource="{Binding LiveCommentaries}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal" Margin="0,1">
+                                                    <!-- Color emoji via Emoji.Wpf -->
+                                                    <emoji:TextBlock Text="{Binding Emoji, Mode=OneWay}"
+                                                                     FontSize="12" VerticalAlignment="Top"
+                                                                     Margin="0,1,4,0"/>
+                                                    <!-- Issue #3 fix: TextBlock instead of TextBox for multi-line selection across items -->
+                                                    <TextBlock FontSize="11"
+                                                               FontFamily="Cascadia Code, Consolas, Courier New"
+                                                               Foreground="#616161"
+                                                               TextWrapping="Wrap">
+                                                        <TextBlock.Text>
+                                                            <MultiBinding StringFormat="{}{0}: {1}">
+                                                                <Binding Path="AgentName" Mode="OneWay"/>
+                                                                <Binding Path="Message" Mode="OneWay"/>
+                                                            </MultiBinding>
+                                                        </TextBlock.Text>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
                             </Border>
                         </Expander>
 
                         <!-- Section 2: Configuration -->
                         <Expander IsExpanded="False" Margin="0,0,0,8">
                             <Expander.Header>
-                                <emoji:TextBlock Text="⚙️ Configuration" FontSize="13"
-                                           FontWeight="SemiBold" Foreground="#424242"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <emoji:TextBlock Text="⚙️ Configuration" FontSize="13"
+                                               FontWeight="SemiBold" Foreground="#424242"/>
+                                    <!-- Inline pending-changes badge in the header -->
+                                    <Border CornerRadius="8" Padding="6,2" Margin="8,0,0,0"
+                                            Background="#FFF3E0" VerticalAlignment="Center"
+                                            Visibility="{Binding HasPendingChanges, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock FontSize="10" Foreground="#E65100" FontWeight="SemiBold">
+                                            <Run Text="{Binding PendingChangesCount, Mode=OneWay}"/>
+                                            <Run Text=" unsaved"/>
+                                        </TextBlock>
+                                    </Border>
+                                    <!-- Inline restart-required badge -->
+                                    <Border CornerRadius="8" Padding="6,2" Margin="4,0,0,0"
+                                            Background="#FBE9E7" VerticalAlignment="Center"
+                                            Visibility="{Binding SettingsRequireRestart, Converter={StaticResource BoolToVis}}"
+                                            ToolTip="Reset session to take effect">
+                                        <TextBlock Text="PENDING" FontSize="10" Foreground="#BF360C"
+                                                   FontWeight="Bold"/>
+                                    </Border>
+                                </StackPanel>
                             </Expander.Header>
                             <StackPanel Margin="0,8,0,0">
 
+                                <!-- ── Pending Changes Banner ── -->
+                                <Border CornerRadius="6" Padding="10,8" Margin="0,0,0,10"
+                                        Background="#FFF8E1" BorderBrush="#FFE082" BorderThickness="1"
+                                        Visibility="{Binding HasPendingChanges, Converter={StaticResource BoolToVis}}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" FontSize="12" Foreground="#F57F17"
+                                                   VerticalAlignment="Center" TextWrapping="Wrap">
+                                            <Run Text="⚠" FontWeight="Bold"/>
+                                            <Run Text=" "/>
+                                            <Run Text="{Binding PendingChangesCount, Mode=OneWay}"/>
+                                            <Run Text=" setting(s) modified"/>
+                                        </TextBlock>
+                                        <Button Grid.Column="1" Style="{StaticResource ActionButton}"
+                                                Background="#4CAF50" Foreground="White"
+                                                Command="{Binding ApplySettingsCommand}"
+                                                Margin="6,0,4,0" Padding="10,4">
+                                            <TextBlock Text="✓ Apply" FontSize="11" FontWeight="SemiBold"/>
+                                        </Button>
+                                        <Button Grid.Column="2" Style="{StaticResource ActionButton}"
+                                                Background="#9E9E9E" Foreground="White"
+                                                Command="{Binding DiscardSettingsCommand}"
+                                                Padding="10,4">
+                                            <TextBlock Text="✕ Discard" FontSize="11"/>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+
+                                <!-- ── Restart Required Banner ── -->
+                                <Border CornerRadius="6" Padding="10,8" Margin="0,0,0,10"
+                                        Background="#FBE9E7" BorderBrush="#FFAB91" BorderThickness="1"
+                                        Visibility="{Binding SettingsRequireRestart, Converter={StaticResource BoolToVis}}"
+                                        ToolTip="Settings were saved but the running session uses the previous config. Reset or restart the session to pick up changes.">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="🔄" FontSize="13" VerticalAlignment="Center"
+                                                   Margin="0,0,6,0"/>
+                                        <TextBlock Text="PENDING — Reset session to take effect"
+                                                   FontSize="12" Foreground="#BF360C"
+                                                   FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- ── Models Group ── -->
+                                <TextBox Style="{StaticResource SelectableText}" Text="MODELS" FontSize="10" Foreground="#9E9E9E"
+                                         FontWeight="Bold" Margin="0,0,0,6"/>
+
                                 <!-- Manager Model -->
-                                <TextBlock Text="Manager Model" FontSize="11" Foreground="#9E9E9E"
-                                           Margin="0,0,0,3"/>
-                                <Grid Margin="0,0,0,10">
+                                <TextBox Style="{StaticResource SelectableText}" Text="Manager Model" FontSize="11" Foreground="#757575"
+                                         Margin="0,0,0,3"/>
+                                <Grid Margin="0,0,0,8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
@@ -590,18 +783,21 @@
                                 </Grid>
 
                                 <!-- Assistant Model -->
-                                <TextBlock Text="Assistant Model" FontSize="11" Foreground="#9E9E9E"
-                                           Margin="0,0,0,3"/>
+                                <TextBox Style="{StaticResource SelectableText}" Text="Assistant Model" FontSize="11" Foreground="#757575"
+                                         Margin="0,0,0,3"/>
                                 <ComboBox ItemsSource="{Binding AvailableModels}"
                                           Text="{Binding SelectedAssistantModel, UpdateSourceTrigger=PropertyChanged}"
                                           IsEditable="True" FontSize="12" Padding="4,4"
-                                          Margin="0,0,0,10"
+                                          Margin="0,0,0,12"
                                           ToolTip="Select or type a model name for Assistant agents"/>
 
-                                <!-- Workspace Path -->
-                                <TextBlock Text="Workspace Path" FontSize="11" Foreground="#9E9E9E"
-                                           Margin="0,0,0,3"/>
-                                <Grid Margin="0,0,0,10">
+                                <!-- ── Workspace ── -->
+                                <TextBox Style="{StaticResource SelectableText}" Text="WORKSPACE" FontSize="10" Foreground="#9E9E9E"
+                                         FontWeight="Bold" Margin="0,0,0,6"/>
+
+                                <TextBox Style="{StaticResource SelectableText}" Text="Workspace Path" FontSize="11" Foreground="#757575"
+                                         Margin="0,0,0,3"/>
+                                <Grid Margin="0,0,0,12">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="Auto"/>
@@ -618,28 +814,126 @@
                                     </Button>
                                 </Grid>
 
-                                <!-- Interval -->
-                                <TextBlock Text="Check Interval (min)" FontSize="11" Foreground="#9E9E9E"
-                                           Margin="0,0,0,3"/>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                                    <TextBox Text="{Binding CheckIntervalMinutes, UpdateSourceTrigger=PropertyChanged}"
-                                             Width="50" FontSize="12" Padding="4,3"
-                                             HorizontalContentAlignment="Center"
-                                             VerticalAlignment="Center"/>
-                                    <Button Style="{StaticResource IconButton}" Margin="4,0,0,0"
-                                            Command="{Binding UpdateIntervalCommand}" ToolTip="Apply">
-                                        <TextBlock Text="✓" FontSize="13" Foreground="#4CAF50" FontWeight="Bold"/>
-                                    </Button>
-                                </StackPanel>
+                                <!-- ── Timing & Limits Group ── -->
+                                <TextBox Style="{StaticResource SelectableText}" Text="TIMING &amp; LIMITS" FontSize="10" Foreground="#9E9E9E"
+                                         FontWeight="Bold" Margin="0,0,0,6"/>
 
-                                <!-- Max Assistants -->
-                                <TextBlock Text="Max Assistants" FontSize="11" Foreground="#9E9E9E"
-                                           Margin="0,0,0,3"/>
-                                <TextBox Text="{Binding MaxAssistants, UpdateSourceTrigger=PropertyChanged}"
-                                         Width="50" FontSize="12" Padding="4,3"
-                                         HorizontalContentAlignment="Center"
-                                         HorizontalAlignment="Left"
-                                         Margin="0,0,0,10"/>
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Row 0: Check Interval -->
+                                    <TextBox Style="{StaticResource SelectableText}" Grid.Row="0" Grid.Column="0"
+                                             Text="Check Interval (min)" FontSize="11"
+                                             Foreground="#757575" Margin="0,0,8,3"
+                                             VerticalAlignment="Bottom"/>
+                                    <TextBox Style="{StaticResource SelectableText}" Grid.Row="0" Grid.Column="1"
+                                             Text="Max Assistants" FontSize="11"
+                                             Foreground="#757575" Margin="0,0,0,3"
+                                             VerticalAlignment="Bottom"/>
+
+                                    <!-- Row 1: Check Interval + Max Assistants values -->
+                                    <TextBox Grid.Row="1" Grid.Column="0"
+                                             Text="{Binding CheckIntervalMinutes, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="60" FontSize="12" Padding="4,3"
+                                             HorizontalContentAlignment="Center"
+                                             HorizontalAlignment="Left"
+                                             Margin="0,0,8,8"
+                                             ToolTip="Minutes between iteration cycles (1–60)"/>
+                                    <TextBox Grid.Row="1" Grid.Column="1"
+                                             Text="{Binding MaxAssistants, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="60" FontSize="12" Padding="4,3"
+                                             HorizontalContentAlignment="Center"
+                                             HorizontalAlignment="Left"
+                                             Margin="0,0,0,8"
+                                             ToolTip="Maximum concurrent assistant sessions"/>
+
+                                    <!-- Row 2: Assistant Timeout + Manager LLM Timeout labels -->
+                                    <TextBox Style="{StaticResource SelectableText}" Grid.Row="2" Grid.Column="0"
+                                             Text="Assistant Timeout (s)" FontSize="11"
+                                             Foreground="#757575" Margin="0,0,8,3"
+                                             VerticalAlignment="Bottom"/>
+                                    <TextBox Style="{StaticResource SelectableText}" Grid.Row="2" Grid.Column="1"
+                                             Text="Manager LLM Timeout (s)" FontSize="11"
+                                             Foreground="#757575" Margin="0,0,0,3"
+                                             VerticalAlignment="Bottom"/>
+
+                                    <!-- Row 3: Assistant Timeout + Manager LLM Timeout values -->
+                                    <TextBox Grid.Row="3" Grid.Column="0"
+                                             Text="{Binding AssistantTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="70" FontSize="12" Padding="4,3"
+                                             HorizontalContentAlignment="Center"
+                                             HorizontalAlignment="Left"
+                                             Margin="0,0,8,8"
+                                             ToolTip="Timeout per assistant task in seconds (60–3600)"/>
+                                    <TextBox Grid.Row="3" Grid.Column="1"
+                                             Text="{Binding ManagerLlmTimeoutSeconds, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="70" FontSize="12" Padding="4,3"
+                                             HorizontalContentAlignment="Center"
+                                             HorizontalAlignment="Left"
+                                             Margin="0,0,0,8"
+                                             ToolTip="Timeout for Manager LLM calls in seconds (10–300)"/>
+
+                                    <!-- Row 4: Max Retries + Max Queue Depth labels -->
+                                    <TextBox Style="{StaticResource SelectableText}" Grid.Row="4" Grid.Column="0"
+                                             Text="Max Retries" FontSize="11"
+                                             Foreground="#757575" Margin="0,0,8,3"
+                                             VerticalAlignment="Bottom"/>
+                                    <TextBox Style="{StaticResource SelectableText}" Grid.Row="4" Grid.Column="1"
+                                             Text="Max Queue Depth" FontSize="11"
+                                             Foreground="#757575" Margin="0,0,0,3"
+                                             VerticalAlignment="Bottom"/>
+
+                                    <!-- Row 5: Max Retries + Max Queue Depth values -->
+                                    <TextBox Grid.Row="5" Grid.Column="0"
+                                             Text="{Binding MaxRetries, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="60" FontSize="12" Padding="4,3"
+                                             HorizontalContentAlignment="Center"
+                                             HorizontalAlignment="Left"
+                                             Margin="0,0,8,0"
+                                             ToolTip="Maximum retries for a failed assistant task (0–10)"/>
+                                    <TextBox Grid.Row="5" Grid.Column="1"
+                                             Text="{Binding MaxQueueDepth, UpdateSourceTrigger=PropertyChanged}"
+                                             Width="60" FontSize="12" Padding="4,3"
+                                             HorizontalContentAlignment="Center"
+                                             HorizontalAlignment="Left"
+                                             ToolTip="Maximum queue depth before tasks are rejected (1–100)"/>
+                                </Grid>
+
+                                <!-- ── Behavior Toggles Group ── -->
+                                <TextBox Style="{StaticResource SelectableText}" Text="BEHAVIOR" FontSize="10" Foreground="#9E9E9E"
+                                         FontWeight="Bold" Margin="0,8,0,6"/>
+
+                                <!-- Require Plan Approval Toggle -->
+                                <Border Background="#F5F5F5" CornerRadius="6" Padding="10,8"
+                                        Margin="0,0,0,8">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBox Style="{StaticResource SelectableText}" Text="Require Plan Approval" FontSize="12"
+                                                     Foreground="#424242" FontWeight="SemiBold"/>
+                                            <TextBox Style="{StaticResource SelectableText}" Text="Pause for user approval before executing tasks"
+                                                     FontSize="10" Foreground="#9E9E9E"
+                                                     Margin="0,2,8,0"/>
+                                        </StackPanel>
+                                        <CheckBox Grid.Column="1" VerticalAlignment="Center"
+                                                  IsChecked="{Binding RequirePlanApproval}"
+                                                  ToolTip="When on, the Manager will present a plan and wait for approval before dispatching tasks."/>
+                                    </Grid>
+                                </Border>
 
                                 <!-- Streaming Tokens Toggle -->
                                 <Border Background="#F5F5F5" CornerRadius="6" Padding="10,8"
@@ -650,11 +944,11 @@
                                             <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
                                         <StackPanel Grid.Column="0">
-                                            <TextBlock Text="Stream Reasoning Tokens" FontSize="12"
-                                                       Foreground="#424242" FontWeight="SemiBold"/>
-                                            <TextBlock Text="Show LLM thinking word-by-word in commentary"
-                                                       FontSize="10" Foreground="#9E9E9E"
-                                                       TextWrapping="Wrap" Margin="0,2,8,0"/>
+                                            <TextBox Style="{StaticResource SelectableText}" Text="Stream Reasoning Tokens" FontSize="12"
+                                                     Foreground="#424242" FontWeight="SemiBold"/>
+                                            <TextBox Style="{StaticResource SelectableText}" Text="Show LLM thinking word-by-word in commentary"
+                                                     FontSize="10" Foreground="#9E9E9E"
+                                                     Margin="0,2,8,0"/>
                                         </StackPanel>
                                         <CheckBox Grid.Column="1" VerticalAlignment="Center"
                                                   IsChecked="{Binding IsStreamingTokens}"
@@ -662,8 +956,29 @@
                                     </Grid>
                                 </Border>
 
-                                <!-- Action buttons -->
-                                <WrapPanel Margin="0,4,0,0">
+                                <!-- ── Apply / Discard Buttons ── -->
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                            Margin="0,4,0,8"
+                                            Visibility="{Binding HasPendingChanges, Converter={StaticResource BoolToVis}}">
+                                    <Button Style="{StaticResource ActionButton}"
+                                            Background="#4CAF50" Foreground="White"
+                                            Command="{Binding ApplySettingsCommand}"
+                                            Margin="0,0,6,0" Padding="12,6">
+                                        <TextBlock Text="✓ Apply Changes" FontSize="12" FontWeight="SemiBold"/>
+                                    </Button>
+                                    <Button Style="{StaticResource ActionButton}"
+                                            Background="#9E9E9E" Foreground="White"
+                                            Command="{Binding DiscardSettingsCommand}"
+                                            Padding="12,6">
+                                        <TextBlock Text="✕ Discard" FontSize="12"/>
+                                    </Button>
+                                </StackPanel>
+
+                                <!-- ── Session Control ── -->
+                                <TextBox Style="{StaticResource SelectableText}" Text="SESSION CONTROL" FontSize="10" Foreground="#9E9E9E"
+                                         FontWeight="Bold" Margin="0,4,0,6"/>
+
+                                <WrapPanel Margin="0,0,0,4">
                                     <Button Style="{StaticResource ActionButton}"
                                             Background="#FF9800" Foreground="White"
                                             Command="{Binding PauseCommand}" Margin="0,0,6,6"
@@ -700,11 +1015,17 @@
                             </Expander.Header>
                             <Border Background="#FAFAFA" CornerRadius="4" Padding="8" MaxHeight="250"
                                     Margin="0,4,0,0">
-                                <ListBox ItemsSource="{Binding EventLog}"
-                                         BorderThickness="0" Background="Transparent"
-                                         FontFamily="Cascadia Code, Consolas, Courier New"
-                                         FontSize="10" Foreground="#616161"
-                                         ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+                                <ItemsControl ItemsSource="{Binding EventLog}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBox Style="{StaticResource SelectableText}"
+                                                     Text="{Binding Mode=OneWay}"
+                                                     FontFamily="Cascadia Code, Consolas, Courier New"
+                                                     FontSize="10" Foreground="#616161"
+                                                     Margin="0,1"/>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
                             </Border>
                         </Expander>
 
@@ -725,27 +1046,27 @@
                                 </Grid.RowDefinitions>
 
                                 <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,0,8">
-                                    <TextBlock Text="Total Iterations" FontSize="10" Foreground="#9E9E9E"/>
-                                    <TextBlock Text="{Binding TotalIterations}" FontSize="18"
-                                               FontWeight="SemiBold" Foreground="#212121"/>
+                                    <TextBox Style="{StaticResource SelectableText}" Text="Total Iterations" FontSize="10" Foreground="#9E9E9E"/>
+                                    <TextBox Style="{StaticResource SelectableText}" Text="{Binding TotalIterations, Mode=OneWay}"
+                                             FontSize="18" FontWeight="SemiBold" Foreground="#212121"/>
                                 </StackPanel>
 
                                 <StackPanel Grid.Row="0" Grid.Column="1" Margin="0,0,0,8">
-                                    <TextBlock Text="Tasks Completed" FontSize="10" Foreground="#9E9E9E"/>
-                                    <TextBlock Text="{Binding TotalTasksCompleted}" FontSize="18"
-                                               FontWeight="SemiBold" Foreground="#212121"/>
+                                    <TextBox Style="{StaticResource SelectableText}" Text="Tasks Completed" FontSize="10" Foreground="#9E9E9E"/>
+                                    <TextBox Style="{StaticResource SelectableText}" Text="{Binding TotalTasksCompleted, Mode=OneWay}"
+                                             FontSize="18" FontWeight="SemiBold" Foreground="#212121"/>
                                 </StackPanel>
 
                                 <StackPanel Grid.Row="1" Grid.Column="0">
-                                    <TextBlock Text="Success Rate" FontSize="10" Foreground="#9E9E9E"/>
-                                    <TextBlock Text="{Binding SuccessRate}" FontSize="18"
-                                               FontWeight="SemiBold" Foreground="#4CAF50"/>
+                                    <TextBox Style="{StaticResource SelectableText}" Text="Success Rate" FontSize="10" Foreground="#9E9E9E"/>
+                                    <TextBox Style="{StaticResource SelectableText}" Text="{Binding SuccessRate, Mode=OneWay}"
+                                             FontSize="18" FontWeight="SemiBold" Foreground="#4CAF50"/>
                                 </StackPanel>
 
-                                <StackPanel Grid.Row="1" Grid.Column="1">
-                                    <TextBlock Text="Avg Duration" FontSize="10" Foreground="#9E9E9E"/>
-                                    <TextBlock Text="{Binding AverageDuration}" FontSize="18"
-                                               FontWeight="SemiBold" Foreground="#1976D2"/>
+                <StackPanel Grid.Row="1" Grid.Column="1">
+                                    <TextBox Style="{StaticResource SelectableText}" Text="Avg Duration" FontSize="10" Foreground="#9E9E9E"/>
+                                    <TextBox Style="{StaticResource SelectableText}" Text="{Binding AverageDuration, Mode=OneWay}"
+                                             FontSize="18" FontWeight="SemiBold" Foreground="#1976D2"/>
                                 </StackPanel>
                             </Grid>
                         </Expander>

@@ -1,3 +1,4 @@
+using System.Linq;
 using CopilotAgent.Core.Models;
 using CopilotAgent.Core.Services;
 using CopilotAgent.Office.Events;
@@ -311,6 +312,7 @@ public sealed class RestCountdownEventTests
 public sealed class OfficeManagerServiceTests : IAsyncDisposable
 {
     private readonly Mock<ICopilotService> _copilotServiceMock;
+    private readonly Mock<IReasoningStream> _reasoningStreamMock;
     private readonly OfficeEventLog _eventLog;
     private readonly IterationScheduler _scheduler;
     private readonly ILoggerFactory _loggerFactory;
@@ -328,17 +330,24 @@ public sealed class OfficeManagerServiceTests : IAsyncDisposable
     public OfficeManagerServiceTests()
     {
         _copilotServiceMock = new Mock<ICopilotService>();
+        _reasoningStreamMock = new Mock<IReasoningStream>();
         _eventLog = new OfficeEventLog();
         _scheduler = new IterationScheduler(NullLogger<IterationScheduler>.Instance);
         _loggerFactory = NullLoggerFactory.Instance;
 
-        // Default: return a simple plan
-        _copilotServiceMock
-            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ChatMessage { Content = "1. Step one\n2. Step two" });
+        // Default: return a simple plan via reasoning stream
+        _reasoningStreamMock
+            .Setup(r => r.StreamAsync(
+                It.IsAny<IAsyncEnumerable<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<Action<string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("1. Step one\n2. Step two");
 
         _sut = new OfficeManagerService(
             _copilotServiceMock.Object,
+            _reasoningStreamMock.Object,
             _eventLog,
             _scheduler,
             _loggerFactory);
@@ -403,9 +412,14 @@ public sealed class OfficeManagerServiceTests : IAsyncDisposable
         };
 
         // Mock the task generation to return empty tasks so the loop rests
-        _copilotServiceMock
-            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ChatMessage { Content = "[]" });
+        _reasoningStreamMock
+            .Setup(r => r.StreamAsync(
+                It.IsAny<IAsyncEnumerable<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<Action<string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("[]");
 
         await _sut.StartAsync(config);
 
@@ -440,9 +454,14 @@ public sealed class OfficeManagerServiceTests : IAsyncDisposable
         _sut.CurrentPhase.Should().Be(ManagerPhase.AwaitingApproval);
 
         // Mock task generation to return empty
-        _copilotServiceMock
-            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ChatMessage { Content = "[]" });
+        _reasoningStreamMock
+            .Setup(r => r.StreamAsync(
+                It.IsAny<IAsyncEnumerable<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<Action<string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("[]");
 
         var events = new List<OfficeEvent>();
         _sut.OnEvent += evt => events.Add(evt);
@@ -474,12 +493,17 @@ public sealed class OfficeManagerServiceTests : IAsyncDisposable
     public async Task RejectPlanAsync_RegeneratesPlan()
     {
         var callCount = 0;
-        _copilotServiceMock
-            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _reasoningStreamMock
+            .Setup(r => r.StreamAsync(
+                It.IsAny<IAsyncEnumerable<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<Action<string>?>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
                 callCount++;
-                return new ChatMessage { Content = $"Plan version {callCount}" };
+                return $"Plan version {callCount}";
             });
 
         await _sut.StartAsync(s_defaultConfig);
@@ -644,16 +668,21 @@ public sealed class OfficeManagerServiceTests : IAsyncDisposable
     {
         // Mock LLM to return a clarification request
         var callCount = 0;
-        _copilotServiceMock
-            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _reasoningStreamMock
+            .Setup(r => r.StreamAsync(
+                It.IsAny<IAsyncEnumerable<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<Action<string>?>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
                 callCount++;
                 if (callCount == 1)
                 {
-                    return new ChatMessage { Content = "[CLARIFICATION_NEEDED] What framework are you using?" };
+                    return "[CLARIFICATION_NEEDED] What framework are you using?";
                 }
-                return new ChatMessage { Content = "1. Use the specified framework\n2. Build it" };
+                return "1. Use the specified framework\n2. Build it";
             });
 
         var events = new List<OfficeEvent>();
@@ -698,7 +727,7 @@ public sealed class OfficeConfigTests
         config.MaxQueueDepth.Should().Be(20);
         config.ManagerModel.Should().Be("gpt-4");
         config.AssistantModel.Should().Be("gpt-4");
-        config.AssistantTimeoutSeconds.Should().Be(120);
+        config.AssistantTimeoutSeconds.Should().Be(600);
         config.ManagerLlmTimeoutSeconds.Should().Be(60);
         config.MaxRetries.Should().Be(2);
         config.RequirePlanApproval.Should().BeTrue();
@@ -927,6 +956,7 @@ public sealed class OfficeEventTests
 public sealed class OfficeBugFixRegressionTests : IAsyncDisposable
 {
     private readonly Mock<ICopilotService> _copilotServiceMock;
+    private readonly Mock<IReasoningStream> _reasoningStreamMock;
     private readonly OfficeEventLog _eventLog;
     private readonly IterationScheduler _scheduler;
     private readonly ILoggerFactory _loggerFactory;
@@ -944,16 +974,24 @@ public sealed class OfficeBugFixRegressionTests : IAsyncDisposable
     public OfficeBugFixRegressionTests()
     {
         _copilotServiceMock = new Mock<ICopilotService>();
+        _reasoningStreamMock = new Mock<IReasoningStream>();
         _eventLog = new OfficeEventLog();
         _scheduler = new IterationScheduler(NullLogger<IterationScheduler>.Instance);
         _loggerFactory = NullLoggerFactory.Instance;
 
-        _copilotServiceMock
-            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ChatMessage { Content = "1. Step one\n2. Step two" });
+        // Default: return a simple plan via reasoning stream
+        _reasoningStreamMock
+            .Setup(r => r.StreamAsync(
+                It.IsAny<IAsyncEnumerable<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<Action<string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("1. Step one\n2. Step two");
 
         _sut = new OfficeManagerService(
             _copilotServiceMock.Object,
+            _reasoningStreamMock.Object,
             _eventLog,
             _scheduler,
             _loggerFactory);
@@ -974,14 +1012,19 @@ public sealed class OfficeBugFixRegressionTests : IAsyncDisposable
     {
         // Arrange: LLM returns clarification request first, then a real plan
         var callCount = 0;
-        _copilotServiceMock
-            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+        _reasoningStreamMock
+            .Setup(r => r.StreamAsync(
+                It.IsAny<IAsyncEnumerable<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<Action<string>?>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(() =>
             {
                 callCount++;
                 if (callCount == 1)
-                    return new ChatMessage { Content = "[CLARIFICATION_NEEDED] What language?" };
-                return new ChatMessage { Content = "1. Use C#\n2. Build it" };
+                    return "[CLARIFICATION_NEEDED] What language?";
+                return "1. Use C#\n2. Build it";
             });
 
         var phaseTransitions = new List<(ManagerPhase Previous, ManagerPhase New)>();
@@ -1025,9 +1068,14 @@ public sealed class OfficeBugFixRegressionTests : IAsyncDisposable
         _sut.CurrentPhase.Should().Be(ManagerPhase.AwaitingApproval);
 
         // Mock to return empty tasks so iteration doesn't hang
-        _copilotServiceMock
-            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ChatMessage { Content = "[]" });
+        _reasoningStreamMock
+            .Setup(r => r.StreamAsync(
+                It.IsAny<IAsyncEnumerable<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<Action<string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("[]");
 
         var phaseTransitions = new List<(ManagerPhase Previous, ManagerPhase New)>();
         _sut.OnEvent += evt =>
@@ -1058,9 +1106,14 @@ public sealed class OfficeBugFixRegressionTests : IAsyncDisposable
     public async Task Bug4_StopAsync_CancelsClarificationGate()
     {
         // Arrange: LLM always requests clarification to keep the gate open
-        _copilotServiceMock
-            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ChatMessage { Content = "[CLARIFICATION_NEEDED] What should I do?" });
+        _reasoningStreamMock
+            .Setup(r => r.StreamAsync(
+                It.IsAny<IAsyncEnumerable<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<Action<string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("[CLARIFICATION_NEEDED] What should I do?");
 
         var startTask = _sut.StartAsync(s_defaultConfig);
         await Task.Delay(500); // Wait for clarification state
@@ -1099,9 +1152,14 @@ public sealed class OfficeBugFixRegressionTests : IAsyncDisposable
             RequirePlanApproval = false
         };
 
-        _copilotServiceMock
-            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(new ChatMessage { Content = "[]" });
+        _reasoningStreamMock
+            .Setup(r => r.StreamAsync(
+                It.IsAny<IAsyncEnumerable<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<Action<string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("[]");
 
         var tickCounts = new List<int>(); // Track tick counts per rest period
         var currentTickCount = 0;
@@ -1162,10 +1220,22 @@ public sealed class OfficeBugFixRegressionTests : IAsyncDisposable
         };
 
         var capturedPrompts = new List<string>();
+        // Capture prompts via SendMessageStreamingAsync (which is called before StreamAsync)
         _copilotServiceMock
-            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
-            .Callback<Session, string, CancellationToken>((_, prompt, _) => capturedPrompts.Add(prompt))
-            .ReturnsAsync(new ChatMessage { Content = "[]" });
+            .Setup(s => s.SendMessageStreamingAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Returns<Session, string, CancellationToken>((_, prompt, _) =>
+            {
+                capturedPrompts.Add(prompt);
+                return EmptyAsyncEnumerable<ChatMessage>();
+            });
+        _reasoningStreamMock
+            .Setup(r => r.StreamAsync(
+                It.IsAny<IAsyncEnumerable<ChatMessage>>(),
+                It.IsAny<string>(),
+                It.IsAny<int>(),
+                It.IsAny<Action<string>?>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync("[]");
 
         // Inject instruction before starting
         await _sut.InjectInstructionAsync("Focus on testing");
@@ -1189,6 +1259,12 @@ public sealed class OfficeBugFixRegressionTests : IAsyncDisposable
             count.Should().BeLessOrEqualTo(1,
                 "Bug #10 fix: Instruction should appear at most once per prompt (not drained twice)");
         }
+    }
+
+    private static async IAsyncEnumerable<T> EmptyAsyncEnumerable<T>()
+    {
+        await Task.CompletedTask;
+        yield break;
     }
 
     private static int CountOccurrences(string text, string search)

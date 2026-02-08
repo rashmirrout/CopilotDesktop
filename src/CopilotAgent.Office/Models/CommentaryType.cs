@@ -30,5 +30,11 @@ public enum CommentaryType
     Aggregation,
 
     /// <summary>System-level informational commentary.</summary>
-    System
+    System,
+
+    /// <summary>An assistant has started executing a tool.</summary>
+    ToolCallStarted,
+
+    /// <summary>An assistant has completed a tool execution.</summary>
+    ToolCallCompleted
 }
