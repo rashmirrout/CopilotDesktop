@@ -28,18 +28,26 @@ public class JsonPersistenceService : IPersistenceService
     {
         _logger = logger;
         
-        // Set up data directories
-        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        _dataDirectory = Path.Combine(appData, "CopilotAgent");
+        // All app data lives under ~/.CopilotDesktop/
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var rootDirectory = Path.Combine(userProfile, ".CopilotDesktop");
+        
+        // Settings directory holds all JSON config files
+        _dataDirectory = Path.Combine(rootDirectory, "Settings");
         _sessionsDirectory = Path.Combine(_dataDirectory, "Sessions");
         _settingsFile = Path.Combine(_dataDirectory, "settings.json");
         _commandPolicyFile = Path.Combine(_dataDirectory, "command-policy.json");
         _mcpServersFile = Path.Combine(_dataDirectory, "mcp-servers.json");
         _approvalRulesFile = Path.Combine(_dataDirectory, "approval-rules.json");
         
-        // Ensure directories exist
+        // Ensure all directories exist
         Directory.CreateDirectory(_dataDirectory);
         Directory.CreateDirectory(_sessionsDirectory);
+        Directory.CreateDirectory(Path.Combine(rootDirectory, "Logs"));
+        Directory.CreateDirectory(Path.Combine(rootDirectory, "Skills"));
+        Directory.CreateDirectory(Path.Combine(rootDirectory, "Cache"));
+        
+        _logger.LogInformation("App data directory: {RootDirectory}", rootDirectory);
     }
 
     public string GetDataDirectory() => _dataDirectory;

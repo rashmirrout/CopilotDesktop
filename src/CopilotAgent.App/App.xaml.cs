@@ -31,11 +31,9 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        // Configure Serilog
-        var logsPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "CopilotAgent", "Logs"
-        );
+        // Configure Serilog — logs go to ~/.CopilotDesktop/Logs/
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var logsPath = Path.Combine(userProfile, ".CopilotDesktop", "Logs");
         Directory.CreateDirectory(logsPath);
 
         Log.Logger = new LoggerConfiguration()
