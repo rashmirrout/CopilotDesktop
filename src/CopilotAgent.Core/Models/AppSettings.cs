@@ -146,4 +146,11 @@ public class AppSettings
     /// </summary>
     [JsonPropertyName("sessionHealthCheckIntervalSeconds")]
     public int SessionHealthCheckIntervalSeconds { get; set; } = 15;
+
+    /// <summary>
+    /// Agent Office settings.
+    /// Controls default configuration for the Manager-Assistant iteration loop.
+    /// </summary>
+    [JsonPropertyName("office")]
+    public OfficeSettings Office { get; set; } = new();
 }
