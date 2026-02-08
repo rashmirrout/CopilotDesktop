@@ -190,7 +190,7 @@
         <Storyboard x:Key="SlideInStoryboard">
             <DoubleAnimation Storyboard.TargetName="SidePanelTransform"
                              Storyboard.TargetProperty="X"
-                             From="400" To="0" Duration="0:0:0.3">
+                             From="550" To="0" Duration="0:0:0.3">
                 <DoubleAnimation.EasingFunction>
                     <QuarticEase EasingMode="EaseOut"/>
                 </DoubleAnimation.EasingFunction>
@@ -203,7 +203,7 @@
         <Storyboard x:Key="SlideOutStoryboard">
             <DoubleAnimation Storyboard.TargetName="SidePanelTransform"
                              Storyboard.TargetProperty="X"
-                             From="0" To="400" Duration="0:0:0.25">
+                             From="0" To="550" Duration="0:0:0.25">
                 <DoubleAnimation.EasingFunction>
                     <QuarticEase EasingMode="EaseIn"/>
                 </DoubleAnimation.EasingFunction>
@@ -325,8 +325,18 @@
                                    TextWrapping="Wrap" FontSize="13"/>
                     </Border>
 
-                    <!-- Plan Approval Panel -->
-                    <Border Background="#E8EAF6" CornerRadius="8" Padding="16,12" Margin="16,4,16,8"
+                    <!-- Messages ItemsControl (Bug #6 fix: moved before approval panel) -->
+                    <ItemsControl ItemsSource="{Binding Messages}"
+                                  ItemTemplateSelector="{StaticResource MessageTemplateSelector}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                    </ItemsControl>
+
+                    <!-- Bug #6 fix: Plan Approval Panel AFTER messages so it appears at bottom -->
+                    <Border Background="#E8EAF6" CornerRadius="8" Padding="16,12" Margin="16,8,16,8"
                             Visibility="{Binding IsPlanAwaitingApproval, Converter={StaticResource BoolToVis}}">
                         <StackPanel>
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
@@ -348,16 +358,6 @@
                             </StackPanel>
                         </StackPanel>
                     </Border>
-
-                    <!-- Messages ItemsControl -->
-                    <ItemsControl ItemsSource="{Binding Messages}"
-                                  ItemTemplateSelector="{StaticResource MessageTemplateSelector}">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel/>
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                    </ItemsControl>
                 </StackPanel>
             </ScrollViewer>
 
@@ -464,6 +464,16 @@
                                 ToolTip="Stop the office">
                             <emoji:TextBlock Text="⏹ Stop"/>
                         </Button>
+
+                        <!-- Bug #7 fix: Reset button accessible in input area (when not running) -->
+                        <Button Grid.Column="2" Margin="6,0,0,0"
+                                Style="{StaticResource ActionButton}"
+                                Background="#9E9E9E" Foreground="White"
+                                Command="{Binding ResetCommand}"
+                                Visibility="{Binding IsRunning, Converter={StaticResource InverseBoolToVis}}"
+                                ToolTip="Reset the office">
+                            <emoji:TextBlock Text="🔄 Reset"/>
+                        </Button>
                     </Grid>
                 </Grid>
             </Border>
@@ -473,18 +483,18 @@
         <!-- Overlay: Backdrop + Side Panel                      -->
         <!-- ═══════════════════════════════════════════════════ -->
 
-        <!-- Backdrop (dimmed click-to-close) -->
+        <!-- Backdrop (dimmed click-to-close) — visibility managed by code-behind for animations -->
         <Border x:Name="Backdrop" Background="#40000000"
                 MouseDown="Backdrop_MouseDown"
-                Visibility="{Binding IsSidePanelOpen, Converter={StaticResource BoolToVis}}"
+                Visibility="Collapsed"
                 Opacity="0"/>
 
-        <!-- Side Panel (400px, slides from right) -->
-        <Border x:Name="SidePanel" Width="400" HorizontalAlignment="Right"
+        <!-- Side Panel (400px, slides from right) — visibility managed by code-behind for animations -->
+        <Border x:Name="SidePanel" Width="550" HorizontalAlignment="Right"
                 Background="White" BorderBrush="#E0E0E0" BorderThickness="1,0,0,0"
-                Visibility="{Binding IsSidePanelOpen, Converter={StaticResource BoolToVis}}">
+                Visibility="Collapsed">
             <Border.RenderTransform>
-                <TranslateTransform x:Name="SidePanelTransform" X="400"/>
+                <TranslateTransform x:Name="SidePanelTransform" X="550"/>
             </Border.RenderTransform>
 
             <Grid>
@@ -548,11 +558,70 @@
                                            FontWeight="SemiBold" Foreground="#424242"/>
                             </Expander.Header>
                             <StackPanel Margin="0,8,0,0">
+
+                                <!-- Manager Model -->
+                                <TextBlock Text="Manager Model" FontSize="11" Foreground="#9E9E9E"
+                                           Margin="0,0,0,3"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <ComboBox Grid.Column="0"
+                                              ItemsSource="{Binding AvailableModels}"
+                                              Text="{Binding SelectedManagerModel, UpdateSourceTrigger=PropertyChanged}"
+                                              IsEditable="True" FontSize="12" Padding="4,4"
+                                              VerticalAlignment="Center"
+                                              ToolTip="Select or type a model name for the Manager agent"/>
+                                    <Button Grid.Column="1"
+                                            Command="{Binding RefreshModelsCommand}"
+                                            ToolTip="Refresh available models" Margin="4,0,0,0">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource IconButton}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsLoadingModels}" Value="True">
+                                                        <Setter Property="IsEnabled" Value="False"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                        <TextBlock Text="🔄" FontSize="13"/>
+                                    </Button>
+                                </Grid>
+
+                                <!-- Assistant Model -->
+                                <TextBlock Text="Assistant Model" FontSize="11" Foreground="#9E9E9E"
+                                           Margin="0,0,0,3"/>
+                                <ComboBox ItemsSource="{Binding AvailableModels}"
+                                          Text="{Binding SelectedAssistantModel, UpdateSourceTrigger=PropertyChanged}"
+                                          IsEditable="True" FontSize="12" Padding="4,4"
+                                          Margin="0,0,0,10"
+                                          ToolTip="Select or type a model name for Assistant agents"/>
+
+                                <!-- Workspace Path -->
+                                <TextBlock Text="Workspace Path" FontSize="11" Foreground="#9E9E9E"
+                                           Margin="0,0,0,3"/>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Grid.Column="0"
+                                             Text="{Binding WorkspacePath, UpdateSourceTrigger=PropertyChanged}"
+                                             FontSize="12" Padding="4,4"
+                                             VerticalAlignment="Center"
+                                             ToolTip="Repository or workspace directory for assistant work"/>
+                                    <Button Grid.Column="1" Style="{StaticResource IconButton}"
+                                            Command="{Binding BrowseWorkspaceCommand}"
+                                            ToolTip="Browse for workspace folder" Margin="4,0,0,0">
+                                        <TextBlock Text="📁" FontSize="13"/>
+                                    </Button>
+                                </Grid>
+
                                 <!-- Interval -->
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <TextBlock Text="Check Interval (min):" FontSize="12"
-                                               Foreground="#616161" VerticalAlignment="Center"
-                                               Margin="0,0,8,0"/>
+                                <TextBlock Text="Check Interval (min)" FontSize="11" Foreground="#9E9E9E"
+                                           Margin="0,0,0,3"/>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                                     <TextBox Text="{Binding CheckIntervalMinutes, UpdateSourceTrigger=PropertyChanged}"
                                              Width="50" FontSize="12" Padding="4,3"
                                              HorizontalContentAlignment="Center"
@@ -564,15 +633,34 @@
                                 </StackPanel>
 
                                 <!-- Max Assistants -->
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                                    <TextBlock Text="Max Assistants:" FontSize="12"
-                                               Foreground="#616161" VerticalAlignment="Center"
-                                               Margin="0,0,8,0"/>
-                                    <TextBox Text="{Binding MaxAssistants, UpdateSourceTrigger=PropertyChanged}"
-                                             Width="50" FontSize="12" Padding="4,3"
-                                             HorizontalContentAlignment="Center"
-                                             VerticalAlignment="Center"/>
-                                </StackPanel>
+                                <TextBlock Text="Max Assistants" FontSize="11" Foreground="#9E9E9E"
+                                           Margin="0,0,0,3"/>
+                                <TextBox Text="{Binding MaxAssistants, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="50" FontSize="12" Padding="4,3"
+                                         HorizontalContentAlignment="Center"
+                                         HorizontalAlignment="Left"
+                                         Margin="0,0,0,10"/>
+
+                                <!-- Streaming Tokens Toggle -->
+                                <Border Background="#F5F5F5" CornerRadius="6" Padding="10,8"
+                                        Margin="0,0,0,10">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="Stream Reasoning Tokens" FontSize="12"
+                                                       Foreground="#424242" FontWeight="SemiBold"/>
+                                            <TextBlock Text="Show LLM thinking word-by-word in commentary"
+                                                       FontSize="10" Foreground="#9E9E9E"
+                                                       TextWrapping="Wrap" Margin="0,2,8,0"/>
+                                        </StackPanel>
+                                        <CheckBox Grid.Column="1" VerticalAlignment="Center"
+                                                  IsChecked="{Binding IsStreamingTokens}"
+                                                  ToolTip="When on, reasoning streams live. When off, emitted as complete thoughts."/>
+                                    </Grid>
+                                </Border>
 
                                 <!-- Action buttons -->
                                 <WrapPanel Margin="0,4,0,0">
