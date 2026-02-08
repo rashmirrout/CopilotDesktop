@@ -54,4 +54,35 @@ public sealed record OfficeConfig
     /// <summary>Optional system prompt override for the Manager.</summary>
     [JsonPropertyName("managerSystemPrompt")]
     public string? ManagerSystemPrompt { get; init; }
+
+    /// <summary>
+    /// Controls how the Manager's LLM reasoning is streamed as live commentary.
+    /// Default is CompleteThought (buffer full response, then emit).
+    /// StreamingTokens emits each token chunk in real-time (word-by-word).
+    /// </summary>
+    [JsonPropertyName("commentaryStreamingMode")]
+    public CommentaryStreamingMode CommentaryStreamingMode { get; init; } = CommentaryStreamingMode.CompleteThought;
+
+    /// <summary>
+    /// Enabled MCP servers for assistant sessions.
+    /// null = use all from config, empty = none, non-empty = only these.
+    /// Propagated from the active session's EnabledMcpServers.
+    /// </summary>
+    [JsonPropertyName("enabledMcpServers")]
+    public List<string>? EnabledMcpServers { get; init; }
+
+    /// <summary>
+    /// Disabled skills for assistant sessions.
+    /// null = default, empty = all enabled, non-empty = these are disabled.
+    /// Propagated from the active session's DisabledSkills.
+    /// </summary>
+    [JsonPropertyName("disabledSkills")]
+    public List<string>? DisabledSkills { get; init; }
+
+    /// <summary>
+    /// Skill directories to search.
+    /// Propagated from the active session's SkillDirectories.
+    /// </summary>
+    [JsonPropertyName("skillDirectories")]
+    public List<string>? SkillDirectories { get; init; }
 }

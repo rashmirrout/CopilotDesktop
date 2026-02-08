@@ -154,7 +154,14 @@ public sealed class AssistantAgent : IAssistantAgent
             ModelId = config.AssistantModel,
             WorkingDirectory = config.WorkspacePath,
             SystemPrompt = BuildAssistantSystemPrompt(task),
-            AutonomousMode = new AutonomousModeSettings { AllowAll = true }
+            AutonomousMode = new AutonomousModeSettings { AllowAll = true },
+
+            // Issue #5/#6: Propagate MCP servers and skills from OfficeConfig
+            // so assistant sessions inherit the same tool/skill configuration
+            // that the user configured on the parent session.
+            EnabledMcpServers = config.EnabledMcpServers,
+            DisabledSkills = config.DisabledSkills,
+            SkillDirectories = config.SkillDirectories
         };
     }
 

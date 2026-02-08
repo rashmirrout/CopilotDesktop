@@ -9,6 +9,7 @@ using CopilotAgent.Office.Events;
 using CopilotAgent.Office.Models;
 using CopilotAgent.Office.Services;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32;
 
 namespace CopilotAgent.App.ViewModels;
 
@@ -21,6 +22,7 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
     private readonly IOfficeManagerService _manager;
     private readonly IOfficeEventLog _eventLog;
     private readonly ISessionManager _sessionManager;
+    private readonly ICopilotService _copilotService;
     private readonly AppSettings _appSettings;
     private readonly ILogger<OfficeViewModel> _logger;
     private readonly Dispatcher _dispatcher;
@@ -28,16 +30,25 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
     private const int MaxCommentaryEntries = 200;
     private const int MaxEventLogEntries = 500;
 
+    /// <summary>
+    /// Cached list of available models, populated once on each agent start
+    /// via <see cref="RefreshAvailableModelsAsync"/>. Survives across runs
+    /// until the next explicit refresh (triggered by Start or manual reload).
+    /// </summary>
+    public ObservableCollection<string> AvailableModels { get; } = new();
+
     public OfficeViewModel(
         IOfficeManagerService manager,
         IOfficeEventLog eventLog,
         ISessionManager sessionManager,
+        ICopilotService copilotService,
         AppSettings appSettings,
         ILogger<OfficeViewModel> logger)
     {
         _manager = manager;
         _eventLog = eventLog;
         _sessionManager = sessionManager;
+        _copilotService = copilotService;
         _appSettings = appSettings;
         _logger = logger;
         _dispatcher = Application.Current.Dispatcher;
@@ -48,6 +59,13 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
         // Load defaults from settings
         _checkIntervalMinutes = appSettings.Office.DefaultCheckIntervalMinutes;
         _maxAssistants = appSettings.Office.DefaultMaxAssistants;
+
+        // Initialize config fields from active session (if one exists)
+        var active = _sessionManager.ActiveSession;
+        _workspacePath = active?.WorkingDirectory
+            ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        _selectedManagerModel = active?.ModelId ?? "gpt-4";
+        _selectedAssistantModel = active?.ModelId ?? "gpt-4";
 
         _logger.LogInformation("[OfficeVM] ViewModel initialized");
     }
@@ -134,6 +152,25 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private int _maxAssistants;
 
+    [ObservableProperty]
+    private string _workspacePath = string.Empty;
+
+    [ObservableProperty]
+    private string _selectedManagerModel = "gpt-4";
+
+    [ObservableProperty]
+    private string _selectedAssistantModel = "gpt-4";
+
+    /// <summary>
+    /// When true, LLM reasoning streams word-by-word in live commentary.
+    /// When false (default), reasoning is buffered and emitted as a complete thought.
+    /// </summary>
+    [ObservableProperty]
+    private bool _isStreamingTokens;
+
+    [ObservableProperty]
+    private bool _isLoadingModels;
+
     // ── Stats ───────────────────────────────────────────────────
 
     [ObservableProperty]
@@ -167,18 +204,36 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
 
         _logger.LogInformation("[OfficeVM] Starting with objective: {Objective}", ObjectiveInput);
 
+        // Refresh the model cache on each start
+        await RefreshAvailableModelsAsync();
+
         var activeSession = _sessionManager.ActiveSession;
 
         var config = new OfficeConfig
         {
             Objective = ObjectiveInput,
-            WorkspacePath = activeSession?.WorkingDirectory
-                ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            WorkspacePath = string.IsNullOrWhiteSpace(WorkspacePath)
+                ? activeSession?.WorkingDirectory
+                    ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                : WorkspacePath,
             CheckIntervalMinutes = CheckIntervalMinutes,
             MaxAssistants = MaxAssistants,
             RequirePlanApproval = true,
-            ManagerModel = activeSession?.ModelId ?? "gpt-4",
-            AssistantModel = activeSession?.ModelId ?? "gpt-4"
+            ManagerModel = string.IsNullOrWhiteSpace(SelectedManagerModel)
+                ? activeSession?.ModelId ?? "gpt-4"
+                : SelectedManagerModel,
+            AssistantModel = string.IsNullOrWhiteSpace(SelectedAssistantModel)
+                ? activeSession?.ModelId ?? "gpt-4"
+                : SelectedAssistantModel,
+            CommentaryStreamingMode = IsStreamingTokens
+                ? CommentaryStreamingMode.StreamingTokens
+                : CommentaryStreamingMode.CompleteThought,
+
+            // Issue #5/#6: Propagate MCP servers and skills from the active session
+            // so Manager and Assistant sessions inherit the user's tool/skill configuration.
+            EnabledMcpServers = activeSession?.EnabledMcpServers,
+            DisabledSkills = activeSession?.DisabledSkills,
+            SkillDirectories = activeSession?.SkillDirectories
         };
 
         // Add user message to chat
@@ -364,6 +419,71 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
         // The manager service handles this internally
     }
 
+    [RelayCommand]
+    private void BrowseWorkspace()
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "Select Workspace Directory",
+            InitialDirectory = string.IsNullOrWhiteSpace(WorkspacePath)
+                ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                : WorkspacePath
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            WorkspacePath = dialog.FolderName;
+            _logger.LogInformation("[OfficeVM] Workspace path set to: {Path}", WorkspacePath);
+        }
+    }
+
+    [RelayCommand]
+    private async Task RefreshModelsAsync()
+    {
+        await RefreshAvailableModelsAsync();
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // Model Cache — queried once per agent start, reused across runs
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Queries the SDK for available models and populates the <see cref="AvailableModels"/>
+    /// cache. Called automatically on each Start, or manually via the refresh button.
+    /// Previous entries are cleared and repopulated.
+    /// </summary>
+    private async Task RefreshAvailableModelsAsync()
+    {
+        if (IsLoadingModels) return;
+
+        IsLoadingModels = true;
+        _logger.LogInformation("[OfficeVM] Refreshing available models cache...");
+
+        try
+        {
+            var models = await _copilotService.GetAvailableModelsAsync();
+
+            _dispatcher.Invoke(() =>
+            {
+                AvailableModels.Clear();
+                foreach (var model in models.OrderBy(m => m, StringComparer.OrdinalIgnoreCase))
+                {
+                    AvailableModels.Add(model);
+                }
+            });
+
+            _logger.LogInformation("[OfficeVM] Model cache refreshed: {Count} models available", models.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[OfficeVM] Failed to refresh available models — user can still type manually");
+        }
+        finally
+        {
+            IsLoadingModels = false;
+        }
+    }
+
     // ══════════════════════════════════════════════════════════════
     // Event Handling — marshalled to UI thread
     // ══════════════════════════════════════════════════════════════
@@ -385,8 +505,12 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
 
     private void ProcessEvent(OfficeEvent evt)
     {
-        // Always log to event log
-        AddEventLog($"[{evt.Timestamp:HH:mm:ss}] {evt.EventType}: {evt.Description}");
+        // Skip rest countdown ticks from the event log — they fire every second
+        // and create excessive noise. The UI progress bar still updates via HandleRestCountdown.
+        if (evt is not RestCountdownEvent)
+        {
+            AddEventLog($"[{evt.Timestamp:HH:mm:ss}] {evt.EventType}: {evt.Description}");
+        }
 
         switch (evt)
         {

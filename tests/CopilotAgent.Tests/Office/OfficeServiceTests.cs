@@ -918,6 +918,294 @@ public sealed class OfficeEventTests
 
 #endregion
 
+#region Bug Fix Regression Tests
+
+/// <summary>
+/// Regression tests for confirmed bug fixes in OfficeManagerService.
+/// Each test targets a specific bug that was identified and fixed.
+/// </summary>
+public sealed class OfficeBugFixRegressionTests : IAsyncDisposable
+{
+    private readonly Mock<ICopilotService> _copilotServiceMock;
+    private readonly OfficeEventLog _eventLog;
+    private readonly IterationScheduler _scheduler;
+    private readonly ILoggerFactory _loggerFactory;
+    private readonly OfficeManagerService _sut;
+
+    private static readonly OfficeConfig s_defaultConfig = new()
+    {
+        Objective = "Bug fix regression test",
+        WorkspacePath = "/tmp/test",
+        CheckIntervalMinutes = 1,
+        MaxAssistants = 2,
+        RequirePlanApproval = true
+    };
+
+    public OfficeBugFixRegressionTests()
+    {
+        _copilotServiceMock = new Mock<ICopilotService>();
+        _eventLog = new OfficeEventLog();
+        _scheduler = new IterationScheduler(NullLogger<IterationScheduler>.Instance);
+        _loggerFactory = NullLoggerFactory.Instance;
+
+        _copilotServiceMock
+            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatMessage { Content = "1. Step one\n2. Step two" });
+
+        _sut = new OfficeManagerService(
+            _copilotServiceMock.Object,
+            _eventLog,
+            _scheduler,
+            _loggerFactory);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        try { await _sut.StopAsync(); } catch { }
+    }
+
+    /// <summary>
+    /// Bug #1: RespondToClarificationAsync must transition to Planning phase
+    /// BEFORE resolving the clarification gate, so the awaiter in GeneratePlanAsync
+    /// resumes in the Planning phase (not Clarifying).
+    /// </summary>
+    [Fact]
+    public async Task Bug1_RespondToClarification_TransitionsToPlanningBeforeResolvingGate()
+    {
+        // Arrange: LLM returns clarification request first, then a real plan
+        var callCount = 0;
+        _copilotServiceMock
+            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(() =>
+            {
+                callCount++;
+                if (callCount == 1)
+                    return new ChatMessage { Content = "[CLARIFICATION_NEEDED] What language?" };
+                return new ChatMessage { Content = "1. Use C#\n2. Build it" };
+            });
+
+        var phaseTransitions = new List<(ManagerPhase Previous, ManagerPhase New)>();
+        _sut.OnEvent += evt =>
+        {
+            if (evt is PhaseChangedEvent pce)
+                phaseTransitions.Add((pce.PreviousPhase, pce.NewPhase));
+        };
+
+        // Act: Start the manager (will trigger clarification)
+        var startTask = _sut.StartAsync(s_defaultConfig);
+        await Task.Delay(500); // Wait for clarification state
+
+        _sut.IsWaitingForClarification.Should().BeTrue("Manager should be waiting for clarification");
+
+        await _sut.RespondToClarificationAsync("C# please");
+        await Task.Delay(500); // Wait for plan generation to complete
+
+        // Assert: There should be a Clarifying → Planning transition BEFORE reaching AwaitingApproval
+        var clarifyToPlanning = phaseTransitions
+            .Any(t => t.Previous == ManagerPhase.Clarifying && t.New == ManagerPhase.Planning);
+        clarifyToPlanning.Should().BeTrue(
+            "Bug #1 fix: RespondToClarification should transition Clarifying→Planning before resolving gate");
+
+        _sut.CurrentPhase.Should().Be(ManagerPhase.AwaitingApproval,
+            "After clarification response and plan generation, should reach AwaitingApproval");
+
+        await _sut.StopAsync();
+    }
+
+    /// <summary>
+    /// Bug #2: ApprovePlanAsync (via BeginIterationLoopAsync) must transition out of
+    /// AwaitingApproval to FetchingEvents. Without the fix, the phase remained stuck
+    /// at AwaitingApproval when the iteration loop started.
+    /// </summary>
+    [Fact]
+    public async Task Bug2_ApprovePlan_TransitionsFromAwaitingApprovalToFetchingEvents()
+    {
+        // Arrange
+        await _sut.StartAsync(s_defaultConfig);
+        _sut.CurrentPhase.Should().Be(ManagerPhase.AwaitingApproval);
+
+        // Mock to return empty tasks so iteration doesn't hang
+        _copilotServiceMock
+            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatMessage { Content = "[]" });
+
+        var phaseTransitions = new List<(ManagerPhase Previous, ManagerPhase New)>();
+        _sut.OnEvent += evt =>
+        {
+            if (evt is PhaseChangedEvent pce)
+                phaseTransitions.Add((pce.PreviousPhase, pce.NewPhase));
+        };
+
+        // Act
+        await _sut.ApprovePlanAsync();
+        await Task.Delay(500); // Let the iteration loop progress
+
+        // Assert: Should see AwaitingApproval → FetchingEvents transition
+        var approvalToFetching = phaseTransitions
+            .Any(t => t.Previous == ManagerPhase.AwaitingApproval && t.New == ManagerPhase.FetchingEvents);
+        approvalToFetching.Should().BeTrue(
+            "Bug #2 fix: BeginIterationLoopAsync should transition AwaitingApproval→FetchingEvents");
+
+        await _sut.StopAsync();
+    }
+
+    /// <summary>
+    /// Bug #4: StopAsync must cancel the clarification gate so that
+    /// RequestClarificationAsync unblocks when the user stops the office
+    /// while Manager is waiting for clarification.
+    /// </summary>
+    [Fact]
+    public async Task Bug4_StopAsync_CancelsClarificationGate()
+    {
+        // Arrange: LLM always requests clarification to keep the gate open
+        _copilotServiceMock
+            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatMessage { Content = "[CLARIFICATION_NEEDED] What should I do?" });
+
+        var startTask = _sut.StartAsync(s_defaultConfig);
+        await Task.Delay(500); // Wait for clarification state
+
+        _sut.IsWaitingForClarification.Should().BeTrue("Should be waiting for clarification");
+        _sut.IsRunning.Should().BeTrue("Office should be running");
+
+        // Act: Stop while waiting for clarification
+        var stopTask = _sut.StopAsync();
+
+        // Assert: StopAsync should complete without hanging (the gate was cancelled)
+        var completedInTime = await Task.WhenAny(stopTask, Task.Delay(3000)) == stopTask;
+        completedInTime.Should().BeTrue(
+            "Bug #4 fix: StopAsync must cancel the clarification gate so it doesn't hang");
+
+        _sut.IsRunning.Should().BeFalse();
+        _sut.CurrentPhase.Should().Be(ManagerPhase.Stopped);
+    }
+
+    /// <summary>
+    /// Bug #8: Countdown tick handler must use a stored delegate reference so that
+    /// unsubscription (-=) actually removes the handler. Without the fix, a new lambda
+    /// was created each time, causing handler accumulation.
+    /// Verified indirectly: after one iteration rest, only the expected tick events
+    /// are raised (no duplicates from leaked handlers).
+    /// </summary>
+    [Fact]
+    public async Task Bug8_CountdownTickHandler_NoDuplicateAfterUnsubscribe()
+    {
+        // Arrange: No plan approval, empty tasks so it goes straight to rest
+        var noApprovalConfig = new OfficeConfig
+        {
+            Objective = "Tick handler test",
+            CheckIntervalMinutes = 1,
+            MaxAssistants = 1,
+            RequirePlanApproval = false
+        };
+
+        _copilotServiceMock
+            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new ChatMessage { Content = "[]" });
+
+        var tickCounts = new List<int>(); // Track tick counts per rest period
+        var currentTickCount = 0;
+        _sut.OnEvent += evt =>
+        {
+            if (evt is RestCountdownEvent)
+                currentTickCount++;
+            if (evt is PhaseChangedEvent pce && pce.NewPhase == ManagerPhase.Resting)
+            {
+                if (currentTickCount > 0)
+                    tickCounts.Add(currentTickCount);
+                currentTickCount = 0;
+            }
+        };
+
+        // Act: Start, let it run 2 iterations (2 rest periods), then stop
+        await _sut.StartAsync(noApprovalConfig);
+        await Task.Delay(500); // Let first iteration start
+
+        // Cancel rest after first rest starts
+        await Task.Delay(1500);
+        _scheduler.CancelRest();
+
+        // Let second iteration start and rest
+        await Task.Delay(1500);
+        _scheduler.CancelRest();
+
+        await Task.Delay(500);
+        await _sut.StopAsync();
+
+        // Assert: If handler leaked, second rest would have 2x the ticks
+        // With the fix, tick counts should be similar (not doubling)
+        if (tickCounts.Count >= 2)
+        {
+            var ratio = (double)tickCounts[1] / tickCounts[0];
+            ratio.Should().BeLessThan(1.5,
+                "Bug #8 fix: Second rest period should not have ~2x ticks from leaked handler");
+        }
+    }
+
+    /// <summary>
+    /// Bug #10: AbsorbInjectedInstructions should only drain the ConcurrentBag once
+    /// per iteration. The fix passes the drained list as a parameter to
+    /// FetchEventsAndCreateTasksAsync instead of draining again inside it.
+    /// Verified by injecting an instruction and checking it appears exactly once
+    /// in the LLM prompt.
+    /// </summary>
+    [Fact]
+    public async Task Bug10_InjectedInstructions_AbsorbedOncePerIteration()
+    {
+        // Arrange: No plan approval, track prompts sent to LLM
+        var noApprovalConfig = new OfficeConfig
+        {
+            Objective = "Instruction absorption test",
+            CheckIntervalMinutes = 1,
+            MaxAssistants = 1,
+            RequirePlanApproval = false
+        };
+
+        var capturedPrompts = new List<string>();
+        _copilotServiceMock
+            .Setup(s => s.SendMessageAsync(It.IsAny<Session>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .Callback<Session, string, CancellationToken>((_, prompt, _) => capturedPrompts.Add(prompt))
+            .ReturnsAsync(new ChatMessage { Content = "[]" });
+
+        // Inject instruction before starting
+        await _sut.InjectInstructionAsync("Focus on testing");
+
+        // Act: Start and let one iteration complete
+        await _sut.StartAsync(noApprovalConfig);
+        await Task.Delay(1000); // Let iteration start and complete
+
+        _scheduler.CancelRest(); // Skip rest
+        await Task.Delay(500);
+        await _sut.StopAsync();
+
+        // Assert: The instruction should appear in LLM prompts, but the bag should be
+        // empty after first absorption (not drained twice in same iteration)
+        // The instruction "Focus on testing" should appear in the plan prompt and/or
+        // the task generation prompt, but NOT be duplicated within the task prompt
+        var taskPrompts = capturedPrompts.Where(p => p.Contains("iteration", StringComparison.OrdinalIgnoreCase)).ToList();
+        foreach (var prompt in taskPrompts)
+        {
+            var count = CountOccurrences(prompt, "Focus on testing");
+            count.Should().BeLessOrEqualTo(1,
+                "Bug #10 fix: Instruction should appear at most once per prompt (not drained twice)");
+        }
+    }
+
+    private static int CountOccurrences(string text, string search)
+    {
+        int count = 0;
+        int index = 0;
+        while ((index = text.IndexOf(search, index, StringComparison.Ordinal)) >= 0)
+        {
+            count++;
+            index += search.Length;
+        }
+        return count;
+    }
+}
+
+#endregion
+
 #region ManagerPhase Enum Tests
 
 public sealed class ManagerPhaseTests

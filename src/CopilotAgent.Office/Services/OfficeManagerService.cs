@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using System.Text.Json;
 using CopilotAgent.Core.Models;
 using CopilotAgent.Core.Services;
@@ -35,6 +36,9 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
     // Clarification gate — set when Manager asks user a question, awaited until user responds
     private TaskCompletionSource<string>? _clarificationGate;
+
+    // Stored delegate for countdown tick to enable proper unsubscription (Bug #8 fix)
+    private Action<RestCountdownEvent>? _countdownTickHandler;
 
     // JSON serializer options for structured LLM responses
     private static readonly JsonSerializerOptions s_jsonOptions = new()
@@ -103,7 +107,7 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
         _logger.LogInformation("Office started. Objective: {Objective}", config.Objective);
 
-        // Create manager session
+        // Create manager session with full tool/skill configuration
         _managerSession = new Session
         {
             SessionId = $"office-manager-{Guid.NewGuid():N}",
@@ -111,7 +115,13 @@ public sealed class OfficeManagerService : IOfficeManagerService
             ModelId = config.ManagerModel,
             WorkingDirectory = config.WorkspacePath,
             SystemPrompt = config.ManagerSystemPrompt ?? BuildDefaultManagerSystemPrompt(config),
-            AutonomousMode = new AutonomousModeSettings { AllowAll = true }
+            AutonomousMode = new AutonomousModeSettings { AllowAll = true },
+
+            // Issue #5/#6: Propagate MCP servers and skills so the Manager
+            // session can use configured tools and skills for planning/aggregation.
+            EnabledMcpServers = config.EnabledMcpServers,
+            DisabledSkills = config.DisabledSkills,
+            SkillDirectories = config.SkillDirectories
         };
 
         // Transition to Planning
@@ -225,6 +235,17 @@ public sealed class OfficeManagerService : IOfficeManagerService
         });
 
         _logger.LogInformation("Instruction injected: {Instruction}", instruction);
+
+        // Issue #4: If currently resting, wake up immediately so the next iteration
+        // absorbs this instruction without waiting for the full rest period.
+        if (_context.CurrentPhase == ManagerPhase.Resting)
+        {
+            _logger.LogInformation("Interrupting rest period — instruction received during rest");
+            EmitCommentary(CommentaryType.System, "System",
+                "⚡ Rest interrupted — new instruction received, starting next iteration...");
+            _scheduler.CancelRest();
+        }
+
         return Task.CompletedTask;
     }
 
@@ -252,6 +273,10 @@ public sealed class OfficeManagerService : IOfficeManagerService
             },
             Description = "User responded to clarification"
         });
+
+        // Bug #1 fix: Transition back to Planning before resolving the gate,
+        // so the awaiter in RequestClarificationAsync resumes in the correct phase.
+        TransitionTo(ManagerPhase.Planning);
 
         _clarificationGate.TrySetResult(response);
         _clarificationGate = null;
@@ -300,6 +325,10 @@ public sealed class OfficeManagerService : IOfficeManagerService
         _runCts?.Cancel();
         _pauseGate?.TrySetResult();
         _scheduler.CancelRest();
+
+        // Bug #4 fix: Cancel clarification gate so RequestClarificationAsync unblocks
+        _clarificationGate?.TrySetCanceled();
+        _clarificationGate = null;
 
         // Wait for loop to finish
         if (_iterationLoopTask is not null)
@@ -364,6 +393,12 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
     private Task BeginIterationLoopAsync()
     {
+        // Bug #2 fix: Explicitly transition out of AwaitingApproval before starting the loop
+        if (_context.CurrentPhase == ManagerPhase.AwaitingApproval)
+        {
+            TransitionTo(ManagerPhase.FetchingEvents);
+        }
+
         _iterationLoopTask = Task.Run(() => RunIterationLoopAsync(_runCts!.Token));
         return Task.CompletedTask;
     }
@@ -385,14 +420,14 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
                 _logger.LogInformation("=== Iteration {N} starting ===", _context.CurrentIteration);
 
-                // Absorb injected instructions
-                var instructions = AbsorbInjectedInstructions();
-
                 // Phase: FetchingEvents
                 TransitionTo(ManagerPhase.FetchingEvents);
+
+                // Absorb injected instructions once (Bug #10 fix: was being drained twice)
+                var instructions = AbsorbInjectedInstructions();
                 EmitCommentary(CommentaryType.ManagerThinking, "Manager", "🔍 Checking for events and generating tasks...");
 
-                var tasks = await FetchEventsAndCreateTasksAsync(ct).ConfigureAwait(false);
+                var tasks = await FetchEventsAndCreateTasksAsync(instructions, ct).ConfigureAwait(false);
 
                 if (tasks.Count == 0)
                 {
@@ -490,21 +525,26 @@ public sealed class OfficeManagerService : IOfficeManagerService
                     Description = $"Rest period: {_checkIntervalMinutes} minutes"
                 });
 
-                // Wire countdown events
-                _scheduler.OnCountdownTick += tick =>
+                // Bug #8 fix: Store delegate reference for proper unsubscription
+                // Issue fix: Only log countdown to event log every 60 seconds to reduce noise.
+                // UI still gets every tick via RaiseEvent for smooth progress bar updates.
+                _countdownTickHandler = tick =>
                 {
                     RaiseEvent(tick);
-                    _eventLog.Log(tick);
+
+                    // Only log to event log at 60-second intervals (or when rest completes) to avoid bloat
+                    if (tick.SecondsRemaining % 60 == 0 || tick.SecondsRemaining <= 0)
+                    {
+                        _eventLog.Log(tick);
+                    }
                 };
+                _scheduler.OnCountdownTick += _countdownTickHandler;
 
                 await _scheduler.WaitForNextIterationAsync(_checkIntervalMinutes, ct).ConfigureAwait(false);
 
-                // Unwire to avoid accumulation
-                _scheduler.OnCountdownTick -= tick =>
-                {
-                    RaiseEvent(tick);
-                    _eventLog.Log(tick);
-                };
+                // Unwire using the same delegate reference
+                _scheduler.OnCountdownTick -= _countdownTickHandler;
+                _countdownTickHandler = null;
             }
         }
         catch (OperationCanceledException)
@@ -525,6 +565,63 @@ public sealed class OfficeManagerService : IOfficeManagerService
                 Description = $"Error: {ex.Message}"
             });
         }
+    }
+
+    // ─── Private: Streaming Commentary Helper ───────────────
+
+    /// <summary>
+    /// Sends a prompt to the LLM via streaming, emitting live commentary as the Manager
+    /// reasons through the response. The flow is:
+    ///   1. Emit the action label commentary (e.g., "🧠 Generating execution plan...")
+    ///   2. Stream the LLM response, emitting reasoning commentary based on the configured mode
+    ///   3. Return the complete response text
+    ///
+    /// CompleteThought mode: buffers the entire response, emits it as a single "reasoning" entry.
+    /// StreamingTokens mode: emits each chunk as it arrives for real-time word-by-word display.
+    /// </summary>
+    private async Task<string> SendMessageWithCommentaryAsync(
+        Session session,
+        string prompt,
+        CommentaryType actionType,
+        string agentName,
+        string actionLabel,
+        CancellationToken ct)
+    {
+        // Step 1: Emit the action label (what the agent is about to do)
+        EmitCommentary(actionType, agentName, actionLabel);
+
+        var streamingMode = _config?.CommentaryStreamingMode ?? CommentaryStreamingMode.CompleteThought;
+        var buffer = new StringBuilder(2048);
+
+        // Step 2: Stream LLM response with live reasoning commentary
+        await foreach (var chunk in _copilotService.SendMessageStreamingAsync(session, prompt, ct).ConfigureAwait(false))
+        {
+            if (string.IsNullOrEmpty(chunk.Content))
+                continue;
+
+            buffer.Append(chunk.Content);
+
+            if (streamingMode == CommentaryStreamingMode.StreamingTokens)
+            {
+                // Emit each chunk in real-time for word-by-word display
+                EmitCommentary(CommentaryType.ManagerThinking, agentName,
+                    $"💭 {buffer}");
+            }
+        }
+
+        var fullResponse = buffer.ToString().Trim();
+
+        // Step 3: Emit the complete reasoning as a final commentary entry
+        if (streamingMode == CommentaryStreamingMode.CompleteThought && fullResponse.Length > 0)
+        {
+            // Truncate for commentary display — the full text is used as return value
+            var preview = fullResponse.Length > 500
+                ? fullResponse[..500] + "..."
+                : fullResponse;
+            EmitCommentary(CommentaryType.ManagerThinking, agentName, $"💭 {preview}");
+        }
+
+        return fullResponse;
     }
 
     // ─── Private: LLM-Driven Manager Intelligence ──────────
@@ -560,15 +657,28 @@ public sealed class OfficeManagerService : IOfficeManagerService
             ## Instructions
             Produce a clear, numbered execution plan in Markdown format.
             Focus on actionable steps that assistant agents can execute independently.
-            If you need clarification from the user, start your response with [CLARIFICATION_NEEDED] 
-            followed by your question. Otherwise, provide the plan directly.
+            ## Vague Objective Detection
+            CRITICAL: Before creating a plan, evaluate whether the objective is specific enough to act on.
+            An objective is TOO VAGUE if it:
+            - Is a greeting or casual message (e.g., "Hi", "Hello", "Hey there")
+            - Lacks any actionable intent (e.g., "test", "help", "something")
+            - Has no clear deliverable or measurable outcome
+            - Is fewer than 5 words and doesn't describe a concrete task
+            
+            If the objective is vague, ambiguous, or lacks sufficient detail to create a meaningful plan,
+            you MUST start your response with [CLARIFICATION_NEEDED] followed by a helpful question
+            that guides the user toward providing a specific, actionable objective.
+            
+            If the objective IS clear enough, provide the plan directly.
+            Do NOT create a generic/placeholder plan for vague objectives — always ask for clarification instead.
             """;
 
         try
         {
-            EmitCommentary(CommentaryType.ManagerThinking, "Manager", "🧠 Generating execution plan...");
-            var response = await _copilotService.SendMessageAsync(_managerSession, prompt, ct).ConfigureAwait(false);
-            var content = response.Content.Trim();
+            var content = await SendMessageWithCommentaryAsync(
+                _managerSession, prompt,
+                CommentaryType.ManagerThinking, "Manager",
+                "🧠 Generating execution plan...", ct).ConfigureAwait(false);
 
             // Check if the Manager needs clarification
             if (content.StartsWith("[CLARIFICATION_NEEDED]", StringComparison.OrdinalIgnoreCase))
@@ -578,8 +688,11 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
                 // Re-generate plan with the clarification
                 var followUp = $"The user answered your question: \"{userAnswer}\"\n\nNow produce the execution plan.";
-                var retry = await _copilotService.SendMessageAsync(_managerSession, followUp, ct).ConfigureAwait(false);
-                return retry.Content.Trim();
+                var retryContent = await SendMessageWithCommentaryAsync(
+                    _managerSession, followUp,
+                    CommentaryType.ManagerThinking, "Manager",
+                    "🧠 Refining plan with your clarification...", ct).ConfigureAwait(false);
+                return retryContent;
             }
 
             return content;
@@ -592,7 +705,8 @@ public sealed class OfficeManagerService : IOfficeManagerService
         }
     }
 
-    private async Task<IReadOnlyList<AssistantTask>> FetchEventsAndCreateTasksAsync(CancellationToken ct)
+    private async Task<IReadOnlyList<AssistantTask>> FetchEventsAndCreateTasksAsync(
+        IReadOnlyList<string> absorbedInstructions, CancellationToken ct)
     {
         if (_managerSession is null || _config is null)
         {
@@ -603,11 +717,11 @@ public sealed class OfficeManagerService : IOfficeManagerService
             ? $"\n\n## Previous Iteration Summary\n{_context.IterationReports[^1].AggregatedSummary}"
             : "";
 
+        // Bug #10 fix: Use pre-absorbed instructions instead of draining again
         var injectedContext = "";
-        var absorbed = AbsorbInjectedInstructions();
-        if (absorbed.Count > 0)
+        if (absorbedInstructions.Count > 0)
         {
-            injectedContext = $"\n\n## New User Instructions\n{string.Join("\n- ", absorbed)}";
+            injectedContext = $"\n\n## New User Instructions\n{string.Join("\n- ", absorbedInstructions)}";
         }
 
         var prompt = $$"""
@@ -645,9 +759,11 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
         try
         {
-            EmitCommentary(CommentaryType.ManagerThinking, "Manager", "🔍 Analyzing workspace and creating tasks...");
-            var response = await _copilotService.SendMessageAsync(_managerSession, prompt, ct).ConfigureAwait(false);
-            return ParseTasksFromLlmResponse(response.Content);
+            var content = await SendMessageWithCommentaryAsync(
+                _managerSession, prompt,
+                CommentaryType.ManagerThinking, "Manager",
+                "🔍 Analyzing workspace and creating tasks...", ct).ConfigureAwait(false);
+            return ParseTasksFromLlmResponse(content);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
@@ -688,9 +804,10 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
         try
         {
-            EmitCommentary(CommentaryType.Aggregation, "Manager", "📊 Synthesizing results...");
-            var response = await _copilotService.SendMessageAsync(_managerSession, prompt, ct).ConfigureAwait(false);
-            return response.Content.Trim();
+            return await SendMessageWithCommentaryAsync(
+                _managerSession, prompt,
+                CommentaryType.Aggregation, "Manager",
+                "📊 Synthesizing results...", ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex)
