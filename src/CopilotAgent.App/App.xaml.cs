@@ -119,6 +119,7 @@ public partial class App : Application
                     services.AddSingleton<IOrchestratorService, OrchestratorService>();
 
                     // Agent Office Services
+                    services.AddSingleton<IReasoningStream, ReasoningStream>();
                     services.AddSingleton<IOfficeManagerService, OfficeManagerService>();
                     services.AddSingleton<IOfficeEventLog, OfficeEventLog>();
                     services.AddSingleton<IIterationScheduler, IterationScheduler>();

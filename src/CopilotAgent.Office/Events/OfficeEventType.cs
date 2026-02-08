@@ -39,5 +39,8 @@ public enum OfficeEventType
     RunStopped,
 
     /// <summary>Instruction injected.</summary>
-    InstructionInjected
+    InstructionInjected,
+
+    /// <summary>Activity status changed (for live status panel).</summary>
+    ActivityStatus
 }

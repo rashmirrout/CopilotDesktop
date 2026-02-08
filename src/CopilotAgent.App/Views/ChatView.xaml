@@ -312,13 +312,18 @@
                                             </emoji:TextBlock>
                                             
                                             <!-- Content -->
-                                            <TextBlock Grid.Column="1"
-                                                       Text="{Binding Content}"
-                                                       TextWrapping="Wrap"
-                                                       FontFamily="Consolas, Courier New, monospace"
-                                                       FontSize="11"
-                                                       Foreground="#616161"
-                                                       MaxWidth="500"/>
+                                            <TextBox Grid.Column="1"
+                                                     Text="{Binding Content, Mode=OneWay}"
+                                                     TextWrapping="Wrap"
+                                                     FontFamily="Consolas, Courier New, monospace"
+                                                     FontSize="11"
+                                                     Foreground="#616161"
+                                                     MaxWidth="500"
+                                                     IsReadOnly="True"
+                                                     BorderThickness="0"
+                                                     Background="Transparent"
+                                                     Padding="0"
+                                                     Cursor="IBeam"/>
                                         </Grid>
                                     </Border>
                                 </DataTemplate>

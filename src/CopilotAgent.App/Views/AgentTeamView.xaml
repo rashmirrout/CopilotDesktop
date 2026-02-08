@@ -405,8 +405,9 @@
                 <!-- Error message -->
                 <Border Background="#FFEBEE" CornerRadius="4" Padding="12,8" Margin="0,0,0,12"
                         Visibility="{Binding ErrorMessage, Converter={StaticResource StringToVis}}">
-                    <TextBlock Text="{Binding ErrorMessage}" Foreground="#C62828"
-                               TextWrapping="Wrap" FontSize="13"/>
+                    <TextBox Text="{Binding ErrorMessage, Mode=OneWay}" Foreground="#C62828"
+                             TextWrapping="Wrap" FontSize="13" IsReadOnly="True"
+                             BorderThickness="0" Background="Transparent" Padding="0" Cursor="IBeam"/>
                 </Border>
 
                 <!-- Orchestrator Message (Markdown rendered) -->
@@ -462,8 +463,10 @@
                         <ItemsControl ItemsSource="{Binding ClarifyingQuestions}" Margin="0,0,0,10">
                             <ItemsControl.ItemTemplate>
                                 <DataTemplate>
-                                    <TextBlock Text="{Binding}" TextWrapping="Wrap"
-                                               FontSize="13" Foreground="#424242" Margin="0,2"/>
+                                    <TextBox Text="{Binding Mode=OneWay}" TextWrapping="Wrap"
+                                             FontSize="13" Foreground="#424242" Margin="0,2"
+                                             IsReadOnly="True" BorderThickness="0"
+                                             Background="Transparent" Padding="0" Cursor="IBeam"/>
                                 </DataTemplate>
                             </ItemsControl.ItemTemplate>
                         </ItemsControl>
@@ -492,8 +495,10 @@
                         <emoji:TextBlock Text="📋 Plan Review" FontSize="14"
                                    FontWeight="SemiBold" Foreground="#283593" Margin="0,0,0,8"/>
 
-                        <TextBlock Text="{Binding CurrentPlan.PlanSummary}" TextWrapping="Wrap"
-                                   FontSize="13" Foreground="#424242" Margin="0,0,0,10"/>
+                        <TextBox Text="{Binding CurrentPlan.PlanSummary, Mode=OneWay}" TextWrapping="Wrap"
+                                 FontSize="13" Foreground="#424242" Margin="0,0,0,10"
+                                 IsReadOnly="True" BorderThickness="0"
+                                 Background="Transparent" Padding="0" Cursor="IBeam"/>
 
                         <!-- Chunk list -->
                         <ItemsControl ItemsSource="{Binding CurrentPlan.Chunks}" Margin="0,0,0,12">
@@ -616,10 +621,12 @@
                                                         <Run Text="{Binding Duration.TotalSeconds, Mode=OneWay, StringFormat={}{0:F1}s}"/>
                                                     </TextBlock>
                                                 </StackPanel>
-                                                <TextBlock Text="{Binding Response}" FontSize="11"
-                                                           Foreground="#757575" TextWrapping="Wrap"
-                                                           MaxHeight="48" TextTrimming="CharacterEllipsis"
-                                                           Margin="0,2,0,0"/>
+                                                <TextBox Text="{Binding Response, Mode=OneWay}" FontSize="11"
+                                                         Foreground="#757575" TextWrapping="Wrap"
+                                                         MaxHeight="48"
+                                                         Margin="0,2,0,0"
+                                                         IsReadOnly="True" BorderThickness="0"
+                                                         Background="Transparent" Padding="0" Cursor="IBeam"/>
                                             </StackPanel>
                                         </Border>
                                     </DataTemplate>

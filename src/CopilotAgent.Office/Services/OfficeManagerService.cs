@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text;
 using System.Text.Json;
 using CopilotAgent.Core.Models;
 using CopilotAgent.Core.Services;
@@ -17,6 +16,8 @@ namespace CopilotAgent.Office.Services;
 public sealed class OfficeManagerService : IOfficeManagerService
 {
     private readonly ICopilotService _copilotService;
+    private readonly CopilotSdkService? _sdkService;
+    private readonly IReasoningStream _reasoningStream;
     private readonly IOfficeEventLog _eventLog;
     private readonly IIterationScheduler _scheduler;
     private readonly ILoggerFactory _loggerFactory;
@@ -39,6 +40,9 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
     // Stored delegate for countdown tick to enable proper unsubscription (Bug #8 fix)
     private Action<RestCountdownEvent>? _countdownTickHandler;
+
+    // Stored delegate for SDK session event handler (tool call detection for Manager)
+    private EventHandler<SdkSessionEventArgs>? _sdkEventHandler;
 
     // JSON serializer options for structured LLM responses
     private static readonly JsonSerializerOptions s_jsonOptions = new()
@@ -71,11 +75,14 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
     public OfficeManagerService(
         ICopilotService copilotService,
+        IReasoningStream reasoningStream,
         IOfficeEventLog eventLog,
         IIterationScheduler scheduler,
         ILoggerFactory loggerFactory)
     {
         _copilotService = copilotService;
+        _sdkService = copilotService as CopilotSdkService;
+        _reasoningStream = reasoningStream;
         _eventLog = eventLog;
         _scheduler = scheduler;
         _loggerFactory = loggerFactory;
@@ -107,6 +114,9 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
         _logger.LogInformation("Office started. Objective: {Objective}", config.Objective);
 
+        // Unsubscribe any stale SDK event handler from a previous run
+        UnsubscribeManagerSdkEvents();
+
         // Create manager session with full tool/skill configuration
         _managerSession = new Session
         {
@@ -124,8 +134,12 @@ public sealed class OfficeManagerService : IOfficeManagerService
             SkillDirectories = config.SkillDirectories
         };
 
+        // Subscribe to SDK session events for Manager tool call commentary
+        SubscribeManagerSdkEvents();
+
         // Transition to Planning
         TransitionTo(ManagerPhase.Planning);
+        EmitActivityStatus(ActivityStatusType.ManagerThinking, "Manager thinking...");
 
         // Generate plan (stub for now — Step 18 replaces with LLM)
         var plan = await GeneratePlanAsync(ct).ConfigureAwait(false);
@@ -134,6 +148,7 @@ public sealed class OfficeManagerService : IOfficeManagerService
         if (config.RequirePlanApproval)
         {
             TransitionTo(ManagerPhase.AwaitingApproval);
+            EmitActivityStatus(ActivityStatusType.AwaitingApproval, "Awaiting plan approval...");
             RaiseEvent(new ChatMessageEvent
             {
                 Message = new OfficeChatMessage
@@ -162,16 +177,18 @@ public sealed class OfficeManagerService : IOfficeManagerService
             return Task.CompletedTask;
         }
 
+        // Issue #6 fix: Attribution comes from Manager acknowledging the approval, not User echoing it.
+        // The ViewModel already shows the user's click action; the chat message should be the Manager's reaction.
         RaiseEvent(new ChatMessageEvent
         {
             Message = new OfficeChatMessage
             {
-                Role = OfficeChatRole.User,
-                SenderName = "User",
+                Role = OfficeChatRole.Manager,
+                SenderName = "Manager",
                 Content = "✅ Plan approved. Starting execution.",
-                AccentColor = OfficeColorScheme.UserColor
+                AccentColor = OfficeColorScheme.ManagerColor
             },
-            Description = "User approved the plan"
+            Description = "Manager acknowledged plan approval"
         });
 
         return BeginIterationLoopAsync();
@@ -199,12 +216,14 @@ public sealed class OfficeManagerService : IOfficeManagerService
         });
 
         TransitionTo(ManagerPhase.Planning);
+        EmitActivityStatus(ActivityStatusType.ManagerThinking, "Manager revising plan...");
 
         // Re-generate plan with feedback (stub — Step 18 uses LLM)
         var plan = await GeneratePlanAsync(ct).ConfigureAwait(false);
         _context.ApprovedPlan = plan;
 
         TransitionTo(ManagerPhase.AwaitingApproval);
+        EmitActivityStatus(ActivityStatusType.AwaitingApproval, "Awaiting plan approval...");
 
         RaiseEvent(new ChatMessageEvent
         {
@@ -262,16 +281,19 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
         _logger.LogInformation("Clarification response received: {Response}", response);
 
+        // Issue fix: Do NOT echo the user's message here — the ViewModel already adds it
+        // to the chat before calling this method. Instead, emit a Manager acknowledgment
+        // so the user sees the Manager is processing their input.
         RaiseEvent(new ChatMessageEvent
         {
             Message = new OfficeChatMessage
             {
-                Role = OfficeChatRole.User,
-                SenderName = "User",
-                Content = response,
-                AccentColor = OfficeColorScheme.UserColor
+                Role = OfficeChatRole.Manager,
+                SenderName = "Manager",
+                Content = "📝 Received your input. Analyzing... give me a moment.",
+                AccentColor = OfficeColorScheme.ManagerColor
             },
-            Description = "User responded to clarification"
+            Description = "Manager acknowledged clarification response"
         });
 
         // Bug #1 fix: Transition back to Planning before resolving the gate,
@@ -345,12 +367,16 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
         _context.EndedAt = DateTimeOffset.UtcNow;
         TransitionTo(ManagerPhase.Stopped);
+        EmitActivityStatus(ActivityStatusType.Idle, string.Empty);
 
         RaiseEvent(new RunStoppedEvent
         {
             Reason = "User requested stop",
             Description = "Office stopped by user"
         });
+
+        // Unsubscribe from SDK events before terminating the session
+        UnsubscribeManagerSdkEvents();
 
         // Cleanup manager session
         if (_managerSession is not null)
@@ -379,6 +405,7 @@ public sealed class OfficeManagerService : IOfficeManagerService
         while (_injectedInstructions.TryTake(out _)) { }
 
         TransitionTo(ManagerPhase.Idle);
+        EmitActivityStatus(ActivityStatusType.Idle, string.Empty);
         _logger.LogInformation("Office reset to Idle");
     }
 
@@ -387,6 +414,20 @@ public sealed class OfficeManagerService : IOfficeManagerService
     {
         _checkIntervalMinutes = Math.Max(1, minutes);
         _logger.LogInformation("Check interval updated to {Minutes} minutes", _checkIntervalMinutes);
+    }
+
+    /// <inheritdoc />
+    public void SkipRest()
+    {
+        if (_context.CurrentPhase != ManagerPhase.Resting)
+        {
+            _logger.LogWarning("Cannot skip rest — not in Resting phase (current: {Phase})", _context.CurrentPhase);
+            return;
+        }
+
+        _logger.LogInformation("Skipping rest period — user requested");
+        EmitCommentary(CommentaryType.System, "System", "⏭️ Rest skipped — starting next iteration...");
+        _scheduler.CancelRest();
     }
 
     // ─── Private: Iteration Loop ────────────────────────────
@@ -422,6 +463,7 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
                 // Phase: FetchingEvents
                 TransitionTo(ManagerPhase.FetchingEvents);
+                EmitActivityStatus(ActivityStatusType.ManagerThinking, "Manager thinking...");
 
                 // Absorb injected instructions once (Bug #10 fix: was being drained twice)
                 var instructions = AbsorbInjectedInstructions();
@@ -429,10 +471,13 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
                 var tasks = await FetchEventsAndCreateTasksAsync(instructions, ct).ConfigureAwait(false);
 
+                IReadOnlyList<AssistantResult> results;
+
                 if (tasks.Count == 0)
                 {
-                    _logger.LogInformation("No tasks for iteration {N}, moving to rest", _context.CurrentIteration);
-                    EmitCommentary(CommentaryType.System, "System", "No tasks generated. Resting...");
+                    _logger.LogInformation("No tasks for iteration {N}", _context.CurrentIteration);
+                    EmitCommentary(CommentaryType.System, "System", "No tasks generated for this iteration.");
+                    results = Array.Empty<AssistantResult>();
                 }
                 else
                 {
@@ -443,6 +488,9 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
                     // Phase: Executing
                     TransitionTo(ManagerPhase.Executing);
+                    EmitActivityStatus(ActivityStatusType.Delegated,
+                        $"Manager delegated to {tasks.Count} assistant{(tasks.Count > 1 ? "s" : "")}...",
+                        totalDispatched: tasks.Count);
 
                     var pool = new AssistantPool(
                         _copilotService,
@@ -452,65 +500,84 @@ public sealed class OfficeManagerService : IOfficeManagerService
                     // Wire pool events to our event system
                     pool.OnAssistantEvent += evt => { RaiseEvent(evt); _eventLog.Log(evt); };
                     pool.OnSchedulingEvent += evt => { RaiseEvent(evt); _eventLog.Log(evt); };
+                    pool.OnCommentaryEvent += evt => { RaiseEvent(evt); _eventLog.Log(evt); };
 
-                    var results = await pool.ExecuteTasksAsync(tasks, _config!, ct).ConfigureAwait(false);
-
-                    // Phase: Aggregating
-                    TransitionTo(ManagerPhase.Aggregating);
-                    EmitCommentary(CommentaryType.Aggregation, "Manager", "📊 Aggregating results...");
-
-                    var summary = await AggregateResultsAsync(results, ct).ConfigureAwait(false);
-
-                    // Build iteration report
-                    var report = new IterationReport
-                    {
-                        IterationNumber = _context.CurrentIteration,
-                        StartedAt = iterationStart,
-                        CompletedAt = DateTimeOffset.UtcNow,
-                        TasksDispatched = tasks.Count,
-                        TasksSucceeded = results.Count(r => r.Success),
-                        TasksFailed = results.Count(r => !r.Success),
-                        TasksCancelled = results.Count(r => r.ErrorMessage == "Task was cancelled"),
-                        Results = results,
-                        AggregatedSummary = summary,
-                        InjectedInstructions = instructions,
-                        SchedulingDecisions = _eventLog
-                            .GetByIteration(_context.CurrentIteration)
-                            .OfType<SchedulingEvent>()
-                            .Select(e => e.Decision)
-                            .ToList()
-                    };
-
-                    _context.IterationReports.Add(report);
-                    _context.TotalTasksCompleted += report.TasksSucceeded;
-                    _context.TotalTasksFailed += report.TasksFailed;
-
-                    RaiseEvent(new IterationCompletedEvent
-                    {
-                        Report = report,
-                        IterationNumber = _context.CurrentIteration,
-                        Description = $"Iteration {_context.CurrentIteration}: {report.TasksSucceeded}/{report.TasksDispatched} succeeded"
-                    });
-
-                    // Post aggregation summary to chat
-                    RaiseEvent(new ChatMessageEvent
-                    {
-                        Message = new OfficeChatMessage
-                        {
-                            Role = OfficeChatRole.Manager,
-                            SenderName = "Manager",
-                            Content = $"📊 **Iteration {_context.CurrentIteration} Summary**\n\n{summary}",
-                            IterationNumber = _context.CurrentIteration,
-                            AccentColor = OfficeColorScheme.ManagerColor,
-                            IsCollapsible = true
-                        },
-                        IterationNumber = _context.CurrentIteration,
-                        Description = $"Iteration {_context.CurrentIteration} summary"
-                    });
+                    results = await pool.ExecuteTasksAsync(tasks, _config!, ct).ConfigureAwait(false);
                 }
 
-                // Phase: Resting
+                // Phase: Aggregating — ALWAYS runs, even when no tasks were generated.
+                // The iteration is NOT complete until the Manager has responded to the user
+                // with an aggregation report. This ensures Manager LLM streaming finishes
+                // before the rest timer starts (fixes rest-timer-during-streaming bug).
+                TransitionTo(ManagerPhase.Aggregating);
+                EmitActivityStatus(ActivityStatusType.ManagerAggregating, "Manager preparing response...");
+                EmitCommentary(CommentaryType.Aggregation, "Manager", "📊 Aggregating results...");
+
+                var summary = await AggregateResultsAsync(results, ct).ConfigureAwait(false);
+
+                // Build iteration report
+                var report = new IterationReport
+                {
+                    IterationNumber = _context.CurrentIteration,
+                    StartedAt = iterationStart,
+                    CompletedAt = DateTimeOffset.UtcNow,
+                    TasksDispatched = tasks.Count,
+                    TasksSucceeded = results.Count(r => r.Success),
+                    TasksFailed = results.Count(r => !r.Success),
+                    TasksCancelled = results.Count(r => r.ErrorMessage == "Task was cancelled"),
+                    Results = results,
+                    AggregatedSummary = summary,
+                    InjectedInstructions = instructions,
+                    SchedulingDecisions = _eventLog
+                        .GetByIteration(_context.CurrentIteration)
+                        .OfType<SchedulingEvent>()
+                        .Select(e => e.Decision)
+                        .ToList()
+                };
+
+                _context.IterationReports.Add(report);
+                _context.TotalTasksCompleted += report.TasksSucceeded;
+                _context.TotalTasksFailed += report.TasksFailed;
+
+                RaiseEvent(new IterationCompletedEvent
+                {
+                    Report = report,
+                    IterationNumber = _context.CurrentIteration,
+                    Description = $"Iteration {_context.CurrentIteration}: {report.TasksSucceeded}/{report.TasksDispatched} succeeded"
+                });
+
+                // Post aggregation summary to chat — Manager's response marks iteration as complete
+                RaiseEvent(new ChatMessageEvent
+                {
+                    Message = new OfficeChatMessage
+                    {
+                        Role = OfficeChatRole.Manager,
+                        SenderName = "Manager",
+                        Content = $"📊 **Iteration {_context.CurrentIteration} Summary**\n\n{summary}",
+                        IterationNumber = _context.CurrentIteration,
+                        AccentColor = OfficeColorScheme.ManagerColor,
+                        IsCollapsible = true
+                    },
+                    IterationNumber = _context.CurrentIteration,
+                    Description = $"Iteration {_context.CurrentIteration} summary"
+                });
+
+                _logger.LogInformation("=== Iteration {N} complete — entering rest ===", _context.CurrentIteration);
+
+                // Emit completion marker so the UI can render the summary before phase changes
+                EmitCommentary(CommentaryType.System, "Manager",
+                    $"✅ Iteration {_context.CurrentIteration} complete");
+
+                // Yield to allow the WPF Dispatcher to process queued events (ChatMessageEvent,
+                // IterationCompletedEvent, commentary) before the PhaseChangedEvent for Resting
+                // overwrites the header. Without this barrier the async InvokeAsync dispatch
+                // can reorder the Resting phase-change ahead of the aggregation chat message.
+                await Task.Delay(150, ct).ConfigureAwait(false);
+
+                // Phase: Resting — safe to transition now that UI has caught up
                 TransitionTo(ManagerPhase.Resting);
+                EmitActivityStatus(ActivityStatusType.Resting,
+                    $"Resting for {_checkIntervalMinutes} min before next iteration...");
 
                 RaiseEvent(new ChatMessageEvent
                 {
@@ -556,6 +623,7 @@ public sealed class OfficeManagerService : IOfficeManagerService
             _logger.LogError(ex, "Iteration loop failed");
             _context.LastError = ex.Message;
             TransitionTo(ManagerPhase.Error);
+            EmitActivityStatus(ActivityStatusType.Idle, string.Empty);
 
             RaiseEvent(new ErrorEvent
             {
@@ -567,19 +635,21 @@ public sealed class OfficeManagerService : IOfficeManagerService
         }
     }
 
-    // ─── Private: Streaming Commentary Helper ───────────────
+    // ─── Private: LLM Call Helper ───────────────────────────
 
     /// <summary>
-    /// Sends a prompt to the LLM via streaming, emitting live commentary as the Manager
-    /// reasons through the response. The flow is:
-    ///   1. Emit the action label commentary (e.g., "🧠 Generating execution plan...")
-    ///   2. Stream the LLM response, emitting reasoning commentary based on the configured mode
-    ///   3. Return the complete response text
+    /// Sends a prompt to the Manager LLM, emits an action label commentary,
+    /// delegates streaming/reasoning to <see cref="IReasoningStream"/>,
+    /// and returns the final complete response text.
     ///
-    /// CompleteThought mode: buffers the entire response, emits it as a single "reasoning" entry.
-    /// StreamingTokens mode: emits each chunk as it arrives for real-time word-by-word display.
+    /// The Manager only cares about:
+    ///   1. Announcing what it is about to do (action label)
+    ///   2. Getting the final response text for its state machine logic
+    ///
+    /// All streaming delta extraction and live commentary emission is handled
+    /// by <see cref="IReasoningStream"/> (single responsibility).
     /// </summary>
-    private async Task<string> SendMessageWithCommentaryAsync(
+    private async Task<string> SendManagerPromptAsync(
         Session session,
         string prompt,
         CommentaryType actionType,
@@ -587,42 +657,21 @@ public sealed class OfficeManagerService : IOfficeManagerService
         string actionLabel,
         CancellationToken ct)
     {
-        // Step 1: Emit the action label (what the agent is about to do)
+        // Step 1: Announce what the Manager is about to do
         EmitCommentary(actionType, agentName, actionLabel);
 
-        var streamingMode = _config?.CommentaryStreamingMode ?? CommentaryStreamingMode.CompleteThought;
-        var buffer = new StringBuilder(2048);
+        // Step 2: Delegate streaming to ReasoningStream with delta callback
+        // for live word-by-word commentary in the sidebar
+        var response = await _reasoningStream.StreamAsync(
+            _copilotService.SendMessageStreamingAsync(session, prompt, ct),
+            agentName,
+            _context.CurrentIteration,
+            delta => EmitCommentary(CommentaryType.ManagerThinking, agentName, delta),
+            ct).ConfigureAwait(false);
 
-        // Step 2: Stream LLM response with live reasoning commentary
-        await foreach (var chunk in _copilotService.SendMessageStreamingAsync(session, prompt, ct).ConfigureAwait(false))
-        {
-            if (string.IsNullOrEmpty(chunk.Content))
-                continue;
-
-            buffer.Append(chunk.Content);
-
-            if (streamingMode == CommentaryStreamingMode.StreamingTokens)
-            {
-                // Emit each chunk in real-time for word-by-word display
-                EmitCommentary(CommentaryType.ManagerThinking, agentName,
-                    $"💭 {buffer}");
-            }
-        }
-
-        var fullResponse = buffer.ToString().Trim();
-
-        // Step 3: Emit the complete reasoning as a final commentary entry
-        if (streamingMode == CommentaryStreamingMode.CompleteThought && fullResponse.Length > 0)
-        {
-            // Truncate for commentary display — the full text is used as return value
-            var preview = fullResponse.Length > 500
-                ? fullResponse[..500] + "..."
-                : fullResponse;
-            EmitCommentary(CommentaryType.ManagerThinking, agentName, $"💭 {preview}");
-        }
-
-        return fullResponse;
+        return response;
     }
+
 
     // ─── Private: LLM-Driven Manager Intelligence ──────────
 
@@ -675,7 +724,7 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
         try
         {
-            var content = await SendMessageWithCommentaryAsync(
+            var content = await SendManagerPromptAsync(
                 _managerSession, prompt,
                 CommentaryType.ManagerThinking, "Manager",
                 "🧠 Generating execution plan...", ct).ConfigureAwait(false);
@@ -688,7 +737,7 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
                 // Re-generate plan with the clarification
                 var followUp = $"The user answered your question: \"{userAnswer}\"\n\nNow produce the execution plan.";
-                var retryContent = await SendMessageWithCommentaryAsync(
+                var retryContent = await SendManagerPromptAsync(
                     _managerSession, followUp,
                     CommentaryType.ManagerThinking, "Manager",
                     "🧠 Refining plan with your clarification...", ct).ConfigureAwait(false);
@@ -759,7 +808,7 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
         try
         {
-            var content = await SendMessageWithCommentaryAsync(
+            var content = await SendManagerPromptAsync(
                 _managerSession, prompt,
                 CommentaryType.ManagerThinking, "Manager",
                 "🔍 Analyzing workspace and creating tasks...", ct).ConfigureAwait(false);
@@ -775,17 +824,39 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
     private async Task<string> AggregateResultsAsync(IReadOnlyList<AssistantResult> results, CancellationToken ct)
     {
-        if (_managerSession is null || results.Count == 0)
+        // Only fall back if we have no LLM session at all.
+        // When results.Count == 0 we STILL call the LLM so it can explain why no work
+        // was generated and provide a meaningful summary. This also ensures the LLM
+        // streaming await blocks the iteration loop, preventing the Resting phase
+        // from starting before the Manager's response has been fully rendered.
+        if (_managerSession is null)
         {
             return BuildFallbackAggregation(results);
         }
 
-        var resultsSummary = string.Join("\n\n", results.Select((r, i) =>
+        // Bug #1 fix: Provide clean summaries without verbose metadata (task IDs, durations)
+        // so the LLM focuses on synthesis rather than echoing structural noise.
+        string completedWorkSection;
+
+        if (results.Count == 0)
         {
-            var status = r.Success ? "✅ Success" : "❌ Failed";
-            var error = r.ErrorMessage is not null ? $"\nError: {r.ErrorMessage}" : "";
-            return $"### Task {i + 1}: {r.TaskId} ({status}, {r.Duration.TotalSeconds:F1}s)\n{r.Summary}{error}";
-        }));
+            completedWorkSection = "No tasks were generated or executed this iteration.";
+        }
+        else
+        {
+            var succeeded = results.Where(r => r.Success && !string.IsNullOrWhiteSpace(r.Content)).ToList();
+            var failed = results.Where(r => !r.Success).ToList();
+
+            var summariesText = string.Join("\n\n", succeeded.Select((r, i) =>
+                $"- {r.Content}"));
+
+            var failureText = failed.Count > 0
+                ? $"\n\n**Failures ({failed.Count}):**\n" + string.Join("\n", failed.Select(r =>
+                    $"- {r.ErrorMessage ?? "Unknown error"}"))
+                : "";
+
+            completedWorkSection = $"{summariesText}{failureText}";
+        }
 
         var prompt = $"""
             You are the Manager agent. Iteration {_context.CurrentIteration} has completed.
@@ -793,18 +864,27 @@ public sealed class OfficeManagerService : IOfficeManagerService
             ## Objective
             {_config?.Objective}
             
-            ## Task Results
-            {resultsSummary}
+            ## Current Plan
+            {_context.ApprovedPlan}
+            
+            ## Completed Work
+            {completedWorkSection}
             
             ## Instructions
-            Synthesize these results into a coherent iteration summary.
-            Highlight key findings, any issues, and recommended next steps.
-            Be concise but thorough. Use Markdown formatting.
+            Synthesize the above into a CONCISE executive summary (max 150 words).
+            
+            CRITICAL RULES:
+            - DO NOT list individual tasks or repeat their summaries verbatim
+            - DO NOT include task IDs, durations, or internal metadata
+            - If no tasks were executed, explain what you observed and what you plan to do next
+            - Focus on INSIGHTS and PATTERNS across results
+            - Structure as bullet points: Key Findings → Issues (if any) → Next Steps
+            - Be direct and actionable — this summary is shown to end users
             """;
 
         try
         {
-            return await SendMessageWithCommentaryAsync(
+            return await SendManagerPromptAsync(
                 _managerSession, prompt,
                 CommentaryType.Aggregation, "Manager",
                 "📊 Synthesizing results...", ct).ConfigureAwait(false);
@@ -826,6 +906,7 @@ public sealed class OfficeManagerService : IOfficeManagerService
     private async Task<string> RequestClarificationAsync(string question, CancellationToken ct)
     {
         TransitionTo(ManagerPhase.Clarifying);
+        EmitActivityStatus(ActivityStatusType.ManagerClarifying, "Waiting for your response...");
 
         RaiseEvent(new ClarificationRequestedEvent
         {
@@ -978,7 +1059,7 @@ public sealed class OfficeManagerService : IOfficeManagerService
         {
             var status = result.Success ? "✅" : "❌";
             parts.Add($"{status} **Task {result.TaskId}** ({result.Duration.TotalSeconds:F1}s)");
-            parts.Add($"  {result.Summary}");
+            parts.Add($"  {result.Content}");
             parts.Add("");
         }
 
@@ -1061,6 +1142,8 @@ public sealed class OfficeManagerService : IOfficeManagerService
                 CommentaryType.SchedulingDecision => "📋",
                 CommentaryType.Aggregation => "📊",
                 CommentaryType.System => "ℹ️",
+                CommentaryType.ToolCallStarted => "🔧",
+                CommentaryType.ToolCallCompleted => "✅",
                 _ => "💭"
             }
         };
@@ -1085,6 +1168,109 @@ public sealed class OfficeManagerService : IOfficeManagerService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in event handler for {EventType}", evt.EventType);
+        }
+    }
+
+    /// <summary>
+    /// Emits an <see cref="ActivityStatusEvent"/> so the ViewModel can drive the live
+    /// activity status panel. Called at every meaningful state transition.
+    /// </summary>
+    private void EmitActivityStatus(
+        ActivityStatusType type,
+        string message,
+        IReadOnlyList<int>? activeIndices = null,
+        int totalDispatched = 0)
+    {
+        var evt = new ActivityStatusEvent
+        {
+            StatusType = type,
+            StatusMessage = message,
+            ActiveAssistantIndices = activeIndices ?? [],
+            TotalAssistantsDispatched = totalDispatched,
+            IterationNumber = _context.CurrentIteration,
+            Description = $"Activity: {message}"
+        };
+
+        _eventLog.Log(evt);
+        RaiseEvent(evt);
+    }
+
+    // ─── Private: SDK Event Subscription (Manager Tool Calls) ──
+
+    /// <summary>
+    /// Subscribes to <see cref="CopilotSdkService.SessionEventReceived"/> so the Manager
+    /// can emit tool call commentary when the LLM invokes tools (e.g., during planning,
+    /// task generation, or aggregation). Mirrors the pattern used by <see cref="AssistantAgent"/>.
+    /// </summary>
+    private void SubscribeManagerSdkEvents()
+    {
+        if (_sdkService is null || _managerSession is null)
+            return;
+
+        _sdkEventHandler = (_, args) => OnManagerSdkSessionEvent(args);
+        _sdkService.SessionEventReceived += _sdkEventHandler;
+
+        _logger.LogDebug("Manager subscribed to SDK session events for session {SessionId}",
+            _managerSession.SessionId);
+    }
+
+    /// <summary>
+    /// Unsubscribes the stored SDK event handler to prevent leaks across runs.
+    /// </summary>
+    private void UnsubscribeManagerSdkEvents()
+    {
+        if (_sdkService is not null && _sdkEventHandler is not null)
+        {
+            _sdkService.SessionEventReceived -= _sdkEventHandler;
+            _sdkEventHandler = null;
+            _logger.LogDebug("Manager unsubscribed from SDK session events");
+        }
+    }
+
+    /// <summary>
+    /// Handles SDK session events for the Manager session, extracting tool call
+    /// start/complete events via reflection (same approach as <see cref="AssistantAgent"/>)
+    /// and emitting live commentary so the user sees Manager tool usage in real time.
+    /// </summary>
+    private void OnManagerSdkSessionEvent(SdkSessionEventArgs args)
+    {
+        if (_managerSession is null || args.SessionId != _managerSession.SessionId)
+            return;
+
+        try
+        {
+            var eventTypeName = args.Event.GetType().Name;
+
+            switch (eventTypeName)
+            {
+                case "ToolExecutionStartEvent":
+                {
+                    var data = args.Event.GetType().GetProperty("Data")?.GetValue(args.Event);
+                    if (data is not null)
+                    {
+                        var toolName = data.GetType().GetProperty("ToolName")?.GetValue(data) as string ?? "unknown";
+                        EmitCommentary(CommentaryType.ToolCallStarted, "Manager", $"🔧 Calling tool: {toolName}");
+                        _logger.LogDebug("Manager tool call started: {ToolName}", toolName);
+                    }
+                    break;
+                }
+
+                case "ToolExecutionCompleteEvent":
+                {
+                    var data = args.Event.GetType().GetProperty("Data")?.GetValue(args.Event);
+                    if (data is not null)
+                    {
+                        var toolCallId = data.GetType().GetProperty("ToolCallId")?.GetValue(data) as string ?? "unknown";
+                        EmitCommentary(CommentaryType.ToolCallCompleted, "Manager", $"✅ Tool call completed ({toolCallId})");
+                        _logger.LogDebug("Manager tool call completed: {ToolCallId}", toolCallId);
+                    }
+                    break;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Error processing SDK session event for Manager tool commentary");
         }
     }
 

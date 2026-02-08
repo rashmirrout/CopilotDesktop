@@ -24,6 +24,9 @@ public sealed class AssistantPool : IAssistantPool
     /// <inheritdoc />
     public event Action<SchedulingEvent>? OnSchedulingEvent;
 
+    /// <inheritdoc />
+    public event Action<CommentaryEvent>? OnCommentaryEvent;
+
     public AssistantPool(
         ICopilotService copilotService,
         ILogger<AssistantPool> logger,
@@ -145,11 +148,40 @@ public sealed class AssistantPool : IAssistantPool
                 assistantIndex,
                 _loggerFactory.CreateLogger<AssistantAgent>());
 
-            // Wire up progress events as commentary
+            // Wire up progress events (content deltas — now correctly delta-only, not accumulated)
             agent.OnProgress += chunk =>
             {
                 RaiseAssistantEvent(task, null, assistantIndex, AssistantTaskStatus.Running,
                     $"Assistant[{assistantIndex}] progress on: {task.Title}");
+            };
+
+            // Wire up reasoning events → Live Commentary sidebar
+            agent.OnReasoningDelta += delta =>
+            {
+                RaiseCommentaryEvent(
+                    CommentaryType.AssistantProgress,
+                    $"Assistant[{assistantIndex}]",
+                    delta,
+                    task.IterationNumber);
+            };
+
+            // Wire up tool call events → Live Commentary sidebar
+            agent.OnToolCallStarted += (toolCallId, toolName) =>
+            {
+                RaiseCommentaryEvent(
+                    CommentaryType.ToolCallStarted,
+                    $"Assistant[{assistantIndex}]",
+                    $"🔧 Executing: {toolName}",
+                    task.IterationNumber);
+            };
+
+            agent.OnToolCallCompleted += toolCallId =>
+            {
+                RaiseCommentaryEvent(
+                    CommentaryType.ToolCallCompleted,
+                    $"Assistant[{assistantIndex}]",
+                    $"✅ Tool completed",
+                    task.IterationNumber);
             };
 
             var result = await agent.ExecuteAsync(task, config, taskCts.Token).ConfigureAwait(false);
@@ -195,6 +227,43 @@ public sealed class AssistantPool : IAssistantPool
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error in assistant event handler");
+        }
+    }
+
+    private void RaiseCommentaryEvent(
+        CommentaryType type,
+        string agentName,
+        string message,
+        int iterationNumber)
+    {
+        try
+        {
+            OnCommentaryEvent?.Invoke(new CommentaryEvent
+            {
+                Commentary = new LiveCommentary
+                {
+                    Type = type,
+                    AgentName = agentName,
+                    Message = message,
+                    IterationNumber = iterationNumber,
+                    Emoji = type switch
+                    {
+                        CommentaryType.AssistantProgress => "⚡",
+                        CommentaryType.AssistantStarted => "🚀",
+                        CommentaryType.AssistantCompleted => "✅",
+                        CommentaryType.AssistantError => "❌",
+                        CommentaryType.ToolCallStarted => "🔧",
+                        CommentaryType.ToolCallCompleted => "✅",
+                        _ => "💭"
+                    }
+                },
+                IterationNumber = iterationNumber,
+                Description = $"{agentName}: {message}"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error in commentary event handler");
         }
     }
 

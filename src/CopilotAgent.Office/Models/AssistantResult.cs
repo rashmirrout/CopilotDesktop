@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace CopilotAgent.Office.Models;
 
 /// <summary>
@@ -17,8 +19,11 @@ public sealed record AssistantResult
     /// <summary>The assistant's response content.</summary>
     public string Content { get; init; } = string.Empty;
 
-    /// <summary>Summary extracted from the response (first ~200 chars or explicit summary).</summary>
+    /// <summary>Summary extracted from the response.</summary>
     public string Summary { get; init; } = string.Empty;
+
+    /// <summary>Tool executions captured during the assistant's work.</summary>
+    public IReadOnlyList<ToolExecution> ToolExecutions { get; init; } = [];
 
     /// <summary>Error message if the task failed.</summary>
     public string? ErrorMessage { get; init; }

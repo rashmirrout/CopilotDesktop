@@ -64,9 +64,8 @@ public sealed record OfficeConfig
     public CommentaryStreamingMode CommentaryStreamingMode { get; init; } = CommentaryStreamingMode.CompleteThought;
 
     /// <summary>
-    /// Enabled MCP servers for assistant sessions.
-    /// null = use all from config, empty = none, non-empty = only these.
-    /// Propagated from the active session's EnabledMcpServers.
+    /// List of enabled MCP server names for assistant sessions.
+    /// null = use session defaults.
     /// </summary>
     [JsonPropertyName("enabledMcpServers")]
     public List<string>? EnabledMcpServers { get; init; }
