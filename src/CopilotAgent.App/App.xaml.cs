@@ -11,6 +11,7 @@ using CopilotAgent.App.ViewModels;
 using CopilotAgent.App.Services;
 using CopilotAgent.MultiAgent.Models;
 using CopilotAgent.MultiAgent.Services;
+using CopilotAgent.Office.Services;
 
 namespace CopilotAgent.App;
 
@@ -116,6 +117,11 @@ public partial class App : Application
 
                     services.AddSingleton<IAgentPool, AgentPool>();
                     services.AddSingleton<IOrchestratorService, OrchestratorService>();
+
+                    // Agent Office Services
+                    services.AddSingleton<IOfficeManagerService, OfficeManagerService>();
+                    services.AddSingleton<IOfficeEventLog, OfficeEventLog>();
+                    services.AddSingleton<IIterationScheduler, IterationScheduler>();
                     
                     // Browser Automation Service (for OAuth/SAML authentication)
                     services.AddSingleton<IBrowserAutomationService>(sp =>
@@ -139,6 +145,7 @@ public partial class App : Application
                     services.AddTransient<SessionInfoViewModel>();
                     services.AddTransient<AddSkillDialogViewModel>();
                     services.AddTransient<AgentTeamViewModel>();
+                    services.AddTransient<OfficeViewModel>();
 
                     // Main Window
                     services.AddSingleton<MainWindow>();

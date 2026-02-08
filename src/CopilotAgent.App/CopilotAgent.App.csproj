@@ -61,6 +61,7 @@
     <ProjectReference Include="..\CopilotAgent.Core\CopilotAgent.Core.csproj" />
     <ProjectReference Include="..\CopilotAgent.Persistence\CopilotAgent.Persistence.csproj" />
     <ProjectReference Include="..\CopilotAgent.MultiAgent\CopilotAgent.MultiAgent.csproj" />
+    <ProjectReference Include="..\CopilotAgent.Office\CopilotAgent.Office.csproj" />
   </ItemGroup>
 
   <ItemGroup>

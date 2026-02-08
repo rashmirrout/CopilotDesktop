@@ -25,6 +25,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\CopilotAgent.Core\CopilotAgent.Core.csproj" />
+    <ProjectReference Include="..\..\src\CopilotAgent.Office\CopilotAgent.Office.csproj" />
     <ProjectReference Include="..\..\src\CopilotAgent.Persistence\CopilotAgent.Persistence.csproj" />
   </ItemGroup>
 

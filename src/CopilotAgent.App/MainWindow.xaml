@@ -227,6 +227,27 @@
                             </Style>
                         </Button.Style>
                     </Button>
+                    <Button Command="{Binding ShowOfficeViewCommand}"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Padding="10,6"
+                            FontSize="12"
+                            Cursor="Hand"
+                            ToolTip="Agent Office (Long-Running Manager + Assistants)">
+                        <StackPanel Orientation="Horizontal">
+                            <emoji:TextBlock Text="🏢" FontSize="14" Margin="0,0,4,0"/>
+                            <TextBlock Text="Office" VerticalAlignment="Center" Foreground="#424242"/>
+                        </StackPanel>
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#E0E0E0"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
                     <Button Command="{Binding ShowSettingsCommand}"
                             Background="Transparent"
                             BorderThickness="0"
@@ -260,6 +281,9 @@
                             <Setter Property="Visibility" Value="Collapsed"/>
                         </DataTrigger>
                         <DataTrigger Binding="{Binding DataContext.ShowAgentTeam, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding DataContext.ShowOffice, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
                             <Setter Property="Visibility" Value="Collapsed"/>
                         </DataTrigger>
                     </Style.Triggers>
@@ -310,6 +334,51 @@
             </Border>
             <views:AgentTeamView Grid.Row="1" 
                                  DataContext="{Binding AgentTeamViewModel}"/>
+        </Grid>
+
+        <!-- Agent Office View (visible when ShowOffice is true) -->
+        <Grid Grid.Row="1">
+            <Grid.Style>
+                <Style TargetType="Grid">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding ShowOffice}" Value="True">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Grid.Style>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <!-- Back to Chat button -->
+            <Border Grid.Row="0" Background="#E8F5E9" Padding="8,4"
+                    BorderBrush="#C8E6C9" BorderThickness="0,0,0,1">
+                <StackPanel Orientation="Horizontal">
+                    <Button Content="← Back to Chat" 
+                            Command="{Binding ShowChatCommand}"
+                            Background="Transparent" BorderThickness="0"
+                            Foreground="#2E7D32" FontSize="12" Cursor="Hand"
+                            Padding="8,4">
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Style.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="#C8E6C9"/>
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <TextBlock Text="Agent Office — Long-Running Orchestration" 
+                               FontSize="12" FontWeight="SemiBold"
+                               Foreground="#2E7D32" VerticalAlignment="Center"
+                               Margin="8,0,0,0"/>
+                </StackPanel>
+            </Border>
+            <views:OfficeView Grid.Row="1" 
+                              DataContext="{Binding OfficeViewModel}"/>
         </Grid>
 
         <!-- No Session Placeholder -->
