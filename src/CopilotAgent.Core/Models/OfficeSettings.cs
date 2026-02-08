@@ -43,6 +43,10 @@ public class OfficeSettings
     [JsonPropertyName("defaultRequirePlanApproval")]
     public bool DefaultRequirePlanApproval { get; set; } = true;
 
+    /// <summary>Default workspace path for assistant work. Empty means use active session's working directory.</summary>
+    [JsonPropertyName("defaultWorkspacePath")]
+    public string DefaultWorkspacePath { get; set; } = string.Empty;
+
     /// <summary>Maximum number of live commentary entries to keep in memory.</summary>
     [JsonPropertyName("maxCommentaryEntries")]
     public int MaxCommentaryEntries { get; set; } = 200;

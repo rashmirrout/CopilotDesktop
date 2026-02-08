@@ -81,10 +81,13 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
         // Load all settings from persisted defaults
         LoadSettingsFromPersistence();
 
-        // Initialize workspace from active session
-        var active = _sessionManager.ActiveSession;
-        _workspacePath = active?.WorkingDirectory
-            ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        // Only fall back to active session path when no persisted workspace path exists
+        if (string.IsNullOrWhiteSpace(_workspacePath))
+        {
+            var active = _sessionManager.ActiveSession;
+            _workspacePath = active?.WorkingDirectory
+                ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        }
 
         // Capture initial snapshot for dirty tracking
         _persistedSnapshot = CaptureCurrentSnapshot();
@@ -181,6 +184,7 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
 
     [ObservableProperty]
     private string _workspacePath = string.Empty;
+    partial void OnWorkspacePathChanged(string value) => RecalculateDirtyState();
 
     [ObservableProperty]
     private string _selectedManagerModel = "gpt-4";
@@ -554,6 +558,7 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
             office.DefaultCommentaryStreamingMode = IsStreamingTokens
                 ? "StreamingTokens"
                 : "CompleteThought";
+            office.DefaultWorkspacePath = WorkspacePath;
 
             // Persist to disk
             await _persistenceService.SaveSettingsAsync(_appSettings);
@@ -619,6 +624,7 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
             office.DefaultCommentaryStreamingMode,
             "StreamingTokens",
             StringComparison.OrdinalIgnoreCase);
+        WorkspacePath = office.DefaultWorkspacePath;
     }
 
     /// <summary>
@@ -637,6 +643,7 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
         MaxQueueDepth = snapshot.MaxQueueDepth;
         RequirePlanApproval = snapshot.RequirePlanApproval;
         IsStreamingTokens = snapshot.IsStreamingTokens;
+        WorkspacePath = snapshot.WorkspacePath;
     }
 
     /// <summary>
@@ -652,7 +659,8 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
         MaxRetries,
         MaxQueueDepth,
         RequirePlanApproval,
-        IsStreamingTokens);
+        IsStreamingTokens,
+        WorkspacePath);
 
     /// <summary>
     /// Compares current UI values against the persisted snapshot and updates
@@ -683,6 +691,7 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
         if (current.MaxQueueDepth != _persistedSnapshot.MaxQueueDepth) count++;
         if (current.RequirePlanApproval != _persistedSnapshot.RequirePlanApproval) count++;
         if (current.IsStreamingTokens != _persistedSnapshot.IsStreamingTokens) count++;
+        if (!string.Equals(current.WorkspacePath, _persistedSnapshot.WorkspacePath, StringComparison.Ordinal)) count++;
 
         PendingChangesCount = count;
         HasPendingChanges = count > 0;
@@ -701,7 +710,8 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
         int MaxRetries,
         int MaxQueueDepth,
         bool RequirePlanApproval,
-        bool IsStreamingTokens);
+        bool IsStreamingTokens,
+        string WorkspacePath);
 
     // ══════════════════════════════════════════════════════════════
     // Model Cache
