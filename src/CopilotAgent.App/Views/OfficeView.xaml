@@ -505,38 +505,76 @@
                         </Grid.ColumnDefinitions>
 
                         <!-- Objective input (when NOT running) -->
-                        <TextBox Grid.Column="0"
-                                 x:Name="ObjectiveTextBox"
-                                 Text="{Binding ObjectiveInput, UpdateSourceTrigger=PropertyChanged}"
-                                 Padding="10,8" FontSize="13"
-                                 BorderBrush="#BDBDBD" BorderThickness="1"
-                                 ToolTip="Enter your objective for the Agent Office"
-                                 AcceptsReturn="False"
-                                 KeyDown="ObjectiveInput_KeyDown"
-                                 Visibility="{Binding IsRunning, Converter={StaticResource InverseBoolToVis}}"/>
+                        <Grid Grid.Column="0"
+                              Visibility="{Binding IsRunning, Converter={StaticResource InverseBoolToVis}}">
+                            <TextBox x:Name="ObjectiveTextBox"
+                                     Text="{Binding ObjectiveInput, UpdateSourceTrigger=PropertyChanged}"
+                                     Padding="10,8" FontSize="13"
+                                     BorderBrush="#BDBDBD" BorderThickness="1"
+                                     ToolTip="Enter your objective for the Agent Office"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     MaxHeight="100"
+                                     VerticalScrollBarVisibility="Auto"
+                                     PreviewKeyDown="ObjectiveInput_PreviewKeyDown"/>
+                            <TextBlock Text="&#x25B6; Enter to start &amp; Shift+Enter to add new line.."
+                                       FontSize="12" Foreground="#9E9E9E" FontStyle="Italic"
+                                       IsHitTestVisible="False" Padding="12,10,0,0"
+                                       VerticalAlignment="Top" HorizontalAlignment="Left">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text, ElementName=ObjectiveTextBox}" Value="">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
 
                         <!-- Message input (when running) -->
-                        <TextBox Grid.Column="0"
-                                 x:Name="MessageTextBox"
-                                 Text="{Binding MessageInput, UpdateSourceTrigger=PropertyChanged}"
-                                 Padding="10,8" FontSize="13"
-                                 AcceptsReturn="False"
-                                 KeyDown="MessageInput_KeyDown"
-                                 Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}"
-                                 ToolTip="Send instructions or respond to clarification">
-                            <TextBox.Style>
-                                <Style TargetType="TextBox">
-                                    <Setter Property="BorderBrush" Value="#BDBDBD"/>
-                                    <Setter Property="BorderThickness" Value="1"/>
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsWaitingForClarification}" Value="True">
-                                            <Setter Property="BorderBrush" Value="#FFA726"/>
-                                            <Setter Property="BorderThickness" Value="2"/>
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBox.Style>
-                        </TextBox>
+                        <Grid Grid.Column="0"
+                              Visibility="{Binding IsRunning, Converter={StaticResource BoolToVis}}">
+                            <TextBox x:Name="MessageTextBox"
+                                     Text="{Binding MessageInput, UpdateSourceTrigger=PropertyChanged}"
+                                     Padding="10,8" FontSize="13"
+                                     AcceptsReturn="True"
+                                     TextWrapping="Wrap"
+                                     MaxHeight="100"
+                                     VerticalScrollBarVisibility="Auto"
+                                     PreviewKeyDown="MessageInput_PreviewKeyDown"
+                                     ToolTip="Send instructions or respond to clarification">
+                                <TextBox.Style>
+                                    <Style TargetType="TextBox">
+                                        <Setter Property="BorderBrush" Value="#BDBDBD"/>
+                                        <Setter Property="BorderThickness" Value="1"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsWaitingForClarification}" Value="True">
+                                                <Setter Property="BorderBrush" Value="#FFA726"/>
+                                                <Setter Property="BorderThickness" Value="2"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBox.Style>
+                            </TextBox>
+                            <TextBlock Text="&#x25B6; Enter to send &amp; Shift+Enter to add new line.."
+                                       FontSize="12" Foreground="#9E9E9E" FontStyle="Italic"
+                                       IsHitTestVisible="False" Padding="12,10,0,0"
+                                       VerticalAlignment="Top" HorizontalAlignment="Left">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Visibility" Value="Collapsed"/>
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Text, ElementName=MessageTextBox}" Value="">
+                                                <Setter Property="Visibility" Value="Visible"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Grid>
 
                         <!-- Start button (when not running) -->
                         <Button Grid.Column="1" Margin="8,0,0,0"

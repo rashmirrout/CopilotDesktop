@@ -638,31 +638,52 @@
                         <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
 
-                    <TextBox x:Name="MessageInput"
-                             Grid.Column="0"
-                             MinHeight="48"
-                             MaxHeight="120"
-                             Padding="12"
-                             FontSize="14"
-                             TextWrapping="Wrap"
-                             AcceptsReturn="True"
-                             VerticalScrollBarVisibility="Auto"
-                             BorderBrush="#BDBDBD"
-                             BorderThickness="1"
-                             Text="{Binding MessageInput, UpdateSourceTrigger=PropertyChanged}"
-                             PreviewKeyDown="MessageInput_PreviewKeyDown">
-                        <TextBox.Style>
-                            <Style TargetType="TextBox">
-                                <Setter Property="Background" Value="White"/>
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsBusy}" Value="True">
-                                        <Setter Property="IsEnabled" Value="False"/>
-                                        <Setter Property="Background" Value="#E0E0E0"/>
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBox.Style>
-                    </TextBox>
+                    <Grid Grid.Column="0">
+                        <TextBox x:Name="MessageInput"
+                                 MinHeight="48"
+                                 MaxHeight="120"
+                                 Padding="12"
+                                 FontSize="14"
+                                 TextWrapping="Wrap"
+                                 AcceptsReturn="True"
+                                 VerticalScrollBarVisibility="Auto"
+                                 BorderBrush="#BDBDBD"
+                                 BorderThickness="1"
+                                 Text="{Binding MessageInput, UpdateSourceTrigger=PropertyChanged}"
+                                 PreviewKeyDown="MessageInput_PreviewKeyDown">
+                            <TextBox.Style>
+                                <Style TargetType="TextBox">
+                                    <Setter Property="Background" Value="White"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsBusy}" Value="True">
+                                            <Setter Property="IsEnabled" Value="False"/>
+                                            <Setter Property="Background" Value="#E0E0E0"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBox.Style>
+                        </TextBox>
+                        <!-- Watermark / Placeholder -->
+                        <TextBlock Text="&#x25B6; Enter to send &amp; Shift+Enter to add new line.."
+                                   FontSize="13"
+                                   Foreground="#9E9E9E"
+                                   FontStyle="Italic"
+                                   IsHitTestVisible="False"
+                                   Padding="14,14,0,0"
+                                   VerticalAlignment="Top"
+                                   HorizontalAlignment="Left">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Text, ElementName=MessageInput}" Value="">
+                                            <Setter Property="Visibility" Value="Visible"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
 
                     <!-- Send Button - visible when not busy -->
                     <Button x:Name="SendButton"
@@ -750,7 +771,7 @@
                 <!-- Status Text / Processing Indicator -->
                 <StackPanel Grid.Row="1" Margin="0,8,0,0">
                     <TextBlock x:Name="StatusText"
-                               Text="Ctrl+Enter to send" 
+                               Text="Enter to send · Shift+Enter for new line" 
                                FontSize="11" 
                                Foreground="#757575">
                         <TextBlock.Style>

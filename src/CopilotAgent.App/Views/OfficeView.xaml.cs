@@ -142,26 +142,26 @@ public partial class OfficeView : UserControl
         }
     }
 
-    private void ObjectiveInput_KeyDown(object sender, KeyEventArgs e)
+    private void ObjectiveInput_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
         {
+            e.Handled = true;
             if (DataContext is OfficeViewModel vm && vm.StartCommand.CanExecute(null))
             {
                 vm.StartCommand.Execute(null);
-                e.Handled = true;
             }
         }
     }
 
-    private void MessageInput_KeyDown(object sender, KeyEventArgs e)
+    private void MessageInput_PreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Enter && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
         {
+            e.Handled = true;
             if (DataContext is OfficeViewModel vm && vm.SendMessageCommand.CanExecute(null))
             {
                 vm.SendMessageCommand.Execute(null);
-                e.Handled = true;
             }
         }
     }
