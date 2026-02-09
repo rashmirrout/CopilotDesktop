@@ -441,6 +441,14 @@ public sealed class OfficeManagerService : IOfficeManagerService
         }
 
         _iterationLoopTask = Task.Run(() => RunIterationLoopAsync(_runCts!.Token));
+
+        // Observe faults immediately so they are logged even if StopAsync never awaits the task.
+        // Without this, the exception would only surface later via TaskScheduler.UnobservedTaskException.
+        _iterationLoopTask.ContinueWith(
+            t => _logger.LogCritical(t.Exception,
+                "[OFFICE_CRASH] Iteration loop task faulted with unhandled exception"),
+            TaskContinuationOptions.OnlyOnFaulted);
+
         return Task.CompletedTask;
     }
 

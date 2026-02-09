@@ -45,6 +45,78 @@ public partial class App : Application
                 retainedFileCountLimit: 7)
             .CreateLogger();
 
+        // ── Global exception handlers ────────────────────────────
+        // These catch any unhandled exception that would otherwise silently kill the process.
+
+        // 1. UI thread exceptions (WPF dispatcher)
+        DispatcherUnhandledException += (sender, args) =>
+        {
+            // Classify the exception: some WPF framework bugs are benign and
+            // should NOT kill the app — just log and swallow.
+            var isBenignWpfBug = args.Exception is InvalidOperationException ioe
+                && (ioe.Message.Contains("is not a Visual or Visual3D", StringComparison.OrdinalIgnoreCase)
+                    || ioe.Message.Contains("This Visual is not connected to a PresentationSource", StringComparison.OrdinalIgnoreCase));
+
+            if (isBenignWpfBug)
+            {
+                Log.Warning(args.Exception,
+                    "[WPF_BUG] Known benign WPF framework exception (swallowed): {Message}",
+                    args.Exception.Message);
+                args.Handled = true;
+                return; // Do NOT crash the app
+            }
+
+            Log.Fatal(args.Exception,
+                "[CRASH] Unhandled exception on UI thread: {Message}",
+                args.Exception.Message);
+            WriteCrashLog(args.Exception, "DispatcherUnhandledException", logsPath);
+
+            // Mark handled to prevent immediate process termination —
+            // gives Serilog time to flush. The app may be in a bad state,
+            // so we still shut down gracefully.
+            args.Handled = true;
+
+            try
+            {
+                MessageBox.Show(
+                    $"An unexpected error occurred:\n\n{args.Exception.Message}\n\nThe application will close. A crash log has been saved.",
+                    "Copilot Agent — Fatal Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+            catch { /* UI may already be broken */ }
+
+            Log.CloseAndFlush();
+            Environment.Exit(1);
+        };
+
+        // 2. Background thread / async task exceptions that were never observed
+        TaskScheduler.UnobservedTaskException += (sender, args) =>
+        {
+            Log.Error(args.Exception,
+                "[UNOBSERVED_TASK] Unobserved task exception (NOT crashing): {Message}",
+                args.Exception?.InnerException?.Message ?? args.Exception?.Message);
+            WriteCrashLog(args.Exception?.Flatten() ?? args.Exception!, "UnobservedTaskException", logsPath);
+
+            // Observe it to prevent process termination.
+            // This is deliberately non-fatal: unobserved tasks are often
+            // fire-and-forget background work that shouldn't kill the app.
+            args.SetObserved();
+        };
+
+        // 3. Any other unhandled exception (native, finalizer, etc.)
+        AppDomain.CurrentDomain.UnhandledException += (sender, args) =>
+        {
+            var ex = args.ExceptionObject as Exception;
+            Log.Fatal(ex,
+                "[CRASH] AppDomain unhandled exception (isTerminating={IsTerminating}): {Message}",
+                args.IsTerminating,
+                ex?.Message ?? args.ExceptionObject?.ToString());
+            WriteCrashLog(ex ?? new Exception(args.ExceptionObject?.ToString() ?? "Unknown"),
+                "AppDomainUnhandledException", logsPath);
+            Log.CloseAndFlush();
+        };
+
         try
         {
             // Pre-load settings to avoid deadlock during DI resolution
@@ -213,6 +285,36 @@ public partial class App : Application
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             Shutdown();
+        }
+    }
+
+    /// <summary>
+    /// Writes exception details to a dedicated crash log file using synchronous I/O.
+    /// This is intentionally independent of Serilog so it works even if the logging
+    /// pipeline is broken or hasn't flushed yet.
+    /// </summary>
+    private static void WriteCrashLog(Exception ex, string source, string logsPath)
+    {
+        try
+        {
+            var crashFile = Path.Combine(logsPath, "crash-log.txt");
+            var entry = $"""
+                ────────────────────────────────────────
+                Timestamp : {DateTime.UtcNow:O}
+                Source    : {source}
+                Type      : {ex.GetType().FullName}
+                Message   : {ex.Message}
+                Stack     :
+                {ex.StackTrace}
+                Inner     : {ex.InnerException?.Message ?? "(none)"}
+                ────────────────────────────────────────
+
+                """;
+            File.AppendAllText(crashFile, entry);
+        }
+        catch
+        {
+            // Never throw from the crash logger itself.
         }
     }
 
