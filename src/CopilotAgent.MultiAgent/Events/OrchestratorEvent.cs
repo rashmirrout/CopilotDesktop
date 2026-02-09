@@ -10,6 +10,13 @@ public class OrchestratorEvent
     public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
     public OrchestratorEventType EventType { get; set; }
     public string Message { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional correlation ID linking this event to the command that triggered it.
+    /// When set, the UI can distinguish "expected" phase transitions (caused by a user command)
+    /// from "external" transitions (timeouts, cancellations, etc.).
+    /// </summary>
+    public string? CorrelationId { get; set; }
 }
 
 /// <summary>
@@ -43,7 +50,13 @@ public enum OrchestratorEventType
     InjectionProcessed,
     PhaseChanged,
     ApprovalRequested,
-    ApprovalResolved
+    ApprovalResolved,
+
+    /// <summary>Emitted when the orchestrator acknowledges receipt of a user's clarification response.</summary>
+    ClarificationReceived,
+
+    /// <summary>Emitted when the orchestrator begins processing the clarification (LLM call in progress).</summary>
+    ClarificationProcessing
 }
 
 /// <summary>
@@ -72,4 +85,25 @@ public sealed class OrchestrationCompletedEvent : OrchestratorEvent
 {
     public ConsolidatedReport? Report { get; set; }
     public bool WasAborted { get; set; }
+}
+
+/// <summary>
+/// Rich phase transition event carrying both the source and target phases,
+/// along with the reason for the transition and correlation context.
+/// This allows the UI to make informed decisions about whether to auto-dismiss
+/// panels or treat the transition as an expected consequence of a user command.
+/// </summary>
+public sealed class PhaseTransitionEvent : OrchestratorEvent
+{
+    /// <summary>Phase the orchestrator transitioned FROM.</summary>
+    public OrchestrationPhase FromPhase { get; set; }
+
+    /// <summary>Phase the orchestrator transitioned TO.</summary>
+    public OrchestrationPhase ToPhase { get; set; }
+
+    /// <summary>
+    /// Human-readable reason for the transition (e.g., "UserSubmittedClarification",
+    /// "PlanCreated", "UserCancelled"). Useful for logging and debugging.
+    /// </summary>
+    public string Reason { get; set; } = string.Empty;
 }

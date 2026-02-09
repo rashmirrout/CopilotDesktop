@@ -99,6 +99,11 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
         {
             await EnsureOrchestratorSessionAsync(config, _cts.Token).ConfigureAwait(false);
 
+            // Persist the original, unmodified task prompt so we can enrich it
+            // with clarification context later (the evaluation prompt wrapper
+            // would pollute ConversationHistory's first User entry).
+            _context.OriginalTaskPrompt = taskPrompt;
+
             await LogAsync(null, null, OrchestrationLogLevel.Info, "Orchestrator",
                 $"Task submitted: {Truncate(taskPrompt, 200)}",
                 OrchestratorEventType.OrchestratorCommentary).ConfigureAwait(false);
@@ -159,13 +164,27 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
             throw new InvalidOperationException($"Cannot respond to clarification in phase {_currentPhase}.");
         }
 
-        _logger.LogInformation("Clarification response received ({Len} chars)", userResponse.Length);
+        // Generate a correlation ID for this entire clarification → planning flow.
+        // The UI uses this to distinguish "expected" phase transitions (caused by our Send)
+        // from "external" transitions (timeouts, cancellations, etc.).
+        var correlationId = $"clarify-{Guid.NewGuid():N}";
+
+        _logger.LogInformation("Clarification response received ({Len} chars), correlationId={CorrelationId}",
+            userResponse.Length, correlationId);
+
+        // Emit acknowledgment IMMEDIATELY so the UI knows we received the user's input.
+        EmitCorrelatedEvent(OrchestratorEventType.ClarificationReceived,
+            "Clarification received. Analyzing your response...", correlationId);
 
         var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, _cts?.Token ?? CancellationToken.None);
 
         try
         {
+            // Emit processing event — the UI can show "Processing..." feedback.
+            EmitCorrelatedEvent(OrchestratorEventType.ClarificationProcessing,
+                "Sending your response to the orchestrator...", correlationId);
+
             // Send user's clarification response to orchestrator LLM
             var llmResponse = await SendToOrchestratorLlmAsync(userResponse, linkedCts.Token)
                 .ConfigureAwait(false);
@@ -184,15 +203,21 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
                 };
             }
 
-            // Ready to plan — use the original task from conversation context
-            var taskDescription = _context.ConversationHistory
-                .FirstOrDefault(m => m.Role == MessageRole.User)?.Content ?? userResponse;
+            // Build an enriched task description that combines the original user task
+            // with the clarification Q&A. This ensures the task decomposer has full
+            // context — the raw task alone would ignore the user's clarification answers.
+            var enrichedTask = BuildEnrichedTaskDescription(userResponse);
 
-            return await PlanTaskAsync(taskDescription, linkedCts.Token).ConfigureAwait(false);
+            _logger.LogDebug("Enriched task for planning ({Len} chars): {Preview}",
+                enrichedTask.Length, Truncate(enrichedTask, 200));
+
+            // Pass the correlationId through PlanTaskAsync so all downstream phase
+            // transitions are tagged as consequences of the user's clarification.
+            return await PlanTaskAsync(enrichedTask, linkedCts.Token, correlationId).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            TransitionTo(OrchestrationPhase.Cancelled);
+            TransitionTo(OrchestrationPhase.Cancelled, "UserCancelled", correlationId);
             _isRunning = false;
             return CancelledResponse();
         }
@@ -377,20 +402,42 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
 
     // ── Private: State machine transitions ──────────────────────
 
-    private void TransitionTo(OrchestrationPhase newPhase)
+    private void TransitionTo(OrchestrationPhase newPhase, string reason = "", string? correlationId = null)
     {
         var oldPhase = _currentPhase;
         _currentPhase = newPhase;
 
-        _logger.LogInformation("Phase transition: {OldPhase} → {NewPhase}", oldPhase, newPhase);
-        EmitEvent(OrchestratorEventType.PhaseChanged, $"{oldPhase} → {newPhase}");
+        _logger.LogInformation("Phase transition: {OldPhase} → {NewPhase} (reason={Reason}, correlationId={CorrelationId})",
+            oldPhase, newPhase, reason, correlationId ?? "(none)");
+
+        EventReceived?.Invoke(this, new PhaseTransitionEvent
+        {
+            EventType = OrchestratorEventType.PhaseChanged,
+            Message = $"{oldPhase} → {newPhase}",
+            TimestampUtc = DateTime.UtcNow,
+            FromPhase = oldPhase,
+            ToPhase = newPhase,
+            Reason = reason,
+            CorrelationId = correlationId
+        });
     }
 
     // ── Private: Planning ───────────────────────────────────────
 
-    private async Task<OrchestratorResponse> PlanTaskAsync(string taskDescription, CancellationToken ct)
+    /// <summary>
+    /// Overload that carries a correlation ID through all downstream phase transitions,
+    /// allowing the UI to recognize these transitions as consequences of a prior user command
+    /// (e.g., the user's clarification response triggering Planning → AwaitingApproval).
+    /// </summary>
+    private Task<OrchestratorResponse> PlanTaskAsync(string taskDescription, CancellationToken ct, string correlationId)
+        => PlanTaskAsyncCore(taskDescription, ct, correlationId);
+
+    private Task<OrchestratorResponse> PlanTaskAsync(string taskDescription, CancellationToken ct)
+        => PlanTaskAsyncCore(taskDescription, ct, correlationId: null);
+
+    private async Task<OrchestratorResponse> PlanTaskAsyncCore(string taskDescription, CancellationToken ct, string? correlationId)
     {
-        TransitionTo(OrchestrationPhase.Planning);
+        TransitionTo(OrchestrationPhase.Planning, "PlanRequested", correlationId);
 
         await LogAsync(null, null, OrchestrationLogLevel.Info, "Orchestrator",
             "Decomposing task into work chunks...",
@@ -423,7 +470,7 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
             $"Plan created: {plan.Chunks.Count} chunks, summary: {Truncate(plan.PlanSummary, 200)}",
             OrchestratorEventType.PlanCreated, ct).ConfigureAwait(false);
 
-        TransitionTo(OrchestrationPhase.AwaitingApproval);
+        TransitionTo(OrchestrationPhase.AwaitingApproval, "PlanCreated", correlationId);
 
         return new OrchestratorResponse
         {
@@ -743,6 +790,129 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
         EmitEvent(OrchestratorEventType.OrchestratorCommentary, "🔄 Orchestrator session recreated.");
     }
 
+    // ── Private: Task context enrichment ────────────────────────
+
+    /// <summary>
+    /// Builds an enriched task description by combining the original user task
+    /// with the clarification Q&A from conversation history.
+    /// 
+    /// The conversation history at this point contains:
+    ///   [0] User   → evaluation prompt (wrapped original task)
+    ///   [1] Assistant → clarification questions (JSON: {"action":"clarify",...})
+    ///   [2] User   → user's clarification response
+    ///   [3] Assistant → LLM reply (JSON: {"action":"proceed"} or more questions)
+    ///   ... (may repeat for multiple clarification rounds)
+    ///
+    /// We extract the clarification exchanges and append them to the original task
+    /// so the task decomposer has full context.
+    /// </summary>
+    private string BuildEnrichedTaskDescription(string latestClarificationResponse)
+    {
+        var originalTask = _context.OriginalTaskPrompt;
+
+        // Safety: if original task was never stored, fall back to first user message
+        // (which may be the evaluation-wrapped prompt — better than nothing).
+        if (string.IsNullOrWhiteSpace(originalTask))
+        {
+            originalTask = _context.ConversationHistory
+                .FirstOrDefault(m => m.Role == MessageRole.User)?.Content ?? latestClarificationResponse;
+            _logger.LogWarning("OriginalTaskPrompt was empty — falling back to first conversation entry.");
+        }
+
+        // Extract clarification exchanges from history.
+        // Skip the first User+Assistant pair (evaluation prompt + clarify response),
+        // then collect all subsequent User/Assistant pairs as clarification rounds.
+        var history = _context.ConversationHistory;
+        var clarificationPairs = new List<(string Question, string Answer)>();
+
+        // Walk history starting from index 1 (first assistant response = clarification questions)
+        // to find clarification rounds.
+        for (var i = 1; i < history.Count - 1; i += 2)
+        {
+            if (history[i].Role == MessageRole.Assistant && i + 1 < history.Count
+                && history[i + 1].Role == MessageRole.User)
+            {
+                var assistantMsg = history[i].Content ?? "";
+                var userMsg = history[i + 1].Content ?? "";
+
+                // Only include if the assistant message was a clarification request
+                // (contains "clarify" action or question-like content)
+                if (!string.IsNullOrWhiteSpace(userMsg))
+                {
+                    clarificationPairs.Add((
+                        Question: ExtractQuestionsDisplay(assistantMsg),
+                        Answer: userMsg
+                    ));
+                }
+            }
+        }
+
+        // If no clarification pairs were found, just return the original task
+        // enriched with the latest response
+        if (clarificationPairs.Count == 0)
+        {
+            _logger.LogDebug("No clarification pairs found in history — using original task + latest response.");
+            return $"{originalTask}\n\nAdditional context from user:\n{latestClarificationResponse}";
+        }
+
+        // Build the enriched description
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("## Original Task");
+        sb.AppendLine(originalTask);
+        sb.AppendLine();
+        sb.AppendLine("## Clarifications Provided");
+
+        for (var i = 0; i < clarificationPairs.Count; i++)
+        {
+            var (question, answer) = clarificationPairs[i];
+            sb.AppendLine($"### Round {i + 1}");
+            sb.AppendLine($"**Questions asked:** {Truncate(question, 500)}");
+            sb.AppendLine($"**User's response:** {answer}");
+            sb.AppendLine();
+        }
+
+        var result = sb.ToString();
+        _logger.LogInformation("Built enriched task: {ClarificationRounds} clarification round(s), total {Len} chars.",
+            clarificationPairs.Count, result.Length);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Extracts a human-readable summary of questions from an LLM clarification response.
+    /// Tries to parse JSON {"action":"clarify","questions":[...]} first, falls back to raw text.
+    /// </summary>
+    private static string ExtractQuestionsDisplay(string assistantMessage)
+    {
+        try
+        {
+            var jsonStart = assistantMessage.IndexOf('{');
+            var jsonEnd = assistantMessage.LastIndexOf('}');
+            if (jsonStart >= 0 && jsonEnd > jsonStart)
+            {
+                var json = assistantMessage[jsonStart..(jsonEnd + 1)];
+                using var doc = JsonDocument.Parse(json);
+                if (doc.RootElement.TryGetProperty("questions", out var qProp))
+                {
+                    var questions = qProp.EnumerateArray()
+                        .Select(q => q.GetString() ?? "")
+                        .Where(q => !string.IsNullOrWhiteSpace(q))
+                        .ToList();
+                    if (questions.Count > 0)
+                    {
+                        return string.Join("; ", questions);
+                    }
+                }
+            }
+        }
+        catch (JsonException)
+        {
+            // Not valid JSON — fall through to raw text
+        }
+
+        return assistantMessage;
+    }
+
     // ── Private: LLM response parsing ───────────────────────────
 
     private static string BuildEvaluationPrompt(string taskPrompt)
@@ -947,6 +1117,21 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
             EventType = eventType,
             Message = message,
             TimestampUtc = DateTime.UtcNow
+        });
+    }
+
+    /// <summary>
+    /// Emits an event tagged with a correlation ID so the UI can associate it
+    /// with the user command that triggered this flow.
+    /// </summary>
+    private void EmitCorrelatedEvent(OrchestratorEventType eventType, string message, string correlationId)
+    {
+        EventReceived?.Invoke(this, new OrchestratorEvent
+        {
+            EventType = eventType,
+            Message = message,
+            TimestampUtc = DateTime.UtcNow,
+            CorrelationId = correlationId
         });
     }
 

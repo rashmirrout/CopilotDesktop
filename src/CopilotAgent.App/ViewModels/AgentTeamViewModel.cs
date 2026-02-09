@@ -45,6 +45,16 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     /// </summary>
     private bool _isAwaitingInitialResponse;
 
+    /// <summary>
+    /// Correlation ID for the active clarification → planning flow.
+    /// Set when the user clicks Send on the clarification panel.
+    /// Phase transition events carrying this ID are treated as "expected"
+    /// (caused by the user's Send action) and will NOT trigger auto-dismissal
+    /// of the clarification panel. Cleared when HandleOrchestratorResponse
+    /// processes the response or when the flow completes/fails.
+    /// </summary>
+    private string? _activeClarificationCorrelationId;
+
     public AgentTeamViewModel(
         IOrchestratorService orchestrator,
         ICopilotService copilotService,
@@ -323,22 +333,36 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     {
         if (string.IsNullOrWhiteSpace(ClarificationResponse)) return;
 
-        _logger.LogInformation("[AgentTeamVM] Responding to clarification.");
+        var userText = ClarificationResponse;
+        _logger.LogInformation("[AgentTeamVM] Responding to clarification ({Len} chars).", userText.Length);
+
+        // ── Immediate visual feedback ──
+        // Hide the clarification input panel and show "Sending..." state so the user
+        // knows their response was received. The backend will emit ClarificationReceived
+        // and ClarificationProcessing events with a correlation ID that we track to
+        // prevent the auto-dismissal logic from showing a misleading error.
+        ShowClarification = false;
+        ClarifyingQuestions.Clear();
+        ClarificationResponse = string.Empty;
+        OrchestratorMessage = "📤 Sending your clarification response...";
+        CurrentPhaseDisplay = "Processing";
+        CurrentPhaseColor = GetPhaseColor(OrchestrationPhase.Planning);
+        AddEvent($"[{DateTime.UtcNow:HH:mm:ss}] 📤 Clarification response sent.");
+
         try
         {
             var response = await _orchestrator.RespondToClarificationAsync(
-                ClarificationResponse, _cts?.Token ?? CancellationToken.None);
-            ClarificationResponse = string.Empty;
+                userText, _cts?.Token ?? CancellationToken.None);
+
+            // Clear the correlation guard — HandleOrchestratorResponse owns the UI now.
+            _activeClarificationCorrelationId = null;
             HandleOrchestratorResponse(response);
         }
         catch (InvalidOperationException iex) when (iex.Message.Contains("Cannot respond to clarification", StringComparison.OrdinalIgnoreCase))
         {
             // Backend phase moved away from Clarifying before user submitted response.
-            // Gracefully dismiss the clarification panel and inform the user.
+            _activeClarificationCorrelationId = null;
             _logger.LogWarning(iex, "[AgentTeamVM] Clarification response rejected — phase already changed.");
-            ShowClarification = false;
-            ClarifyingQuestions.Clear();
-            ClarificationResponse = string.Empty;
 
             var currentPhase = _orchestrator.CurrentPhase;
             CurrentPhaseDisplay = currentPhase.ToString();
@@ -348,6 +372,7 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         }
         catch (Exception ex)
         {
+            _activeClarificationCorrelationId = null;
             _logger.LogError(ex, "[AgentTeamVM] Failed to respond to clarification.");
             SetError($"Error: {ex.Message}");
         }
@@ -640,24 +665,63 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
             // with Idle. Allow real phase transitions (non-Idle) to flow through.
             var suppressPhaseOverwrite = _isAwaitingInitialResponse && phase == OrchestrationPhase.Idle;
 
-            if (!suppressPhaseOverwrite)
+            // ── Correlation-aware handling for clarification events ──
+            // When the user clicks Send on the clarification panel, the backend emits
+            // ClarificationReceived (with a correlationId), followed by ClarificationProcessing,
+            // then PhaseTransitionEvents for Clarifying→Planning→AwaitingApproval.
+            // We capture the correlationId and use it to suppress the auto-dismissal logic
+            // for phase transitions that are expected consequences of the user's action.
+            if (e.EventType == OrchestratorEventType.ClarificationReceived && !string.IsNullOrEmpty(e.CorrelationId))
+            {
+                _activeClarificationCorrelationId = e.CorrelationId;
+                _logger.LogDebug("[AgentTeamVM] Captured clarification correlationId={CorrelationId}", e.CorrelationId);
+                OrchestratorMessage = $"✅ {e.Message}";
+            }
+            else if (e.EventType == OrchestratorEventType.ClarificationProcessing)
+            {
+                OrchestratorMessage = $"⏳ {e.Message}";
+            }
+
+            // Determine if this is a correlated phase transition (expected from user's Send action).
+            // If so, suppress the auto-dismissal logic entirely — the HandleOrchestratorResponse
+            // method will update the UI when the await completes.
+            var isCorrelatedTransition = e is PhaseTransitionEvent pte
+                && !string.IsNullOrEmpty(pte.CorrelationId)
+                && pte.CorrelationId == _activeClarificationCorrelationId;
+
+            if (isCorrelatedTransition)
+            {
+                _logger.LogDebug(
+                    "[AgentTeamVM] Correlated phase transition {From}→{To} (correlationId={Id}) — suppressing auto-dismissal.",
+                    ((PhaseTransitionEvent)e).FromPhase, ((PhaseTransitionEvent)e).ToPhase, e.CorrelationId);
+
+                // Update phase display to show progress, but do NOT auto-dismiss panels
+                if (!suppressPhaseOverwrite)
+                {
+                    CurrentPhaseDisplay = phase.ToString();
+                    CurrentPhaseColor = GetPhaseColor(phase);
+                }
+            }
+            else if (!suppressPhaseOverwrite)
             {
                 CurrentPhaseDisplay = phase.ToString();
                 CurrentPhaseColor = GetPhaseColor(phase);
             }
 
-            _logger.LogDebug("[AgentTeamVM] Event: type={EventType}, phase={Phase}, suppress={Suppress}, msg={Message}",
-                e.EventType, phase, suppressPhaseOverwrite, Truncate(e.Message, 150));
+            _logger.LogDebug("[AgentTeamVM] Event: type={EventType}, phase={Phase}, suppress={Suppress}, correlated={Correlated}, msg={Message}",
+                e.EventType, phase, suppressPhaseOverwrite, isCorrelatedTransition, Truncate(e.Message, 150));
 
             AddEvent($"[{e.TimestampUtc:HH:mm:ss}] {e.EventType}: {e.Message}");
 
             // ── Sync UI panels with phase transitions ──
-            // If the backend transitioned away from Clarifying but the panel is still showing,
-            // dismiss it and inform the user. This prevents orphaned clarification UI.
-            if (!suppressPhaseOverwrite && ShowClarification && phase != OrchestrationPhase.Clarifying)
+            // Only auto-dismiss for UNCORRELATED transitions. Correlated transitions
+            // are expected consequences of the user's Send action and will be handled
+            // by HandleOrchestratorResponse when the await completes.
+            if (!suppressPhaseOverwrite && !isCorrelatedTransition
+                && ShowClarification && phase != OrchestrationPhase.Clarifying)
             {
                 _logger.LogWarning(
-                    "[AgentTeamVM] Phase moved to {Phase} while clarification panel was visible. Dismissing.",
+                    "[AgentTeamVM] Phase moved to {Phase} while clarification panel was visible (uncorrelated). Dismissing.",
                     phase);
                 ShowClarification = false;
                 ClarifyingQuestions.Clear();
@@ -666,8 +730,9 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
                 AddEvent($"⚠ Clarification auto-dismissed: phase transitioned to {phase}");
             }
 
-            // Same guard for plan review panel
-            if (!suppressPhaseOverwrite && ShowPlanReview && phase != OrchestrationPhase.AwaitingApproval)
+            // Same guard for plan review panel (uncorrelated only)
+            if (!suppressPhaseOverwrite && !isCorrelatedTransition
+                && ShowPlanReview && phase != OrchestrationPhase.AwaitingApproval)
             {
                 _logger.LogWarning(
                     "[AgentTeamVM] Phase moved to {Phase} while plan review panel was visible. Dismissing.",
@@ -1182,6 +1247,7 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         CurrentPhaseColor = GetPhaseColor(OrchestrationPhase.Idle);
         CurrentPhaseBadgeOpacity = 1.0;
         IsEventLogExpanded = false;
+        _activeClarificationCorrelationId = null;
 
         // Reset team status to idle defaults
         UpdateTeamStatus();
