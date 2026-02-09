@@ -246,7 +246,9 @@ dotnet publish src/CopilotAgent.App/CopilotAgent.App.csproj \
 | 📐 **[Project Structure](docs/PROJECT_STRUCTURE.md)** | Solution layout, core models, services, multi-agent and office service interfaces, MVVM architecture |
 | 🔗 **[SDK Integration](docs/SDK_INTEGRATION.md)** | GitHub Copilot SDK integration points, tool approval pipeline, MCP server setup, authentication methods |
 | ⚙️ **[Configuration](docs/CONFIGURATION.md)** | Application settings, tool approval rules, MCP config, session data, environment variables |
+| 🏢 **[Agent Office User Guide](docs/AGENT_OFFICE_USER_GUIDE.md)** | End-to-end guide for the autonomous office manager — setup, lifecycle, features, worked examples, troubleshooting |
 | 🏢 **[Agent Office Design](docs/AGENT_OFFICE_DESIGN.md)** | Detailed design for the autonomous office manager loop |
+| 👥 **[Agent Team User Guide](docs/AGENT_TEAMS_USER_GUIDE.md)** | End-to-end guide for multi-agent orchestration — planning, execution, injection, side panel, worked examples |
 | 👥 **[Agent Team Design](docs/MULTI_AGENT_ORCHESTRATOR_DESIGN.md)** | Detailed design for the multi-agent orchestration engine |
 
 ---
