@@ -61,12 +61,12 @@ public partial class ChatView : UserControl
 
     private void MessageInput_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
-        // Check for Ctrl+Enter to send message
-        if (e.Key == System.Windows.Input.Key.Enter && 
-            (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) == System.Windows.Input.ModifierKeys.Control)
+        // Enter alone → send message; Shift+Enter → insert new line (default AcceptsReturn behaviour)
+        if (e.Key == System.Windows.Input.Key.Enter &&
+            (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Shift) != System.Windows.Input.ModifierKeys.Shift)
         {
             e.Handled = true;
-            
+
             // Execute the Send command via ViewModel
             if (DataContext is ChatViewModel viewModel && viewModel.SendMessageCommand.CanExecute(null))
             {

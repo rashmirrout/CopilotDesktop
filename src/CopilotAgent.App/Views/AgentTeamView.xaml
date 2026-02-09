@@ -399,7 +399,8 @@
         <!-- ═══════════════════════════════════════════════════════ -->
         <!-- Row 4: Main Scrollable Content                          -->
         <!-- ═══════════════════════════════════════════════════════ -->
-        <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto" Padding="16">
+        <ScrollViewer Grid.Row="4" VerticalScrollBarVisibility="Auto" Padding="16"
+                      PreviewMouseWheel="MainScrollViewer_PreviewMouseWheel">
             <StackPanel>
 
                 <!-- Error message -->
@@ -476,12 +477,32 @@
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="Auto"/>
                             </Grid.ColumnDefinitions>
-                            <TextBox Grid.Column="0"
-                                     Text="{Binding ClarificationResponse, UpdateSourceTrigger=PropertyChanged}"
-                                     Padding="8,6" FontSize="13" VerticalAlignment="Center"
-                                     BorderBrush="#BDBDBD" BorderThickness="1"
-                                     AcceptsReturn="False"
-                                     KeyDown="ClarificationInput_KeyDown"/>
+                            <Grid Grid.Column="0">
+                                <TextBox x:Name="ClarificationInput"
+                                         Text="{Binding ClarificationResponse, UpdateSourceTrigger=PropertyChanged}"
+                                         Padding="8,6" FontSize="13" VerticalAlignment="Center"
+                                         BorderBrush="#BDBDBD" BorderThickness="1"
+                                         AcceptsReturn="True"
+                                         TextWrapping="Wrap"
+                                         MaxHeight="80"
+                                         VerticalScrollBarVisibility="Auto"
+                                         PreviewKeyDown="ClarificationInput_PreviewKeyDown"/>
+                                <TextBlock Text="&#x25B6; Enter to send &amp; Shift+Enter to add new line.."
+                                           FontSize="12" Foreground="#9E9E9E" FontStyle="Italic"
+                                           IsHitTestVisible="False" Padding="10,8,0,0"
+                                           VerticalAlignment="Top" HorizontalAlignment="Left">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Visibility" Value="Collapsed"/>
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding Text, ElementName=ClarificationInput}" Value="">
+                                                    <Setter Property="Visibility" Value="Visible"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
                             <Button Grid.Column="1" Content="Send" Margin="8,0,0,0"
                                     Style="{StaticResource ActionButton}"
                                     Background="#FF8F00" Foreground="White"
@@ -731,24 +752,64 @@
                 </Grid.ColumnDefinitions>
 
                 <!-- Task prompt (when not orchestrating) -->
-                <TextBox Grid.Column="0"
-                         Text="{Binding TaskPrompt, UpdateSourceTrigger=PropertyChanged}"
-                         Padding="10,8" FontSize="13"
-                         BorderBrush="#BDBDBD" BorderThickness="1"
-                         Visibility="{Binding IsOrchestrating, Converter={StaticResource InverseBoolToVis}}"
-                         ToolTip="Describe the task for the agent team"
-                         AcceptsReturn="False"
-                         KeyDown="TaskInput_KeyDown"/>
+                <Grid Grid.Column="0"
+                      Visibility="{Binding IsOrchestrating, Converter={StaticResource InverseBoolToVis}}">
+                    <TextBox x:Name="TaskPromptInput"
+                             Text="{Binding TaskPrompt, UpdateSourceTrigger=PropertyChanged}"
+                             Padding="10,8" FontSize="13"
+                             BorderBrush="#BDBDBD" BorderThickness="1"
+                             ToolTip="Describe the task for the agent team"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             MaxHeight="100"
+                             VerticalScrollBarVisibility="Auto"
+                             PreviewKeyDown="TaskInput_PreviewKeyDown"/>
+                    <TextBlock Text="&#x25B6; Enter to send &amp; Shift+Enter to add new line.."
+                               FontSize="12" Foreground="#9E9E9E" FontStyle="Italic"
+                               IsHitTestVisible="False" Padding="12,10,0,0"
+                               VerticalAlignment="Top" HorizontalAlignment="Left">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Text, ElementName=TaskPromptInput}" Value="">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
 
                 <!-- Injection input (when orchestrating) -->
-                <TextBox Grid.Column="0"
-                         Text="{Binding InjectionText, UpdateSourceTrigger=PropertyChanged}"
-                         Padding="10,8" FontSize="13"
-                         BorderBrush="#BDBDBD" BorderThickness="1"
-                         Visibility="{Binding IsOrchestrating, Converter={StaticResource BoolToVis}}"
-                         ToolTip="Inject instruction into running orchestration"
-                         AcceptsReturn="False"
-                         KeyDown="InjectionInput_KeyDown"/>
+                <Grid Grid.Column="0"
+                      Visibility="{Binding IsOrchestrating, Converter={StaticResource BoolToVis}}">
+                    <TextBox x:Name="InjectionInput"
+                             Text="{Binding InjectionText, UpdateSourceTrigger=PropertyChanged}"
+                             Padding="10,8" FontSize="13"
+                             BorderBrush="#BDBDBD" BorderThickness="1"
+                             ToolTip="Inject instruction into running orchestration"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             MaxHeight="100"
+                             VerticalScrollBarVisibility="Auto"
+                             PreviewKeyDown="InjectionInput_PreviewKeyDown"/>
+                    <TextBlock Text="&#x25B6; Enter to inject &amp; Shift+Enter to add new line.."
+                               FontSize="12" Foreground="#9E9E9E" FontStyle="Italic"
+                               IsHitTestVisible="False" Padding="12,10,0,0"
+                               VerticalAlignment="Top" HorizontalAlignment="Left">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Text, ElementName=InjectionInput}" Value="">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
 
                 <!-- Submit button (when not orchestrating) -->
                 <Button Grid.Column="1" Margin="8,0,0,0"

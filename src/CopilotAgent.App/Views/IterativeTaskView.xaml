@@ -80,15 +80,31 @@
                            FontWeight="SemiBold"
                            VerticalAlignment="Top"
                            Margin="0,8,12,0"/>
-                <TextBox Grid.Row="0" Grid.Column="1"
-                         Text="{Binding TaskDescription, UpdateSourceTrigger=PropertyChanged}"
-                         TextWrapping="Wrap"
-                         AcceptsReturn="True"
-                         Height="60"
-                         VerticalScrollBarVisibility="Auto"
-                         Margin="0,0,0,12"
-                         Padding="8"
-                         IsEnabled="{Binding IsIdle}"/>
+                <Grid Grid.Row="0" Grid.Column="1" Margin="0,0,0,12">
+                    <TextBox x:Name="TaskDescriptionInput"
+                             Text="{Binding TaskDescription, UpdateSourceTrigger=PropertyChanged}"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="True"
+                             Height="60"
+                             VerticalScrollBarVisibility="Auto"
+                             Padding="8"
+                             IsEnabled="{Binding IsIdle}"/>
+                    <TextBlock Text="Describe what the agent should accomplish.."
+                               FontSize="12" Foreground="#9E9E9E" FontStyle="Italic"
+                               IsHitTestVisible="False" Padding="10,10,0,0"
+                               VerticalAlignment="Top" HorizontalAlignment="Left">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Text, ElementName=TaskDescriptionInput}" Value="">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
 
                 <!-- Success Criteria -->
                 <TextBlock Grid.Row="1" Grid.Column="0"
@@ -96,15 +112,31 @@
                            FontWeight="SemiBold"
                            VerticalAlignment="Top"
                            Margin="0,8,12,0"/>
-                <TextBox Grid.Row="1" Grid.Column="1"
-                         Text="{Binding SuccessCriteria, UpdateSourceTrigger=PropertyChanged}"
-                         TextWrapping="Wrap"
-                         AcceptsReturn="True"
-                         Height="60"
-                         VerticalScrollBarVisibility="Auto"
-                         Margin="0,0,0,12"
-                         Padding="8"
-                         IsEnabled="{Binding IsIdle}"/>
+                <Grid Grid.Row="1" Grid.Column="1" Margin="0,0,0,12">
+                    <TextBox x:Name="SuccessCriteriaInput"
+                             Text="{Binding SuccessCriteria, UpdateSourceTrigger=PropertyChanged}"
+                             TextWrapping="Wrap"
+                             AcceptsReturn="True"
+                             Height="60"
+                             VerticalScrollBarVisibility="Auto"
+                             Padding="8"
+                             IsEnabled="{Binding IsIdle}"/>
+                    <TextBlock Text="Define how to determine task completion.."
+                               FontSize="12" Foreground="#9E9E9E" FontStyle="Italic"
+                               IsHitTestVisible="False" Padding="10,10,0,0"
+                               VerticalAlignment="Top" HorizontalAlignment="Left">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Text, ElementName=SuccessCriteriaInput}" Value="">
+                                        <Setter Property="Visibility" Value="Visible"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </Grid>
 
                 <!-- Max Iterations -->
                 <TextBlock Grid.Row="2" Grid.Column="0"
@@ -329,7 +361,8 @@
                 <!-- Iteration List with Expanders -->
                 <ScrollViewer Grid.Row="1" 
                               VerticalScrollBarVisibility="Auto"
-                              HorizontalScrollBarVisibility="Disabled">
+                              HorizontalScrollBarVisibility="Disabled"
+                              PreviewMouseWheel="IterationScrollViewer_PreviewMouseWheel">
                     <ItemsControl ItemsSource="{Binding Iterations}"
                                   Margin="8">
                         <ItemsControl.ItemTemplate>
