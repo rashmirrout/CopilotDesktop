@@ -49,6 +49,10 @@ public class MultiAgentSettings
     [JsonPropertyName("disabledSkills")]
     public List<string> DisabledSkills { get; set; } = new();
 
+    /// <summary>Default working directory for orchestration tasks.</summary>
+    [JsonPropertyName("defaultWorkingDirectory")]
+    public string DefaultWorkingDirectory { get; set; } = string.Empty;
+
     /// <summary>Auto-approve read-only tool operations in workers.</summary>
     [JsonPropertyName("autoApproveReadOnlyTools")]
     public bool AutoApproveReadOnlyTools { get; set; } = true;
