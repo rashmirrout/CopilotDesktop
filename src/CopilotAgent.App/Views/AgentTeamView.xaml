@@ -479,7 +479,9 @@
                             <TextBox Grid.Column="0"
                                      Text="{Binding ClarificationResponse, UpdateSourceTrigger=PropertyChanged}"
                                      Padding="8,6" FontSize="13" VerticalAlignment="Center"
-                                     BorderBrush="#BDBDBD" BorderThickness="1"/>
+                                     BorderBrush="#BDBDBD" BorderThickness="1"
+                                     AcceptsReturn="False"
+                                     KeyDown="ClarificationInput_KeyDown"/>
                             <Button Grid.Column="1" Content="Send" Margin="8,0,0,0"
                                     Style="{StaticResource ActionButton}"
                                     Background="#FF8F00" Foreground="White"

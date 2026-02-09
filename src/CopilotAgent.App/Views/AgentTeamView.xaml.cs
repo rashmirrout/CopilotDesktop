@@ -38,4 +38,16 @@ public partial class AgentTeamView : UserControl
             }
         }
     }
+
+    private void ClarificationInput_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && !Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+        {
+            if (DataContext is AgentTeamViewModel vm && vm.RespondToClarificationCommand.CanExecute(null))
+            {
+                vm.RespondToClarificationCommand.Execute(null);
+                e.Handled = true;
+            }
+        }
+    }
 }
