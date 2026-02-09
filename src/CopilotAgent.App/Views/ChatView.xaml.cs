@@ -129,6 +129,44 @@ public partial class ChatView : UserControl
     }
 
     /// <summary>
+    /// Ensures mouse wheel events propagate to the main MessageScrollViewer even when
+    /// child elements (MarkdownScrollViewer, TextBox, etc.) capture the event.
+    /// Also safely handles ContentElement types (Run, Inline, Paragraph) that are not Visual/Visual3D.
+    /// </summary>
+    private void MessageScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (sender is not ScrollViewer scrollViewer)
+            return;
+
+        // Walk up from the original source to see if a nested ScrollViewer is capturing the event
+        var source = e.OriginalSource as DependencyObject;
+        while (source != null && source != scrollViewer)
+        {
+            if (source is ScrollViewer nested && nested != scrollViewer)
+            {
+                // Found a nested ScrollViewer — force the main one to scroll instead
+                e.Handled = true;
+                scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset - e.Delta);
+                return;
+            }
+
+            // Safe tree traversal: ContentElement (Run, Inline, Paragraph) is not a Visual,
+            // so use LogicalTreeHelper for those types to avoid InvalidOperationException.
+            source = source is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(source)
+                : LogicalTreeHelper.GetParent(source);
+        }
+
+        // If no nested ScrollViewer was found but the event still isn't reaching us
+        // (e.g., TextBox with no scrollbar eats it), handle it anyway
+        if (!e.Handled)
+        {
+            e.Handled = true;
+            scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset - e.Delta);
+        }
+    }
+
+    /// <summary>
     /// Handles copy button click - copies content to clipboard and shows checkmark feedback
     /// </summary>
     private async void CopyButton_Click(object sender, RoutedEventArgs e)
