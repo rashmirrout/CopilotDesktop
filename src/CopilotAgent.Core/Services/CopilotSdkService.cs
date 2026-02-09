@@ -624,8 +624,19 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
                     break;
             }
 
-            // Dispatch to UI - includes turnId context for grouping
-            SessionEventReceived?.Invoke(this, new SdkSessionEventArgs(session.SessionId, evt, currentTurnId));
+            // Dispatch to UI - includes turnId context for grouping.
+            // IMPORTANT: Wrap in try/catch so a subscriber exception never escapes
+            // into the SDK internals, which could silently kill the process.
+            try
+            {
+                SessionEventReceived?.Invoke(this, new SdkSessionEventArgs(session.SessionId, evt, currentTurnId));
+            }
+            catch (Exception subscriberEx)
+            {
+                _logger.LogError(subscriberEx,
+                    "[SDK_EVENT] SessionEventReceived subscriber threw for event {EventType} in session {SessionId}: {Message}",
+                    eventTypeName, session.SessionId, subscriberEx.Message);
+            }
         });
 
         try

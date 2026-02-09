@@ -215,7 +215,12 @@ public partial class OfficeView : UserControl
                 return;
             }
 
-            source = System.Windows.Media.VisualTreeHelper.GetParent(source);
+            // Walk up the tree safely: VisualTreeHelper.GetParent only works on
+            // Visual / Visual3D. ContentElements like Run, Inline, Paragraph etc.
+            // are NOT visuals — use their Parent property (logical tree) instead.
+            source = source is System.Windows.Media.Visual or System.Windows.Media.Media3D.Visual3D
+                ? System.Windows.Media.VisualTreeHelper.GetParent(source)
+                : LogicalTreeHelper.GetParent(source);
         }
     }
 
