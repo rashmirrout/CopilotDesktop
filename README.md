@@ -1,6 +1,22 @@
 # Copilot Agent Desktop
 
-A production-grade Windows desktop application providing a Claude-like agent UI over the [GitHub Copilot SDK](https://github.com/github/copilot-sdk) for .NET — featuring multi-session chat, multi-agent orchestration, and an autonomous office manager.
+> **What if your Copilot could do more than chat?**
+
+Copilot Agent Desktop is a production-grade Windows application that turns the [GitHub Copilot SDK](https://github.com/github/copilot-sdk) into a full agentic platform — right on your desktop. Think of it as your personal AI command center: chat with Copilot, hand off complex tasks to a team of specialized agents, or spin up an autonomous office that monitors your repos around the clock.
+
+### 💬 Chat — A Claude-like agent experience over Copilot
+Multi-session, tool-enabled, terminal-embedded conversations with full MCP server support and fine-grained tool approval. Create sessions from GitHub issues, attach skills, and persist everything across restarts.
+
+### 👥 Team — Divide and conquer with multi-agent orchestration
+Got a task too big for one agent? The **Agent Team** breaks it down. An orchestrator decomposes your request into dependency-aware work chunks, spins up role-specialized workers (CodeAnalysis, Testing, Implementation, Synthesis…), runs them in parallel across isolated workspaces, and delivers a consolidated report. You review the plan, approve it, and watch the workers execute — or inject new instructions mid-flight.
+
+### 🏢 Office — Your own AI operations center
+Set up a small office for yourself. A long-running **Manager agent** periodically scans for events — incoming tickets, support requests, PR reviews, incident alerts — and delegates tasks to a pool of ephemeral **Assistant agents**. It clarifies ambiguous instructions, schedules work, aggregates results, rests, and repeats. Pause it, change the interval, inject new priorities, or just let it run. It's like having a tireless ops team that never sleeps.
+
+### 🔄 Iterative — Self-evaluating task loops
+Define a goal and success criteria. The agent executes, evaluates its own output, and iterates until it succeeds or hits the limit. Perfect for tasks that need refinement — code generation, test fixing, quality gates.
+
+Built with **.NET 8**, **WPF-UI (Fluent Design)**, and ships as a **single portable executable** — no installation required.
 
 [![GitHub Copilot SDK](https://img.shields.io/nuget/v/GitHub.Copilot.SDK?label=GitHub.Copilot.SDK)](https://www.nuget.org/packages/GitHub.Copilot.SDK)
 
@@ -71,8 +87,6 @@ A production-grade Windows desktop application providing a Claude-like agent UI 
 | **👥 Team** | Multi-agent orchestration with parallel workers | Complex tasks that benefit from decomposition — multi-file refactors, cross-module analysis, parallel code reviews |
 | **🏢 Office** | Autonomous periodic manager with assistant pool | Long-running monitoring — incident management, scheduled audits, multi-repo PR reviews |
 | **🔄 Iterative** | Self-evaluating task loop with success criteria | Tasks requiring iterative refinement until a goal is met |
-
----
 
 ---
 
