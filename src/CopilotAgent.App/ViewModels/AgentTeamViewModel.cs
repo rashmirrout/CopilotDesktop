@@ -11,6 +11,7 @@ using CopilotAgent.MultiAgent.Events;
 using CopilotAgent.MultiAgent.Models;
 using CopilotAgent.MultiAgent.Services;
 using Microsoft.Extensions.Logging;
+using Microsoft.Win32;
 
 namespace CopilotAgent.App.ViewModels;
 
@@ -18,6 +19,14 @@ namespace CopilotAgent.App.ViewModels;
 /// ViewModel for the Agent Team orchestration view.
 /// Drives the orchestrator state machine, renders worker lifecycle, session health,
 /// and provides rich visual feedback throughout orchestration phases.
+///
+/// Settings architecture (mirrors OfficeViewModel):
+///   - UI-bound properties are the "pending" (editable) values.
+///   - On Apply, pending values are persisted to AppSettings.MultiAgent via IPersistenceService.
+///   - On task submit, pending values are snapshotted into the MultiAgentConfig for the running session.
+///   - HasPendingChanges tracks whether any UI value differs from the last-persisted value.
+///   - SettingsRequireRestart indicates that settings were applied during active orchestration
+///     (the running session still uses the old config until reset/restart).
 /// </summary>
 public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
 {
@@ -25,6 +34,7 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     private readonly ICopilotService _copilotService;
     private readonly ISessionManager _sessionManager;
     private readonly IApprovalQueue _approvalQueue;
+    private readonly IPersistenceService _persistenceService;
     private readonly AppSettings _appSettings;
     private readonly ILogger<AgentTeamViewModel> _logger;
     private readonly Dispatcher _dispatcher;
@@ -55,11 +65,22 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     /// </summary>
     private string? _activeClarificationCorrelationId;
 
+    /// <summary>
+    /// Snapshot of persisted MultiAgentSettings values — used to compute HasPendingChanges.
+    /// Updated on load and after each successful Apply.
+    /// Nullable during construction before initial snapshot is captured.
+    /// </summary>
+    private AgentTeamSettingsSnapshot? _persistedSnapshot;
+
+    /// <summary>Available models for ComboBox dropdowns (editable, so user can type custom).</summary>
+    public ObservableCollection<string> AvailableModels { get; } = new();
+
     public AgentTeamViewModel(
         IOrchestratorService orchestrator,
         ICopilotService copilotService,
         ISessionManager sessionManager,
         IApprovalQueue approvalQueue,
+        IPersistenceService persistenceService,
         AppSettings appSettings,
         ILogger<AgentTeamViewModel> logger)
     {
@@ -67,12 +88,30 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         _copilotService = copilotService ?? throw new ArgumentNullException(nameof(copilotService));
         _sessionManager = sessionManager ?? throw new ArgumentNullException(nameof(sessionManager));
         _approvalQueue = approvalQueue ?? throw new ArgumentNullException(nameof(approvalQueue));
+        _persistenceService = persistenceService ?? throw new ArgumentNullException(nameof(persistenceService));
         _appSettings = appSettings ?? throw new ArgumentNullException(nameof(appSettings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _dispatcher = Application.Current.Dispatcher;
 
         _orchestrator.EventReceived += OnOrchestratorEvent;
         _approvalQueue.PendingCountChanged += OnPendingApprovalsChanged;
+
+        // Load all settings from persisted defaults
+        LoadSettingsFromPersistence();
+
+        // Only fall back to active session path when no persisted workspace path exists
+        if (string.IsNullOrWhiteSpace(_settingsWorkingDirectory))
+        {
+            var active = _sessionManager.ActiveSession;
+            var fallback = active?.WorkingDirectory
+                ?? System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    "Workspace");
+            _settingsWorkingDirectory = fallback;
+        }
+
+        // Capture initial snapshot for dirty tracking
+        _persistedSnapshot = CaptureCurrentSnapshot();
 
         // Unified pulse timer: drives both the execution animation and the session indicator blink
         _pulseTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(500) };
@@ -157,11 +196,11 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
 
     /// <summary>Compact status text like "Coordinating • 2/3 Active".</summary>
     [ObservableProperty]
-    private string _teamStatusText = "Waiting for task \u2022 0/3 Active";
+    private string _teamStatusText = "Waiting for task  0/3 Active";
 
     /// <summary>Emoji icon displayed to the left of the status text.</summary>
     [ObservableProperty]
-    private string _teamStatusIcon = "\u2699\uFE0F";
+    private string _teamStatusIcon = "";
 
     /// <summary>Hex color for the team status text, driven by orchestration phase.</summary>
     [ObservableProperty]
@@ -185,31 +224,76 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private double _sessionIndicatorOpacity = 1.0;
 
-    // ── Settings ────────────────────────────────────────────────
+    // ── Side Panel ──────────────────────────────────────────────
 
     [ObservableProperty]
-    private bool _showSettings;
+    private bool _isSidePanelOpen;
 
     [ObservableProperty]
     private int _pendingApprovals;
 
+    // ── Settings (all dirty-tracked via OnChanged → RecalculateDirtyState) ──
+
     [ObservableProperty]
     private int _settingsMaxParallelWorkers = 3;
+    partial void OnSettingsMaxParallelWorkersChanged(int value) => RecalculateDirtyState();
 
     [ObservableProperty]
     private string _settingsWorkspaceStrategy = "InMemory";
+    partial void OnSettingsWorkspaceStrategyChanged(string value) => RecalculateDirtyState();
 
     [ObservableProperty]
     private int _settingsWorkerTimeoutMinutes = 10;
+    partial void OnSettingsWorkerTimeoutMinutesChanged(int value) => RecalculateDirtyState();
 
     [ObservableProperty]
     private int _settingsMaxRetries = 2;
+    partial void OnSettingsMaxRetriesChanged(int value) => RecalculateDirtyState();
 
     [ObservableProperty]
     private int _settingsRetryDelaySeconds = 5;
+    partial void OnSettingsRetryDelaySecondsChanged(int value) => RecalculateDirtyState();
 
     [ObservableProperty]
     private bool _settingsAutoApproveReadOnly = true;
+    partial void OnSettingsAutoApproveReadOnlyChanged(bool value) => RecalculateDirtyState();
+
+    [ObservableProperty]
+    private string _selectedManagerModel = "gpt-4";
+    partial void OnSelectedManagerModelChanged(string value) => RecalculateDirtyState();
+
+    [ObservableProperty]
+    private string _selectedWorkerModel = "gpt-4";
+    partial void OnSelectedWorkerModelChanged(string value) => RecalculateDirtyState();
+
+    [ObservableProperty]
+    private string _settingsWorkingDirectory = string.Empty;
+    partial void OnSettingsWorkingDirectoryChanged(string value) => RecalculateDirtyState();
+
+    [ObservableProperty]
+    private bool _isLoadingModels;
+
+    // ── Dirty Tracking ──────────────────────────────────────────
+
+    /// <summary>
+    /// True when any UI-bound config value differs from the last-persisted value.
+    /// Drives the "Apply Changes" button visibility.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ApplySettingsCommand))]
+    [NotifyCanExecuteChangedFor(nameof(DiscardSettingsCommand))]
+    private bool _hasPendingChanges;
+
+    /// <summary>Number of individual settings that have been modified.</summary>
+    [ObservableProperty]
+    private int _pendingChangesCount;
+
+    /// <summary>
+    /// True when settings were applied (persisted) but the running session
+    /// still uses the old config. User must reset/restart for changes to take effect.
+    /// </summary>
+    [ObservableProperty]
+    private bool _settingsRequireRestart;
 
     // ── Plan & Report ───────────────────────────────────────────
 
@@ -263,10 +347,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         IsOrchestrating = true;
 
         // Immediate visual feedback — show "Planning" state before the async LLM call.
-        // NOTE: We set team status properties directly instead of calling UpdateTeamStatus()
-        // because the orchestrator's CurrentPhase is still Idle at this point (the async
-        // call hasn't started yet). UpdateTeamStatus() reads _orchestrator.CurrentPhase
-        // which would overwrite our Planning state with "Waiting for task".
         CurrentPhaseDisplay = "Planning";
         CurrentPhaseColor = GetPhaseColor(OrchestrationPhase.Planning);
         OrchestratorMessage = "📋 Analyzing task and creating execution plan...";
@@ -336,11 +416,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         var userText = ClarificationResponse;
         _logger.LogInformation("[AgentTeamVM] Responding to clarification ({Len} chars).", userText.Length);
 
-        // ── Immediate visual feedback ──
-        // Hide the clarification input panel and show "Sending..." state so the user
-        // knows their response was received. The backend will emit ClarificationReceived
-        // and ClarificationProcessing events with a correlation ID that we track to
-        // prevent the auto-dismissal logic from showing a misleading error.
         ShowClarification = false;
         ClarifyingQuestions.Clear();
         ClarificationResponse = string.Empty;
@@ -354,13 +429,11 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
             var response = await _orchestrator.RespondToClarificationAsync(
                 userText, _cts?.Token ?? CancellationToken.None);
 
-            // Clear the correlation guard — HandleOrchestratorResponse owns the UI now.
             _activeClarificationCorrelationId = null;
             HandleOrchestratorResponse(response);
         }
         catch (InvalidOperationException iex) when (iex.Message.Contains("Cannot respond to clarification", StringComparison.OrdinalIgnoreCase))
         {
-            // Backend phase moved away from Clarifying before user submitted response.
             _activeClarificationCorrelationId = null;
             _logger.LogWarning(iex, "[AgentTeamVM] Clarification response rejected — phase already changed.");
 
@@ -491,13 +564,15 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         // After reset, session is destroyed - health poll will pick up WAITING on next tick
         ApplySessionHealth("WAITING", "#FFC107");
         AddEvent("🔄 Orchestrator reset.");
+        // After reset, pending settings will take effect on next submit
+        SettingsRequireRestart = false;
     }
 
     [RelayCommand]
-    private void ToggleSettings()
+    private void ToggleSidePanel()
     {
-        ShowSettings = !ShowSettings;
-        _logger.LogDebug("[AgentTeamVM] Settings panel toggled: {Visible}", ShowSettings);
+        IsSidePanelOpen = !IsSidePanelOpen;
+        _logger.LogDebug("[AgentTeamVM] Side panel toggled: {Visible}", IsSidePanelOpen);
     }
 
     [RelayCommand]
@@ -510,6 +585,11 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         SettingsMaxRetries = 2;
         SettingsRetryDelaySeconds = 5;
         SettingsAutoApproveReadOnly = true;
+        SelectedManagerModel = _appSettings.DefaultModel;
+        SelectedWorkerModel = _appSettings.DefaultModel;
+        SettingsWorkingDirectory = System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            "Workspace");
     }
 
     [RelayCommand]
@@ -585,6 +665,229 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         HasNextSteps = false;
     }
 
+    [RelayCommand]
+    private void BrowseWorkingDirectory()
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "Select Working Directory",
+            InitialDirectory = string.IsNullOrWhiteSpace(SettingsWorkingDirectory)
+                ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                : SettingsWorkingDirectory
+        };
+
+        if (dialog.ShowDialog() == true)
+        {
+            SettingsWorkingDirectory = dialog.FolderName;
+            _logger.LogInformation("[AgentTeamVM] Working directory set to: {Path}", SettingsWorkingDirectory);
+        }
+    }
+
+    [RelayCommand]
+    private async Task RefreshModelsAsync()
+    {
+        await RefreshAvailableModelsAsync();
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    // Settings Commands — Apply / Discard with Persistence
+    // ══════════════════════════════════════════════════════════════
+
+    [RelayCommand(CanExecute = nameof(CanApplySettings))]
+    private async Task ApplySettingsAsync()
+    {
+        _logger.LogInformation("[AgentTeamVM] Applying settings to persistence");
+
+        try
+        {
+            // Write current UI values to the in-memory AppSettings.MultiAgent
+            var ma = _appSettings.MultiAgent;
+            ma.MaxParallelSessions = SettingsMaxParallelWorkers;
+            ma.WorkspaceStrategy = SettingsWorkspaceStrategy;
+            ma.WorkerTimeoutMinutes = SettingsWorkerTimeoutMinutes;
+            ma.MaxRetriesPerChunk = SettingsMaxRetries;
+            ma.RetryDelaySeconds = SettingsRetryDelaySeconds;
+            ma.AutoApproveReadOnlyTools = SettingsAutoApproveReadOnly;
+            ma.OrchestratorModelId = SelectedManagerModel;
+            ma.WorkerModelId = SelectedWorkerModel;
+            ma.DefaultWorkingDirectory = SettingsWorkingDirectory;
+
+            // Persist to disk
+            await _persistenceService.SaveSettingsAsync(_appSettings);
+
+            // Update snapshot so dirty tracking resets
+            _persistedSnapshot = CaptureCurrentSnapshot();
+            RecalculateDirtyState();
+
+            // If orchestration is running, flag that a restart is needed
+            if (IsOrchestrating)
+            {
+                SettingsRequireRestart = true;
+                _logger.LogInformation("[AgentTeamVM] Settings persisted — orchestration restart required for changes to take effect");
+            }
+            else
+            {
+                SettingsRequireRestart = false;
+                _logger.LogInformation("[AgentTeamVM] Settings persisted — will take effect on next Submit");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[AgentTeamVM] Failed to persist settings");
+            SetError($"Failed to save settings: {ex.Message}");
+        }
+    }
+
+    private bool CanApplySettings() => HasPendingChanges;
+
+    [RelayCommand(CanExecute = nameof(CanDiscardSettings))]
+    private void DiscardSettings()
+    {
+        _logger.LogInformation("[AgentTeamVM] Discarding pending settings changes");
+        if (_persistedSnapshot is not null)
+        {
+            LoadSettingsFromSnapshot(_persistedSnapshot);
+        }
+        RecalculateDirtyState();
+    }
+
+    private bool CanDiscardSettings() => HasPendingChanges;
+
+    // ══════════════════════════════════════════════════════════════
+    // Settings — Load / Snapshot / Dirty Tracking
+    // ══════════════════════════════════════════════════════════════
+
+    /// <summary>
+    /// Loads all configuration properties from persisted AppSettings.MultiAgent.
+    /// Called on construction and could be called to reload from disk.
+    /// Uses property setters so PropertyChanged fires and the UI updates correctly.
+    /// </summary>
+    private void LoadSettingsFromPersistence()
+    {
+        var ma = _appSettings.MultiAgent;
+        SettingsMaxParallelWorkers = ma.MaxParallelSessions;
+        SettingsWorkspaceStrategy = ma.WorkspaceStrategy;
+        SettingsWorkerTimeoutMinutes = ma.WorkerTimeoutMinutes;
+        SettingsMaxRetries = ma.MaxRetriesPerChunk;
+        SettingsRetryDelaySeconds = ma.RetryDelaySeconds;
+        SettingsAutoApproveReadOnly = ma.AutoApproveReadOnlyTools;
+        SelectedManagerModel = ma.OrchestratorModelId ?? _appSettings.DefaultModel;
+        SelectedWorkerModel = ma.WorkerModelId ?? _appSettings.DefaultModel;
+        SettingsWorkingDirectory = ma.DefaultWorkingDirectory;
+    }
+
+    /// <summary>
+    /// Restores UI properties from a snapshot (used by Discard).
+    /// Uses property setters to trigger UI change notification.
+    /// </summary>
+    private void LoadSettingsFromSnapshot(AgentTeamSettingsSnapshot snapshot)
+    {
+        SettingsMaxParallelWorkers = snapshot.MaxParallelWorkers;
+        SettingsWorkspaceStrategy = snapshot.WorkspaceStrategy;
+        SettingsWorkerTimeoutMinutes = snapshot.WorkerTimeoutMinutes;
+        SettingsMaxRetries = snapshot.MaxRetries;
+        SettingsRetryDelaySeconds = snapshot.RetryDelaySeconds;
+        SettingsAutoApproveReadOnly = snapshot.AutoApproveReadOnly;
+        SelectedManagerModel = snapshot.ManagerModel;
+        SelectedWorkerModel = snapshot.WorkerModel;
+        SettingsWorkingDirectory = snapshot.WorkingDirectory;
+    }
+
+    /// <summary>
+    /// Captures the current UI property values as an immutable snapshot.
+    /// </summary>
+    private AgentTeamSettingsSnapshot CaptureCurrentSnapshot() => new(
+        SettingsMaxParallelWorkers,
+        SettingsWorkspaceStrategy,
+        SettingsWorkerTimeoutMinutes,
+        SettingsMaxRetries,
+        SettingsRetryDelaySeconds,
+        SettingsAutoApproveReadOnly,
+        SelectedManagerModel,
+        SelectedWorkerModel,
+        SettingsWorkingDirectory);
+
+    /// <summary>
+    /// Compares current UI values against the persisted snapshot and updates
+    /// <see cref="HasPendingChanges"/> and <see cref="PendingChangesCount"/>.
+    /// Safe to call during construction before the snapshot is initialized.
+    /// </summary>
+    private void RecalculateDirtyState()
+    {
+        if (_persistedSnapshot is null)
+        {
+            HasPendingChanges = false;
+            PendingChangesCount = 0;
+            return;
+        }
+
+        var current = CaptureCurrentSnapshot();
+        var count = 0;
+
+        if (current.MaxParallelWorkers != _persistedSnapshot.MaxParallelWorkers) count++;
+        if (!string.Equals(current.WorkspaceStrategy, _persistedSnapshot.WorkspaceStrategy, StringComparison.Ordinal)) count++;
+        if (current.WorkerTimeoutMinutes != _persistedSnapshot.WorkerTimeoutMinutes) count++;
+        if (current.MaxRetries != _persistedSnapshot.MaxRetries) count++;
+        if (current.RetryDelaySeconds != _persistedSnapshot.RetryDelaySeconds) count++;
+        if (current.AutoApproveReadOnly != _persistedSnapshot.AutoApproveReadOnly) count++;
+        if (!string.Equals(current.ManagerModel, _persistedSnapshot.ManagerModel, StringComparison.Ordinal)) count++;
+        if (!string.Equals(current.WorkerModel, _persistedSnapshot.WorkerModel, StringComparison.Ordinal)) count++;
+        if (!string.Equals(current.WorkingDirectory, _persistedSnapshot.WorkingDirectory, StringComparison.Ordinal)) count++;
+
+        PendingChangesCount = count;
+        HasPendingChanges = count > 0;
+    }
+
+    /// <summary>
+    /// Immutable snapshot of settings values for dirty-tracking comparison.
+    /// </summary>
+    private sealed record AgentTeamSettingsSnapshot(
+        int MaxParallelWorkers,
+        string WorkspaceStrategy,
+        int WorkerTimeoutMinutes,
+        int MaxRetries,
+        int RetryDelaySeconds,
+        bool AutoApproveReadOnly,
+        string ManagerModel,
+        string WorkerModel,
+        string WorkingDirectory);
+
+    // ══════════════════════════════════════════════════════════════
+    // Model Cache
+    // ══════════════════════════════════════════════════════════════
+
+    private async Task RefreshAvailableModelsAsync()
+    {
+        if (IsLoadingModels) return;
+
+        IsLoadingModels = true;
+        _logger.LogInformation("[AgentTeamVM] Refreshing available models cache...");
+
+        try
+        {
+            var models = await _copilotService.GetAvailableModelsAsync();
+
+            _dispatcher.Invoke(() =>
+            {
+                AvailableModels.Clear();
+                foreach (var model in models.OrderBy(m => m, StringComparer.OrdinalIgnoreCase))
+                {
+                    AvailableModels.Add(model);
+                }
+            });
+
+            _logger.LogInformation("[AgentTeamVM] Model cache refreshed: {Count} models available", models.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[AgentTeamVM] Failed to refresh available models — user can still type manually");
+        }
+        finally
+        {
+            IsLoadingModels = false;
+        }
+    }
+
     // ══════════════════════════════════════════════════════════════
     // Session Health Polling (Ground Truth)
     // ══════════════════════════════════════════════════════════════
@@ -592,12 +895,7 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     /// <summary>
     /// Fires on the configurable health check interval (default 15s).
     /// Queries ICopilotService.HasActiveSession as ground truth and
-    /// combines with IOrchestratorService.IsRunning to determine state:
-    ///   No session ID        → WAITING (yellow solid)
-    ///   HasActiveSession=false → DISCONNECTED (red solid)
-    ///   HasActiveSession=true + IsRunning=true  → LIVE (green blink)
-    ///   HasActiveSession=true + IsRunning=false → IDLE (gray solid)
-    ///   Exception            → ERROR   (red solid)
+    /// combines with IOrchestratorService.IsRunning to determine state.
     /// </summary>
     private void OnSessionHealthTimerTick(object? sender, EventArgs e)
     {
@@ -636,13 +934,12 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     }
 
     /// <summary>
-    /// Applies session health indicator state. Only logs on state transitions
-    /// to avoid flooding the log every 15 seconds.
+    /// Applies session health indicator state. Only logs on state transitions.
     /// </summary>
     private void ApplySessionHealth(string text, string color)
     {
         if (SessionIndicatorText == text && SessionIndicatorColor == color)
-            return; // No change — skip update and log noise
+            return;
 
         SessionIndicatorText = text;
         SessionIndicatorColor = color;
@@ -659,18 +956,8 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         {
             var phase = _orchestrator.CurrentPhase;
 
-            // Guard: During the SubmitTaskAsync await window, the orchestrator may fire
-            // events while its CurrentPhase still reads as Idle. If we're awaiting the
-            // initial response, do NOT overwrite the manually-set "Planning" UI state
-            // with Idle. Allow real phase transitions (non-Idle) to flow through.
             var suppressPhaseOverwrite = _isAwaitingInitialResponse && phase == OrchestrationPhase.Idle;
 
-            // ── Correlation-aware handling for clarification events ──
-            // When the user clicks Send on the clarification panel, the backend emits
-            // ClarificationReceived (with a correlationId), followed by ClarificationProcessing,
-            // then PhaseTransitionEvents for Clarifying→Planning→AwaitingApproval.
-            // We capture the correlationId and use it to suppress the auto-dismissal logic
-            // for phase transitions that are expected consequences of the user's action.
             if (e.EventType == OrchestratorEventType.ClarificationReceived && !string.IsNullOrEmpty(e.CorrelationId))
             {
                 _activeClarificationCorrelationId = e.CorrelationId;
@@ -682,9 +969,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
                 OrchestratorMessage = $"⏳ {e.Message}";
             }
 
-            // Determine if this is a correlated phase transition (expected from user's Send action).
-            // If so, suppress the auto-dismissal logic entirely — the HandleOrchestratorResponse
-            // method will update the UI when the await completes.
             var isCorrelatedTransition = e is PhaseTransitionEvent pte
                 && !string.IsNullOrEmpty(pte.CorrelationId)
                 && pte.CorrelationId == _activeClarificationCorrelationId;
@@ -695,7 +979,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
                     "[AgentTeamVM] Correlated phase transition {From}→{To} (correlationId={Id}) — suppressing auto-dismissal.",
                     ((PhaseTransitionEvent)e).FromPhase, ((PhaseTransitionEvent)e).ToPhase, e.CorrelationId);
 
-                // Update phase display to show progress, but do NOT auto-dismiss panels
                 if (!suppressPhaseOverwrite)
                 {
                     CurrentPhaseDisplay = phase.ToString();
@@ -713,10 +996,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
 
             AddEvent($"[{e.TimestampUtc:HH:mm:ss}] {e.EventType}: {e.Message}");
 
-            // ── Sync UI panels with phase transitions ──
-            // Only auto-dismiss for UNCORRELATED transitions. Correlated transitions
-            // are expected consequences of the user's Send action and will be handled
-            // by HandleOrchestratorResponse when the await completes.
             if (!suppressPhaseOverwrite && !isCorrelatedTransition
                 && ShowClarification && phase != OrchestrationPhase.Clarifying)
             {
@@ -730,7 +1009,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
                 AddEvent($"⚠ Clarification auto-dismissed: phase transitioned to {phase}");
             }
 
-            // Same guard for plan review panel (uncorrelated only)
             if (!suppressPhaseOverwrite && !isCorrelatedTransition
                 && ShowPlanReview && phase != OrchestrationPhase.AwaitingApproval)
             {
@@ -743,9 +1021,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
                 AddEvent($"⚠ Plan review auto-dismissed: phase transitioned to {phase}");
             }
 
-            // Keep team status display in sync with every orchestrator event —
-            // but skip when we're suppressing phase overwrites to preserve the
-            // manually-set "Planning" state during the initial submit window.
             if (!suppressPhaseOverwrite)
             {
                 UpdateTeamStatus();
@@ -773,11 +1048,9 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
                         BuildLocalFallbackSummary(completedEvent.Report);
                 }
 
-                // Mark all remaining workers as completed
                 FinalizeWorkerStates();
                 ProcessNextSteps(completedEvent.Report);
 
-                // Auto-collapse event log when report is shown
                 if (ShowReport) IsEventLogExpanded = false;
             }
         });
@@ -806,19 +1079,15 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
 
         if (existing != null)
         {
-            // Update existing worker
             existing.Status = e.WorkerStatus;
             existing.StatusDisplay = FormatWorkerStatus(e.WorkerStatus);
             existing.Activity = e.CurrentActivity ?? string.Empty;
             existing.StatusColor = GetWorkerStatusColor(e.WorkerStatus);
             existing.RetryAttempt = e.RetryAttempt;
-
-            // Worker state changed — refresh team status counts
             UpdateTeamStatus();
         }
         else
         {
-            // Create new worker entry — show from the moment it appears
             var worker = new WorkerStatusItem
             {
                 ChunkId = chunkId,
@@ -833,16 +1102,10 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
             };
             Workers.Add(worker);
             _logger.LogDebug("[AgentTeamVM] New worker added: {ChunkId} ({Title})", chunkId, worker.Title);
-
-            // New worker added — refresh team status counts
             UpdateTeamStatus();
         }
     }
 
-    /// <summary>
-    /// After orchestration completes, mark any workers still in a non-terminal state
-    /// as completed so the UI reflects final state.
-    /// </summary>
     private void FinalizeWorkerStates()
     {
         foreach (var w in Workers)
@@ -877,15 +1140,15 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
 
     private static string GetWorkerStatusColor(AgentStatus status) => status switch
     {
-        AgentStatus.Running => "#4CAF50",        // Green
-        AgentStatus.Succeeded => "#2196F3",       // Blue
-        AgentStatus.Failed => "#F44336",          // Red
-        AgentStatus.Retrying => "#FF9800",        // Orange
-        AgentStatus.Aborted => "#9E9E9E",         // Gray
-        AgentStatus.Skipped => "#9E9E9E",         // Gray
-        AgentStatus.Queued => "#FFC107",          // Amber
-        AgentStatus.Pending => "#BDBDBD",         // Light gray
-        AgentStatus.WaitingForDependencies => "#CE93D8", // Light purple
+        AgentStatus.Running => "#4CAF50",
+        AgentStatus.Succeeded => "#2196F3",
+        AgentStatus.Failed => "#F44336",
+        AgentStatus.Retrying => "#FF9800",
+        AgentStatus.Aborted => "#9E9E9E",
+        AgentStatus.Skipped => "#9E9E9E",
+        AgentStatus.Queued => "#FFC107",
+        AgentStatus.Pending => "#BDBDBD",
+        AgentStatus.WaitingForDependencies => "#CE93D8",
         _ => "#9E9E9E"
     };
 
@@ -901,9 +1164,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         CurrentPhaseDisplay = response.Phase.ToString();
         CurrentPhaseColor = GetPhaseColor(response.Phase);
 
-        // Only overwrite OrchestratorMessage when the response carries actual content.
-        // This prevents the "📋 Analyzing task..." feedback set during SubmitTaskAsync()
-        // from being cleared by an empty/null response.Message on the first callback.
         if (!string.IsNullOrWhiteSpace(response.Message))
         {
             OrchestratorMessage = response.Message;
@@ -913,7 +1173,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         ShowPlanReview = false;
         ShowReport = false;
 
-        // Refresh team status display for every response phase transition
         UpdateTeamStatus();
 
         switch (response.Phase)
@@ -934,8 +1193,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
                 IsAwaitingApproval = true;
                 _logger.LogDebug("[AgentTeamVM] Awaiting approval: {ChunkCount} chunks in plan",
                     response.Plan?.Chunks.Count ?? 0);
-
-                // Pre-populate workers from the plan chunks so user sees them immediately
                 PopulateWorkersFromPlan(response.Plan);
                 break;
 
@@ -957,7 +1214,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
                 }
                 FinalizeWorkerStates();
                 ProcessNextSteps(response.Report);
-                // Auto-collapse event log when report is shown
                 if (ShowReport) IsEventLogExpanded = false;
                 break;
 
@@ -973,10 +1229,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>
-    /// When a plan is shown for approval, pre-populate workers in Pending state
-    /// so the user can see what will execute.
-    /// </summary>
     private void PopulateWorkersFromPlan(OrchestrationPlan? plan)
     {
         if (plan?.Chunks is null) return;
@@ -1024,18 +1276,11 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         _logger.LogDebug("[AgentTeamVM] Execution animation stopped.");
     }
 
-    /// <summary>
-    /// Fires every 500ms. Drives:
-    /// 1) Execution status text animation (dots + elapsed time)
-    /// 2) Execution indicator pulsing opacity
-    /// 3) Session indicator blinking when LIVE
-    /// 4) Phase badge pulsing for non-idle phases
-    /// </summary>
     private void OnPulseTimerTick(object? sender, EventArgs e)
     {
         _pulseToggle = !_pulseToggle;
 
-        // ── Session indicator blink ──
+        // Session indicator blink
         if (SessionIndicatorText == "LIVE")
         {
             SessionIndicatorOpacity = _pulseToggle ? 1.0 : 0.4;
@@ -1045,13 +1290,12 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
             SessionIndicatorOpacity = 1.0;
         }
 
-        // ── Phase badge pulse (non-idle, non-completed, non-cancelled) ──
+        // Phase badge pulse
         var phase = ParseCurrentPhase();
         if (phase is OrchestrationPhase.Clarifying or OrchestrationPhase.Planning
             or OrchestrationPhase.AwaitingApproval or OrchestrationPhase.Executing
             or OrchestrationPhase.Aggregating)
         {
-            // Faster pulse for executing phase
             CurrentPhaseBadgeOpacity = phase == OrchestrationPhase.Executing
                 ? (_pulseToggle ? 1.0 : 0.35)
                 : (_pulseToggle ? 1.0 : 0.5);
@@ -1061,7 +1305,7 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
             CurrentPhaseBadgeOpacity = 1.0;
         }
 
-        // ── Execution indicator animation ──
+        // Execution indicator animation
         if (IsExecutionIndicatorVisible)
         {
             _animationDotCount = (_animationDotCount + 1) % 4;
@@ -1079,9 +1323,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         }
     }
 
-    /// <summary>
-    /// Parses the current phase display string back to the enum for animation logic.
-    /// </summary>
     private OrchestrationPhase ParseCurrentPhase()
     {
         return Enum.TryParse<OrchestrationPhase>(CurrentPhaseDisplay, out var phase)
@@ -1093,20 +1334,16 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     // Phase Color Mapping
     // ══════════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// Maps an orchestration phase to its display color (hex).
-    /// Used for the phase badge background tinting and pulsing.
-    /// </summary>
     private static string GetPhaseColor(OrchestrationPhase phase) => phase switch
     {
-        OrchestrationPhase.Idle => "#9E9E9E",            // Gray
-        OrchestrationPhase.Clarifying => "#FFA726",       // Amber
-        OrchestrationPhase.Planning => "#9C27B0",         // Purple
-        OrchestrationPhase.AwaitingApproval => "#2196F3", // Blue
-        OrchestrationPhase.Executing => "#4CAF50",        // Green
-        OrchestrationPhase.Aggregating => "#00897B",      // Teal
-        OrchestrationPhase.Completed => "#66BB6A",        // Light green
-        OrchestrationPhase.Cancelled => "#FF9800",        // Orange
+        OrchestrationPhase.Idle => "#9E9E9E",
+        OrchestrationPhase.Clarifying => "#FFA726",
+        OrchestrationPhase.Planning => "#9C27B0",
+        OrchestrationPhase.AwaitingApproval => "#2196F3",
+        OrchestrationPhase.Executing => "#4CAF50",
+        OrchestrationPhase.Aggregating => "#00897B",
+        OrchestrationPhase.Completed => "#66BB6A",
+        OrchestrationPhase.Cancelled => "#FF9800",
         _ => "#9E9E9E"
     };
 
@@ -1114,11 +1351,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     // Next Steps Processing
     // ══════════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// Extracts next-step actions from the report summary and populates
-    /// the <see cref="NextStepActions"/> collection for UI button rendering.
-    /// Also strips the [ACTION:...] markers from the summary for clean display.
-    /// </summary>
     private void ProcessNextSteps(ConsolidatedReport? report)
     {
         NextStepActions.Clear();
@@ -1133,10 +1365,7 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         var actions = NextStepsParser.ExtractNextSteps(report.ConversationalSummary);
         _logger.LogInformation("[AgentTeamVM] Extracted {Count} next-step actions from summary.", actions.Count);
 
-        // Store parsed next steps on the report model
         report.NextSteps = actions;
-
-        // Strip ACTION markers from the displayed summary for clean markdown rendering
         report.ConversationalSummary = NextStepsParser.StripActionMarkers(report.ConversationalSummary);
 
         foreach (var action in actions)
@@ -1156,15 +1385,34 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     {
         var activeSession = _sessionManager.ActiveSession;
 
+        // Resolve working directory: use side-panel setting, fall back to session, then ~/Workspace
+        var workingDir = !string.IsNullOrWhiteSpace(SettingsWorkingDirectory)
+            ? SettingsWorkingDirectory
+            : activeSession?.WorkingDirectory
+                ?? System.IO.Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    "Workspace");
+
+        // Expand ~/Workspace style paths
+        if (workingDir.StartsWith("~/", StringComparison.Ordinal) || workingDir.StartsWith("~\\", StringComparison.Ordinal))
+        {
+            workingDir = System.IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                workingDir[2..]);
+        }
+
         return new MultiAgentConfig
         {
             MaxParallelSessions = SettingsMaxParallelWorkers,
             WorkspaceStrategy = Enum.TryParse<WorkspaceStrategyType>(SettingsWorkspaceStrategy, out var ws)
                 ? ws : WorkspaceStrategyType.InMemory,
-            OrchestratorModelId = activeSession?.ModelId ?? "gpt-4",
-            WorkerModelId = activeSession?.ModelId ?? "gpt-4",
-            WorkingDirectory = activeSession?.WorkingDirectory
-                ?? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+            OrchestratorModelId = !string.IsNullOrWhiteSpace(SelectedManagerModel)
+                ? SelectedManagerModel
+                : activeSession?.ModelId ?? _appSettings.DefaultModel,
+            WorkerModelId = !string.IsNullOrWhiteSpace(SelectedWorkerModel)
+                ? SelectedWorkerModel
+                : activeSession?.ModelId ?? _appSettings.DefaultModel,
+            WorkingDirectory = workingDir,
             EnabledMcpServers = activeSession?.EnabledMcpServers,
             DisabledSkills = activeSession?.DisabledSkills,
             AutoApproveReadOnlyTools = SettingsAutoApproveReadOnly,
@@ -1181,11 +1429,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     // Team Status Display (Center Header)
     // ══════════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// Recomputes the compact team status display based on the current orchestration
-    /// phase and active worker count. Called from multiple lifecycle points to keep
-    /// the header indicator in sync with the orchestrator state machine.
-    /// </summary>
     private void UpdateTeamStatus()
     {
         var phase = _orchestrator.CurrentPhase;
@@ -1195,26 +1438,26 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         var (action, icon, color, rotating) = phase switch
         {
             OrchestrationPhase.Executing when activeWorkers > 0
-                => ("Coordinating", "\u2699\uFE0F", "#4CAF50", true),
+                => ("Coordinating", "", "#4CAF50", true),
             OrchestrationPhase.Executing
-                => ("Starting", "\u26A1", "#4CAF50", false),
+                => ("Starting", "", "#4CAF50", false),
             OrchestrationPhase.Planning
-                => ("Planning", "\uD83D\uDCCB", "#9C27B0", false),
+                => ("Planning", "", "#9C27B0", false),
             OrchestrationPhase.Clarifying
-                => ("Clarifying", "\uD83D\uDCAC", "#FFA726", false),
+                => ("Clarifying", "", "#FFA726", false),
             OrchestrationPhase.AwaitingApproval
-                => ("Awaiting Approval", "\u23F3", "#2196F3", false),
+                => ("Awaiting Approval", "", "#2196F3", false),
             OrchestrationPhase.Aggregating
-                => ("Aggregating", "\uD83D\uDCCA", "#00897B", false),
+                => ("Aggregating", "", "#00897B", false),
             OrchestrationPhase.Completed
-                => ("Completed", "\u2705", "#66BB6A", false),
+                => ("Completed", "", "#66BB6A", false),
             OrchestrationPhase.Cancelled
-                => ("Cancelled", "\u26D4", "#FF9800", false),
-            _ => ("Waiting for task", "\u2699\uFE0F", "#9E9E9E", false)
+                => ("Cancelled", "", "#FF9800", false),
+            _ => ("Waiting for task", "", "#9E9E9E", false)
         };
 
         TeamStatusIcon = icon;
-        TeamStatusText = $"{action} \u2022 {activeWorkers}/{poolCapacity} Active";
+        TeamStatusText = $"{action}  {activeWorkers}/{poolCapacity} Active";
         TeamStatusColor = color;
         TeamStatusIconRotating = rotating;
     }
@@ -1229,7 +1472,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         ShowClarification = false;
         ShowPlanReview = false;
         ShowReport = false;
-        ShowSettings = false;
         IsAwaitingApproval = false;
         OrchestratorMessage = string.Empty;
         ExecutionStatusText = string.Empty;
@@ -1249,7 +1491,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         IsEventLogExpanded = false;
         _activeClarificationCorrelationId = null;
 
-        // Reset team status to idle defaults
         UpdateTeamStatus();
     }
 
@@ -1268,9 +1509,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
             || msg.Contains("Copilot service", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>
-    /// Builds a local UI-level fallback summary when the LLM/aggregator summary is empty.
-    /// </summary>
     private static string BuildLocalFallbackSummary(ConsolidatedReport report)
     {
         var lines = new List<string>
@@ -1292,7 +1530,6 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
             lines.Add($"- {icon} **{result.ChunkId}**: {summary}");
         }
 
-        // Add generic next steps for the fallback case
         lines.Add("");
         lines.Add("### Recommended Next Steps");
         lines.Add("- [ACTION:Review the results and verify correctness]");
