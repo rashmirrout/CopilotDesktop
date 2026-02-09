@@ -59,8 +59,8 @@ public partial class App : Application
 
             if (isBenignWpfBug)
             {
-                Log.Warning(args.Exception,
-                    "[WPF_BUG] Known benign WPF framework exception (swallowed): {Message}",
+                Log.Error(args.Exception,
+                    "[WPF_BUG] Known WPF framework exception (swallowed, non-fatal): {Message}",
                     args.Exception.Message);
                 args.Handled = true;
                 return; // Do NOT crash the app

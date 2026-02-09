@@ -607,7 +607,8 @@
                       x:Name="MessageScrollViewer"
                       VerticalScrollBarVisibility="Auto"
                       Background="White"
-                      Padding="10">
+                      Padding="10"
+                      PreviewMouseWheel="MessageScrollViewer_PreviewMouseWheel">
             <ItemsControl ItemsSource="{Binding Messages}" 
                           ItemTemplate="{StaticResource MessageTemplate}">
                 <ItemsControl.ItemsPanel>
