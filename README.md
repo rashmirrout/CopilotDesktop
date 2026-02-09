@@ -43,7 +43,6 @@ A production-grade Windows desktop application providing a Claude-like agent UI 
 - 🎨 **Modern UI** — Fluent Design with WPF-UI (Windows 11 style)
 - 📦 **Single Executable** — Self-contained deployment, no installation required
 
-<img width="1184" height="790" alt="image" src="https://github.com/user-attachments/assets/bdbb3457-97d7-44ea-a9bc-dda50904650f" />
 
 ---
 
@@ -75,9 +74,13 @@ A production-grade Windows desktop application providing a Claude-like agent UI 
 
 ---
 
+---
+
+### Screenshots
 <img width="1184" height="790" alt="image" src="https://github.com/user-attachments/assets/bdbb3457-97d7-44ea-a9bc-dda50904650f" />
 <img width="1774" height="1185" alt="image" src="https://github.com/user-attachments/assets/b3dfc4a0-fe3b-4daa-922d-92545dc0c1a2" />
 
+---
 
 
 ## Architecture
