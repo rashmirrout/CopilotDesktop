@@ -375,10 +375,12 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
 
         EmitEvent(OrchestratorEventType.TaskAborted, "Orchestration cancelled by user.");
 
-        // Terminate orchestrator session process
+        // Terminate orchestrator session process and clear the reference so
+        // EnsureOrchestratorSessionAsync creates a fresh session on next submit.
         if (_orchestratorSession is not null)
         {
             _copilotService.TerminateSessionProcess(_orchestratorSession.SessionId);
+            _orchestratorSession = null;
         }
     }
 
@@ -439,6 +441,30 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
     {
         TransitionTo(OrchestrationPhase.Planning, "PlanRequested", correlationId);
 
+        // Defensive: ensure orchestrator session ID is valid before calling downstream services.
+        // This can happen if CancelAsync was called between SubmitTask and PlanTask, leaving
+        // _context.OrchestratorSessionId as empty (its default).
+        if (string.IsNullOrWhiteSpace(_context.OrchestratorSessionId))
+        {
+            _logger.LogWarning("OrchestratorSessionId is empty at PlanTaskAsyncCore entry — recreating session.");
+            if (_activeConfig is not null)
+            {
+                await EnsureOrchestratorSessionAsync(_activeConfig, ct).ConfigureAwait(false);
+            }
+
+            if (string.IsNullOrWhiteSpace(_context.OrchestratorSessionId))
+            {
+                _isRunning = false;
+                TransitionTo(OrchestrationPhase.Idle, "SessionCreationFailed", correlationId);
+                return new OrchestratorResponse
+                {
+                    Phase = OrchestrationPhase.Idle,
+                    Message = "Failed to establish orchestrator session. Please try again.",
+                    RequiresUserInput = true
+                };
+            }
+        }
+
         await LogAsync(null, null, OrchestrationLogLevel.Info, "Orchestrator",
             "Decomposing task into work chunks...",
             OrchestratorEventType.OrchestratorCommentary, ct).ConfigureAwait(false);
@@ -485,6 +511,20 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
 
     private async Task<OrchestratorResponse> ExecutePlanAsync(CancellationToken ct)
     {
+        // Defensive: validate session ID before execution
+        if (string.IsNullOrWhiteSpace(_context.OrchestratorSessionId))
+        {
+            _logger.LogError("OrchestratorSessionId is empty at ExecutePlanAsync entry — aborting execution.");
+            _isRunning = false;
+            TransitionTo(OrchestrationPhase.Idle, "MissingSessionId");
+            return new OrchestratorResponse
+            {
+                Phase = OrchestrationPhase.Idle,
+                Message = "Orchestrator session was lost. Please submit the task again.",
+                RequiresUserInput = true
+            };
+        }
+
         TransitionTo(OrchestrationPhase.Executing);
         var plan = _currentPlan!;
         var config = _activeConfig!;
@@ -575,6 +615,20 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
     private async Task<OrchestratorResponse> AggregateResultsAsync(
         OrchestrationPlan plan, List<AgentResult> results, TimeSpan duration, CancellationToken ct)
     {
+        // Defensive: validate session ID before aggregation
+        if (string.IsNullOrWhiteSpace(_context.OrchestratorSessionId))
+        {
+            _logger.LogError("OrchestratorSessionId is empty at AggregateResultsAsync entry — returning partial results.");
+            _isRunning = false;
+            TransitionTo(OrchestrationPhase.Completed, "MissingSessionId");
+            return new OrchestratorResponse
+            {
+                Phase = OrchestrationPhase.Completed,
+                Message = "Orchestrator session was lost during execution. Results may be incomplete.",
+                RequiresUserInput = true
+            };
+        }
+
         TransitionTo(OrchestrationPhase.Aggregating);
 
         _logger.LogInformation(
