@@ -56,6 +56,79 @@
             <SolidColorBrush x:Key="InfoBrush" Color="#2196F3"/>
             
             <!-- ═══════════════════════════════════════════════════════════════════════ -->
+            <!-- ICON BUTTON STYLE - COMPACT CIRCULAR/ROUNDED ICON BUTTONS                -->
+            <!-- Usage: Style="{StaticResource IconButtonStyle}" on any Button              -->
+            <!-- ═══════════════════════════════════════════════════════════════════════ -->
+            <Style x:Key="IconButtonStyle" TargetType="Button">
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Foreground" Value="#616161"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="Width" Value="32"/>
+                <Setter Property="Height" Value="32"/>
+                <Setter Property="Padding" Value="0"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="IconBorder"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="6"
+                                    Width="{TemplateBinding Width}"
+                                    Height="{TemplateBinding Height}"
+                                    ToolTip="{TemplateBinding ToolTip}">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="IconBorder" Property="Background" Value="#E0E0E0"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="IconBorder" Property="Background" Value="#BDBDBD"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.4"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            
+            <!-- Primary accent variant of IconButtonStyle (filled background) -->
+            <Style x:Key="PrimaryIconButtonStyle" TargetType="Button" BasedOn="{StaticResource IconButtonStyle}">
+                <Setter Property="Background" Value="{StaticResource PrimaryBrush}"/>
+                <Setter Property="Foreground" Value="White"/>
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="IconBorder"
+                                    Background="{TemplateBinding Background}"
+                                    CornerRadius="6"
+                                    Width="{TemplateBinding Width}"
+                                    Height="{TemplateBinding Height}"
+                                    ToolTip="{TemplateBinding ToolTip}">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center"/>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="IconBorder" Property="Background" Value="{StaticResource PrimaryDarkBrush}"/>
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="IconBorder" Property="Background" Value="#1565C0"/>
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Opacity" Value="0.4"/>
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+            
+            <!-- ═══════════════════════════════════════════════════════════════════════ -->
             <!-- MARKDOWN SCROLL VIEWER STYLE                                             -->
             <!-- ═══════════════════════════════════════════════════════════════════════ -->
             <Style TargetType="{x:Type mdxaml:MarkdownScrollViewer}">

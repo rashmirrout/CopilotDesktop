@@ -69,15 +69,33 @@
                 BorderThickness="0,0,0,1">
             <Grid>
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
+                <!-- New Session "+" Button (LEFT) -->
+                <Button Grid.Column="0"
+                        Style="{StaticResource PrimaryIconButtonStyle}"
+                        Command="{Binding CreateSessionCommand}"
+                        ToolTip="New Session (Ctrl+N)"
+                        Margin="8,4,4,4"
+                        AutomationProperties.Name="New Session"
+                        AutomationProperties.HelpText="Create a new chat session. Keyboard shortcut: Ctrl+N">
+                    <TextBlock Text="+" 
+                               FontSize="18" 
+                               FontWeight="Bold" 
+                               Foreground="White"
+                               HorizontalAlignment="Center" 
+                               VerticalAlignment="Center"
+                               Margin="0,-2,0,0"/>
+                </Button>
+
                 <!-- Session Tabs -->
-                <ScrollViewer Grid.Column="0" 
+                <ScrollViewer Grid.Column="1" 
                               HorizontalScrollBarVisibility="Auto" 
                               VerticalScrollBarVisibility="Disabled"
-                              Padding="8,4,8,0">
+                              Padding="4,4,8,0">
                     <ItemsControl ItemsSource="{Binding Sessions}">
                         <ItemsControl.ItemsPanel>
                             <ItemsPanelTemplate>
@@ -86,23 +104,54 @@
                         </ItemsControl.ItemsPanel>
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Button Style="{StaticResource TabButtonStyle}"
+                                <Button x:Name="TabButton"
+                                        Style="{StaticResource TabButtonStyle}"
                                         Command="{Binding DataContext.SwitchSessionCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                         CommandParameter="{Binding}">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto"/>
                                             <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="Auto"/>
                                         </Grid.ColumnDefinitions>
+
+                                        <!-- Rename (pen) icon — always visible, LEFT of name -->
+                                        <Button x:Name="RenameButton"
+                                                Grid.Column="0"
+                                                Content="✏"
+                                                FontSize="11"
+                                                Width="18"
+                                                Height="18"
+                                                Padding="0"
+                                                Margin="0,0,4,0"
+                                                Background="Transparent"
+                                                BorderThickness="0"
+                                                Foreground="#9E9E9E"
+                                                VerticalAlignment="Center"
+                                                Cursor="Hand"
+                                                ToolTip="Rename session"
+                                                Visibility="Visible"
+                                                Click="RenameButton_Click">
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Style.Triggers>
+                                                        <Trigger Property="IsMouseOver" Value="True">
+                                                            <Setter Property="Foreground" Value="#1976D2"/>
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
                                         
-                                        <TextBlock Grid.Column="0"
+                                        <TextBlock Grid.Column="1"
                                                    Text="{Binding DisplayName}" 
                                                    VerticalAlignment="Center"
                                                    Margin="0,0,8,0"
                                                    ToolTip="Double-click to rename"
                                                    MouseLeftButtonDown="TabName_MouseLeftButtonDown"/>
                                         
-                                        <Button Grid.Column="1"
+                                        <Button Grid.Column="2"
+                                                x:Name="CloseButton"
                                                 Content="×" 
                                                 FontSize="18"
                                                 Width="20"
@@ -116,6 +165,7 @@
                                                 VerticalAlignment="Center"
                                                 Cursor="Hand"
                                                 ToolTip="Close session"
+                                                Visibility="Hidden"
                                                 Click="CloseButton_Click">
                                             <Button.Style>
                                                 <Style TargetType="Button">
@@ -130,123 +180,114 @@
                                         </Button>
                                     </Grid>
                                 </Button>
+                                <!-- Show close icon on tab hover -->
+                                <DataTemplate.Triggers>
+                                    <Trigger SourceName="TabButton" Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="CloseButton" Property="Visibility" Value="Visible"/>
+                                    </Trigger>
+                                </DataTemplate.Triggers>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                 </ScrollViewer>
 
-                <!-- Action Buttons -->
-                <StackPanel Grid.Column="1" 
+                <!-- Mode & Utility Buttons -->
+                <StackPanel Grid.Column="2" 
                             Orientation="Horizontal" 
-                            Margin="8,4">
-                    <Button Content="+ New Session" 
-                            Command="{Binding CreateSessionCommand}"
-                            Background="{StaticResource PrimaryBrush}"
-                            Foreground="White"
-                            BorderThickness="0"
-                            Padding="12,6"
-                            Margin="0,0,4,0"
-                            FontSize="12"
-                            Cursor="Hand"
-                            ToolTip="Create a new chat session">
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}"
-                                                    CornerRadius="4"
-                                                    Padding="{TemplateBinding Padding}">
-                                                <ContentPresenter HorizontalAlignment="Center"
-                                                                  VerticalAlignment="Center"/>
-                                            </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="{StaticResource PrimaryDarkBrush}"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
-                    </Button>
+                            Margin="4,4,8,4">
                     <Button Command="{Binding CreateWorktreeSessionCommand}"
-                            Background="{StaticResource AccentBrush}"
-                            Foreground="White"
+                            Background="Transparent"
                             BorderThickness="0"
-                            Padding="12,6"
+                            Padding="10,6"
                             Margin="0,0,4,0"
                             FontSize="12"
                             Cursor="Hand"
                             ToolTip="Create session from GitHub issue">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                        CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="#E0E0E0"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
                         <StackPanel Orientation="Horizontal">
                             <emoji:TextBlock Text="🌿" FontSize="12" Margin="0,0,4,0"/>
-                            <TextBlock Text="Worktree" Foreground="White"/>
+                            <TextBlock Text="Worktree" VerticalAlignment="Center" Foreground="#424242"/>
                         </StackPanel>
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Setter Property="Template">
-                                    <Setter.Value>
-                                        <ControlTemplate TargetType="Button">
-                                            <Border Background="{TemplateBinding Background}"
-                                                    CornerRadius="4"
-                                                    Padding="{TemplateBinding Padding}">
-                                                <ContentPresenter HorizontalAlignment="Center"
-                                                                  VerticalAlignment="Center"/>
-                                            </Border>
-                                        </ControlTemplate>
-                                    </Setter.Value>
-                                </Setter>
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#00ACC1"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
                     </Button>
                     <Button Command="{Binding ShowAgentTeamViewCommand}"
-                            Background="Transparent"
                             BorderThickness="0"
                             Padding="10,6"
                             FontSize="12"
                             Cursor="Hand"
                             ToolTip="Agent Team (Multi-Agent Orchestration)">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                        CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="#E0E0E0"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding DataContext.ShowAgentTeam, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                        <Setter Property="Background" Value="#C5CAE9"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
                         <StackPanel Orientation="Horizontal">
                             <emoji:TextBlock Text="🤖" FontSize="14" Margin="0,0,4,0"/>
                             <TextBlock Text="Team" VerticalAlignment="Center" Foreground="#424242"/>
                         </StackPanel>
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#E0E0E0"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
                     </Button>
                     <Button Command="{Binding ShowOfficeViewCommand}"
-                            Background="Transparent"
                             BorderThickness="0"
                             Padding="10,6"
                             FontSize="12"
                             Cursor="Hand"
                             ToolTip="Agent Office (Long-Running Manager + Assistants)">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                        CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background" Value="#E0E0E0"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <Button.Style>
+                            <Style TargetType="Button">
+                                <Setter Property="Background" Value="Transparent"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding DataContext.ShowOffice, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                        <Setter Property="Background" Value="#C8E6C9"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
                         <StackPanel Orientation="Horizontal">
                             <emoji:TextBlock Text="🏢" FontSize="14" Margin="0,0,4,0"/>
                             <TextBlock Text="Office" VerticalAlignment="Center" Foreground="#424242"/>
                         </StackPanel>
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Style.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#E0E0E0"/>
-                                    </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
                     </Button>
                     <Button Command="{Binding ShowSettingsCommand}"
                             Background="Transparent"
@@ -255,16 +296,20 @@
                             FontSize="14"
                             Cursor="Hand"
                             ToolTip="Settings">
-                        <emoji:TextBlock Text="⚙️" FontSize="14"/>
-                        <Button.Style>
-                            <Style TargetType="Button">
-                                <Style.Triggers>
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                        CornerRadius="4" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
                                     <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter Property="Background" Value="#E0E0E0"/>
+                                        <Setter TargetName="Bd" Property="Background" Value="#E0E0E0"/>
                                     </Trigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Button.Style>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <emoji:TextBlock Text="⚙️" FontSize="14"/>
                     </Button>
                 </StackPanel>
             </Grid>

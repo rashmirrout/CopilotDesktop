@@ -105,6 +105,20 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private string _currentPhaseColor = "#9E9E9E";
 
+    // ── Office Status Display (mirrors Agent Team header pattern) ──
+
+    [ObservableProperty]
+    private string _officeStatusIcon = "🏢";
+
+    [ObservableProperty]
+    private string _officeStatusText = "Idle";
+
+    [ObservableProperty]
+    private string _officeStatusColor = "#9E9E9E";
+
+    [ObservableProperty]
+    private bool _officeStatusIconRotating;
+
     [ObservableProperty]
     private int _currentIteration;
 
@@ -813,12 +827,14 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
                 IsRunning = false;
                 CurrentPhaseDisplay = "Stopped";
                 CurrentPhaseColor = "#FF9800";
+                UpdateOfficeStatus(ManagerPhase.Stopped);
                 break;
 
             case ErrorEvent error:
                 IsRunning = false;
                 CurrentPhaseDisplay = "Error";
                 CurrentPhaseColor = "#F44336";
+                UpdateOfficeStatus(ManagerPhase.Error);
                 SetError(error.ErrorMessage);
                 break;
         }
@@ -831,6 +847,7 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
         CurrentPhaseDisplay = evt.NewPhase.ToString();
         CurrentPhaseColor = GetPhaseColor(evt.NewPhase);
         CurrentIteration = evt.IterationNumber;
+        UpdateOfficeStatus(evt.NewPhase);
 
         // Core state flags — driven directly from the phase
         IsWaitingForClarification = evt.NewPhase == ManagerPhase.Clarifying;
@@ -1109,6 +1126,37 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
         IsActivityPulsing = false;
         _activeAssistantIndices.Clear();
         _totalAssistantsDispatched = 0;
+
+        // Clear office status display
+        OfficeStatusIcon = "🏢";
+        OfficeStatusText = "Idle";
+        OfficeStatusColor = "#9E9E9E";
+        OfficeStatusIconRotating = false;
+    }
+
+    private void UpdateOfficeStatus(ManagerPhase phase)
+    {
+        var (icon, text, color, rotating) = phase switch
+        {
+            ManagerPhase.Idle => ("🏢", "Idle", "#9E9E9E", false),
+            ManagerPhase.Clarifying => ("🤔", "Clarifying", "#FFA726", false),
+            ManagerPhase.Planning => ("📋", "Planning", "#9C27B0", true),
+            ManagerPhase.AwaitingApproval => ("\u23F3", "Awaiting Approval", "#2196F3", false),
+            ManagerPhase.FetchingEvents => ("📡", "Fetching Events", "#00ACC1", true),
+            ManagerPhase.Scheduling => ("📊", "Scheduling", "#7B1FA2", true),
+            ManagerPhase.Executing => ("\u26A1", "Executing", "#4CAF50", true),
+            ManagerPhase.Aggregating => ("🔄", "Aggregating", "#00897B", true),
+            ManagerPhase.Resting => ("😴", "Resting", "#78909C", false),
+            ManagerPhase.Paused => ("\u23F8", "Paused", "#FF9800", false),
+            ManagerPhase.Stopped => ("\u23F9", "Stopped", "#FF9800", false),
+            ManagerPhase.Error => ("\u274C", "Error", "#F44336", false),
+            _ => ("🏢", "Idle", "#9E9E9E", false)
+        };
+
+        OfficeStatusIcon = icon;
+        OfficeStatusText = text;
+        OfficeStatusColor = color;
+        OfficeStatusIconRotating = rotating;
     }
 
     private static string GetPhaseColor(ManagerPhase phase) => phase switch
