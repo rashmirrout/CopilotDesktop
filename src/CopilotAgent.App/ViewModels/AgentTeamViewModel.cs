@@ -542,7 +542,20 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
         {
             await _orchestrator.CancelAsync();
             StopExecutionAnimation();
+
+            // Clear all interactive UI panels so stale prompts don't persist
+            ShowPlanReview = false;
+            ShowClarification = false;
+            IsAwaitingApproval = false;
+            ClarifyingQuestions.Clear();
+            ClarificationResponse = string.Empty;
+            PlanFeedback = string.Empty;
+            _activeClarificationCorrelationId = null;
+
             IsOrchestrating = false;
+            CurrentPhaseDisplay = "Cancelled";
+            CurrentPhaseColor = GetPhaseColor(OrchestrationPhase.Cancelled);
+            UpdateTeamStatus();
             AddEvent("🛑 Orchestration cancelled by user.");
         }
         catch (Exception ex)

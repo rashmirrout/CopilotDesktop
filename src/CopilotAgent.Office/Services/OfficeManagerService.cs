@@ -315,6 +315,11 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
         _pauseGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         TransitionTo(ManagerPhase.Paused);
+
+        // Bug fix: Explicitly clear activity status so stale "Waiting for approval"
+        // or other activity text doesn't persist while paused.
+        EmitActivityStatus(ActivityStatusType.Idle, string.Empty);
+
         _logger.LogInformation("Office paused");
         return Task.CompletedTask;
     }
@@ -743,12 +748,42 @@ public sealed class OfficeManagerService : IOfficeManagerService
                 var question = content["[CLARIFICATION_NEEDED]".Length..].Trim();
                 var userAnswer = await RequestClarificationAsync(question, ct).ConfigureAwait(false);
 
-                // Re-generate plan with the clarification
-                var followUp = $"The user answered your question: \"{userAnswer}\"\n\nNow produce the execution plan.";
+                // Bug fix: Re-evaluate vagueness after clarification instead of forcing a plan.
+                // The user's response may still be vague (e.g., "hi" again), so we must allow
+                // the LLM to request further clarification if needed.
+                var followUp = $"""
+                    The user provided this response to your clarification question: "{userAnswer}"
+                    
+                    Re-evaluate: Is this response specific enough to create a concrete, actionable execution plan?
+                    
+                    If STILL vague or unclear, respond with [CLARIFICATION_NEEDED] followed by a more specific question.
+                    If NOW clear enough, produce the execution plan in Markdown format.
+                    """;
                 var retryContent = await SendManagerPromptAsync(
                     _managerSession, followUp,
                     CommentaryType.ManagerThinking, "Manager",
-                    "🧠 Refining plan with your clarification...", ct).ConfigureAwait(false);
+                    "🧠 Evaluating your response...", ct).ConfigureAwait(false);
+
+                // Recursive check: the LLM may again respond with [CLARIFICATION_NEEDED]
+                if (retryContent.StartsWith("[CLARIFICATION_NEEDED]", StringComparison.OrdinalIgnoreCase))
+                {
+                    var followUpQuestion = retryContent["[CLARIFICATION_NEEDED]".Length..].Trim();
+                    var secondAnswer = await RequestClarificationAsync(followUpQuestion, ct).ConfigureAwait(false);
+
+                    // Final attempt: after two rounds of clarification, produce a best-effort plan
+                    var finalPrompt = $"""
+                        The user provided additional clarification: "{secondAnswer}"
+                        
+                        If clear enough, produce the execution plan. If still vague, produce a minimal 
+                        exploratory plan that investigates the workspace and reports findings, then ask 
+                        for more specific direction in the aggregation summary.
+                        """;
+                    return await SendManagerPromptAsync(
+                        _managerSession, finalPrompt,
+                        CommentaryType.ManagerThinking, "Manager",
+                        "🧠 Generating plan with your input...", ct).ConfigureAwait(false);
+                }
+
                 return retryContent;
             }
 

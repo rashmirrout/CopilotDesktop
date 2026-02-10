@@ -51,7 +51,7 @@
             <Setter Property="MarkdownStyleName" Value="Standard"/>
             <Setter Property="Foreground" Value="#424242"/>
             <Setter Property="FontSize" Value="13"/>
-            <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+            <Setter Property="VerticalScrollBarVisibility" Value="Disabled"/>
             <Setter Property="Background" Value="Transparent"/>
         </Style>
 

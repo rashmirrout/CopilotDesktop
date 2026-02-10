@@ -138,7 +138,10 @@ public partial class OfficeView : UserControl
     {
         if (e.Action == NotifyCollectionChangedAction.Add)
         {
-            ChatScrollViewer.ScrollToEnd();
+            Dispatcher.InvokeAsync(() =>
+            {
+                ChatScrollViewer?.ScrollToEnd();
+            }, System.Windows.Threading.DispatcherPriority.Loaded);
         }
     }
 
@@ -175,62 +178,41 @@ public partial class OfficeView : UserControl
     }
 
     /// <summary>
-    /// Issue #2 fix: Re-dispatch mouse wheel events from child TextBox/MarkdownScrollViewer
-    /// controls to the parent ChatScrollViewer so scrolling isn't blocked.
+    /// Ensures mouse wheel events propagate to the main ChatScrollViewer even when
+    /// child elements (MarkdownScrollViewer, TextBox, etc.) capture the event.
+    /// Also safely handles ContentElement types (Run, Inline, Paragraph) that are not Visual/Visual3D.
     /// </summary>
     private void ChatScrollViewer_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
     {
-        // If the event source is a read-only TextBox (SelectableText style) or a
-        // MarkdownScrollViewer (which has its own internal ScrollViewer), we want
-        // the parent ChatScrollViewer to handle scrolling instead.
-        if (e.OriginalSource is System.Windows.Controls.Primitives.ScrollBar)
-            return; // Let scrollbar thumb drags work normally
+        if (sender is not ScrollViewer scrollViewer)
+            return;
 
-        // Check if the event originated from inside a child that would capture scroll
+        // Walk up from the original source to see if a nested ScrollViewer is capturing the event
         var source = e.OriginalSource as DependencyObject;
-        while (source != null && source != ChatScrollViewer)
+        while (source != null && source != scrollViewer)
         {
-            if (source is TextBox tb && tb.IsReadOnly)
+            if (source is ScrollViewer nested && nested != scrollViewer)
             {
-                // Read-only TextBox — redirect scroll to parent
-                ScrollParent(e);
+                // Found a nested ScrollViewer — force the main one to scroll instead
+                e.Handled = true;
+                scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset - e.Delta);
                 return;
             }
 
-            if (source is ScrollViewer sv && sv != ChatScrollViewer)
-            {
-                // Nested ScrollViewer (e.g., MdXaml MarkdownScrollViewer internal)
-                // Only redirect if the nested viewer can't scroll further
-                if (e.Delta > 0 && sv.VerticalOffset <= 0)
-                {
-                    ScrollParent(e);
-                    return;
-                }
-                if (e.Delta < 0 && sv.VerticalOffset >= sv.ScrollableHeight)
-                {
-                    ScrollParent(e);
-                    return;
-                }
-                // Nested viewer can scroll — let it handle
-                return;
-            }
-
-            // Walk up the tree safely: VisualTreeHelper.GetParent only works on
-            // Visual / Visual3D. ContentElements like Run, Inline, Paragraph etc.
-            // are NOT visuals — use their Parent property (logical tree) instead.
+            // Safe tree traversal: ContentElement (Run, Inline, Paragraph) is not a Visual,
+            // so use LogicalTreeHelper for those types to avoid InvalidOperationException.
             source = source is System.Windows.Media.Visual or System.Windows.Media.Media3D.Visual3D
                 ? System.Windows.Media.VisualTreeHelper.GetParent(source)
                 : LogicalTreeHelper.GetParent(source);
         }
-    }
 
-    /// <summary>
-    /// Scrolls the ChatScrollViewer by the mouse wheel delta and marks the event handled.
-    /// </summary>
-    private void ScrollParent(MouseWheelEventArgs e)
-    {
-        ChatScrollViewer.ScrollToVerticalOffset(ChatScrollViewer.VerticalOffset - e.Delta);
-        e.Handled = true;
+        // If no nested ScrollViewer was found but the event still isn't reaching us
+        // (e.g., TextBox with no scrollbar eats it), handle it anyway
+        if (!e.Handled)
+        {
+            e.Handled = true;
+            scrollViewer.ScrollToVerticalOffset(scrollViewer.VerticalOffset - e.Delta);
+        }
     }
 
     /// <summary>

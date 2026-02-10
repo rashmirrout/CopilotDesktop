@@ -832,11 +832,21 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
         CurrentPhaseColor = GetPhaseColor(evt.NewPhase);
         CurrentIteration = evt.IterationNumber;
 
+        // Core state flags — driven directly from the phase
         IsWaitingForClarification = evt.NewPhase == ManagerPhase.Clarifying;
         IsPlanAwaitingApproval = evt.NewPhase == ManagerPhase.AwaitingApproval;
         IsResting = evt.NewPhase == ManagerPhase.Resting;
 
-        if (evt.NewPhase == ManagerPhase.Stopped || evt.NewPhase == ManagerPhase.Error)
+        // Bug fix: When pausing/stopping/erroring, explicitly clear interactive UI states
+        // so stale approval panels and clarification banners don't persist.
+        if (evt.NewPhase is ManagerPhase.Paused or ManagerPhase.Stopped or ManagerPhase.Error)
+        {
+            IsPlanAwaitingApproval = false;
+            IsWaitingForClarification = false;
+            IsResting = false;
+        }
+
+        if (evt.NewPhase is ManagerPhase.Stopped or ManagerPhase.Error)
         {
             IsRunning = false;
         }
