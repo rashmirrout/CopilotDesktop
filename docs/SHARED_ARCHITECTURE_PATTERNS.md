@@ -1,13 +1,16 @@
 # Shared Architecture Patterns — Agent Team & Agent Office
 
-> **Version**: 1.0  
-> **Status**: Living Document  
+> **Version**: 2.0  
+> **Status**: Living Document — Enterprise Production Standard  
 > **Date**: February 2026  
-> **Scope**: Cross-cutting architectural patterns shared between `CopilotAgent.MultiAgent` (Agent Team) and `CopilotAgent.Office` (Agent Office)
+> **Scope**: Cross-cutting architectural patterns shared between `CopilotAgent.MultiAgent` (Agent Team) and `CopilotAgent.Office` (Agent Office)  
+> **Audience**: Engineers building, maintaining, or extending CopilotDesktop for millions of users worldwide
 
 ---
 
 ## Table of Contents
+
+**Part I — Proven Patterns (Production-Validated)**
 
 1. [Purpose & Audience](#1-purpose--audience)
 2. [Architecture Overview](#2-architecture-overview)
@@ -22,7 +25,22 @@
 11. [Cross-Cutting Concerns](#11-cross-cutting-concerns)
 12. [Comparative Reference](#12-comparative-reference)
 13. [Implementation Guidelines](#13-implementation-guidelines)
-14. [Future Considerations](#14-future-considerations)
+
+**Part II — Enterprise Enhancement Patterns (Next-Generation)**
+
+14. [Pattern 9: Domain-Expertise Agent Roles](#14-pattern-9-domain-expertise-agent-roles)
+15. [Pattern 10: Enterprise Conversation Management](#15-pattern-10-enterprise-conversation-management)
+16. [Pattern 11: Critique-Refine Quality Gates](#16-pattern-11-critique-refine-quality-gates)
+17. [Pattern 12: Moderator-Based Dynamic Orchestration](#17-pattern-12-moderator-based-dynamic-orchestration)
+
+**Part III — Production Readiness Standards**
+
+18. [Scalability & Performance Guidelines](#18-scalability--performance-guidelines)
+19. [Error Recovery Playbook](#19-error-recovery-playbook)
+20. [Debugging & Observability Standards](#20-debugging--observability-standards)
+21. [Cost & Resource Management](#21-cost--resource-management)
+22. [Production Readiness Checklist](#22-production-readiness-checklist)
+23. [Future Architecture Roadmap](#23-future-architecture-roadmap)
 
 ---
 
@@ -1084,14 +1102,1706 @@ When subscribing to service events from a ViewModel:
 
 ---
 
-## 14. Future Considerations
+---
 
-### 14.1 Potential for Base Classes
+# Part II — Enterprise Enhancement Patterns
+
+> The patterns in Part II represent **next-generation** architectural improvements derived from
+> competitive analysis of multi-agent orchestration frameworks (Semantic Kernel AgentGroupChat,
+> Microsoft.Agents.AI, Panel-of-Experts architectures). These patterns are designed to be
+> **incrementally adopted** — each one is independently valuable and backward-compatible with
+> the production patterns in Part I.
+
+---
+
+## 14. Pattern 9: Domain-Expertise Agent Roles
+
+### 14.1 Pattern Description
+
+Worker agents should be named and configured by **domain expertise**, not by abstract function.
+Role names signal intent to both the LLM (via system prompts) and the user (via UI labels).
+A user who sees "SecurityAnalyst" immediately understands value; "Generic" communicates nothing.
+
+### 14.2 Role Taxonomy
+
+```csharp
+/// <summary>
+/// Domain-expertise roles for worker agents. Each role carries a distinct system
+/// prompt persona, tool access profile, and UI presentation.
+///
+/// DESIGN RULES:
+///   1. Every role MUST have a unique system prompt template.
+///   2. Every role MUST map to a user-visible display name and icon.
+///   3. The TaskDecomposer assigns roles during planning based on chunk content.
+///   4. GeneralPurpose is the fallback — never assign it when a specific role fits.
+///   5. New roles require: enum value + prompt template + UI mapping + tests.
+/// </summary>
+public enum AgentRole
+{
+    // ── Architecture & Design ───────────────────────────────
+    
+    /// <summary>System design, API contracts, component decomposition, architecture decisions.</summary>
+    Architect,
+    
+    /// <summary>Database schema design, query optimization, data modeling, migration strategy.</summary>
+    DatabaseExpert,
+
+    // ── Quality & Security ──────────────────────────────────
+    
+    /// <summary>Threat modeling, vulnerability analysis, authentication/authorization review, OWASP compliance.</summary>
+    SecurityAnalyst,
+    
+    /// <summary>Code review, static analysis, best practices enforcement, pattern compliance.</summary>
+    CodeReviewer,
+    
+    /// <summary>Test strategy, coverage analysis, test creation, edge case identification, regression testing.</summary>
+    QualityAssurance,
+
+    // ── Performance & Operations ────────────────────────────
+    
+    /// <summary>Profiling, bottleneck identification, algorithmic complexity, memory optimization, cache strategy.</summary>
+    PerformanceEngineer,
+    
+    /// <summary>CI/CD pipelines, deployment strategy, infrastructure-as-code, monitoring setup.</summary>
+    DevOpsSpecialist,
+
+    // ── Implementation ──────────────────────────────────────
+    
+    /// <summary>Feature development, refactoring, bug fixes, code implementation.</summary>
+    Developer,
+    
+    /// <summary>Research, data gathering, competitive analysis, documentation, technical writing.</summary>
+    Researcher,
+
+    // ── Meta Roles (Orchestration) ──────────────────────────
+    
+    /// <summary>
+    /// Synthesizes results from multiple workers into a unified report.
+    /// Used as the final aggregation step in multi-stage plans.
+    /// </summary>
+    Synthesizer,
+    
+    /// <summary>
+    /// Evaluates work from other agents and provides adversarial review.
+    /// See Pattern 11: Critique-Refine Quality Gates.
+    /// </summary>
+    Critic,
+
+    // ── Fallback ────────────────────────────────────────────
+    
+    /// <summary>
+    /// No domain specialization. Use ONLY when the task does not map to any specific role.
+    /// The TaskDecomposer should minimize use of this role.
+    /// </summary>
+    GeneralPurpose
+}
+```
+
+### 14.3 Role Configuration Contract
+
+```csharp
+/// <summary>
+/// Configuration for a specific agent role. Loaded from settings or hardcoded defaults.
+/// IMMUTABLE after construction — pass by value, never mutate in-place.
+/// </summary>
+public sealed record AgentRoleConfig
+{
+    /// <summary>The role this configuration applies to.</summary>
+    public required AgentRole Role { get; init; }
+    
+    /// <summary>Human-readable display name shown in UI badges and pills.</summary>
+    public required string DisplayName { get; init; }
+    
+    /// <summary>Emoji or icon identifier for UI rendering.</summary>
+    public required string Icon { get; init; }
+    
+    /// <summary>
+    /// System prompt template injected into the worker session.
+    /// Supports placeholders: {TaskDescription}, {WorkspacePath}, {DependencyOutputs}.
+    /// </summary>
+    public required string SystemPromptTemplate { get; init; }
+    
+    /// <summary>
+    /// Hex color for UI accent (pills, badges, status indicators).
+    /// Must contrast against both light and dark backgrounds.
+    /// </summary>
+    public required string AccentColor { get; init; }
+    
+    /// <summary>
+    /// Tool categories this role is authorized to use.
+    /// Empty = all tools allowed. Populated = whitelist mode.
+    /// </summary>
+    public IReadOnlyList<string> AllowedToolCategories { get; init; } = [];
+    
+    /// <summary>
+    /// Maximum time this role's worker may execute before forced termination.
+    /// Null = use global default from MultiAgentSettings.WorkerTimeoutMinutes.
+    /// </summary>
+    public TimeSpan? TimeoutOverride { get; init; }
+}
+```
+
+### 14.4 Default Role Registry
+
+```csharp
+/// <summary>
+/// Provides default configurations for all agent roles.
+/// Acts as single source of truth for role metadata across the application.
+///
+/// EXTENSION RULE: To add a new role:
+///   1. Add enum value to AgentRole
+///   2. Add entry to DefaultRoles dictionary below
+///   3. Add system prompt template
+///   4. Add UI mapping in AgentTeamView.xaml / OfficeView.xaml
+///   5. Add unit test verifying the role is fully configured
+/// </summary>
+public static class AgentRoleDefaults
+{
+    public static IReadOnlyDictionary<AgentRole, AgentRoleConfig> DefaultRoles { get; } =
+        new Dictionary<AgentRole, AgentRoleConfig>
+        {
+            [AgentRole.Architect] = new()
+            {
+                Role = AgentRole.Architect,
+                DisplayName = "Architect",
+                Icon = "🏗️",
+                AccentColor = "#4FC3F7",
+                SystemPromptTemplate = """
+                    You are a senior software architect. Your expertise:
+                    - System design and component decomposition
+                    - API contract design and interface boundaries
+                    - Design pattern selection and architectural trade-offs
+                    - Scalability, maintainability, and extensibility analysis
+                    Focus on structural decisions. Justify every choice with trade-offs.
+                    """
+            },
+            [AgentRole.SecurityAnalyst] = new()
+            {
+                Role = AgentRole.SecurityAnalyst,
+                DisplayName = "Security Analyst",
+                Icon = "🛡️",
+                AccentColor = "#EF5350",
+                SystemPromptTemplate = """
+                    You are a security analyst specializing in application security.
+                    Your expertise:
+                    - Threat modeling (STRIDE, DREAD)
+                    - Authentication and authorization review
+                    - Input validation and injection prevention
+                    - OWASP Top 10 compliance assessment
+                    - Secrets management and data protection
+                    Be adversarial. Assume every input is hostile. Flag every risk.
+                    """
+            },
+            [AgentRole.PerformanceEngineer] = new()
+            {
+                Role = AgentRole.PerformanceEngineer,
+                DisplayName = "Performance Engineer",
+                Icon = "⚡",
+                AccentColor = "#FFB74D",
+                SystemPromptTemplate = """
+                    You are a performance engineer. Your expertise:
+                    - Algorithmic complexity analysis (time and space)
+                    - Memory allocation patterns and GC pressure
+                    - Cache strategy and data locality
+                    - Concurrency bottlenecks and contention
+                    - Profiling methodology and benchmark design
+                    Quantify everything. No vague claims — provide Big-O, measurements, or estimates.
+                    """
+            },
+            [AgentRole.QualityAssurance] = new()
+            {
+                Role = AgentRole.QualityAssurance,
+                DisplayName = "QA Engineer",
+                Icon = "🧪",
+                AccentColor = "#81C784",
+                SystemPromptTemplate = """
+                    You are a QA engineer. Your expertise:
+                    - Test strategy (unit, integration, e2e, property-based)
+                    - Edge case identification and boundary analysis
+                    - Regression test design
+                    - Code coverage analysis and gap identification
+                    - Test data generation and fixture management
+                    Every claim must be testable. Every path must be covered.
+                    """
+            },
+            [AgentRole.CodeReviewer] = new()
+            {
+                Role = AgentRole.CodeReviewer,
+                DisplayName = "Code Reviewer",
+                Icon = "🔍",
+                AccentColor = "#CE93D8",
+                SystemPromptTemplate = """
+                    You are a senior code reviewer. Your expertise:
+                    - Code quality, readability, and maintainability
+                    - Design pattern compliance and anti-pattern detection
+                    - Error handling completeness and edge cases
+                    - Naming conventions and API ergonomics
+                    - SOLID principles and clean code practices
+                    Be constructive but thorough. Every suggestion must include the 'why'.
+                    """
+            },
+            [AgentRole.Developer] = new()
+            {
+                Role = AgentRole.Developer,
+                DisplayName = "Developer",
+                Icon = "💻",
+                AccentColor = "#90CAF9",
+                SystemPromptTemplate = """
+                    You are a senior software developer. Your expertise:
+                    - Feature implementation and code generation
+                    - Refactoring and technical debt reduction
+                    - Bug diagnosis and fix implementation
+                    - API integration and data transformation
+                    Write clean, tested, production-ready code. No shortcuts.
+                    """
+            },
+            [AgentRole.DatabaseExpert] = new()
+            {
+                Role = AgentRole.DatabaseExpert,
+                DisplayName = "Database Expert",
+                Icon = "🗄️",
+                AccentColor = "#A1887F",
+                SystemPromptTemplate = """
+                    You are a database expert. Your expertise:
+                    - Schema design and normalization
+                    - Query optimization and index strategy
+                    - Migration planning and backward compatibility
+                    - Data integrity constraints and transaction design
+                    Every schema change must consider migration cost and query performance.
+                    """
+            },
+            [AgentRole.DevOpsSpecialist] = new()
+            {
+                Role = AgentRole.DevOpsSpecialist,
+                DisplayName = "DevOps Specialist",
+                Icon = "🚀",
+                AccentColor = "#80DEEA",
+                SystemPromptTemplate = """
+                    You are a DevOps specialist. Your expertise:
+                    - CI/CD pipeline design and optimization
+                    - Infrastructure-as-code and environment management
+                    - Deployment strategies (blue-green, canary, rolling)
+                    - Monitoring, alerting, and incident response
+                    Automate everything. Manual steps are bugs.
+                    """
+            },
+            [AgentRole.Researcher] = new()
+            {
+                Role = AgentRole.Researcher,
+                DisplayName = "Researcher",
+                Icon = "📚",
+                AccentColor = "#FFF176",
+                SystemPromptTemplate = """
+                    You are a technical researcher. Your expertise:
+                    - Technology evaluation and competitive analysis
+                    - Documentation review and knowledge synthesis
+                    - Best practice research across industry sources
+                    - Data gathering, analysis, and structured reporting
+                    Cite sources. Distinguish facts from opinions. Provide actionable recommendations.
+                    """
+            },
+            [AgentRole.Synthesizer] = new()
+            {
+                Role = AgentRole.Synthesizer,
+                DisplayName = "Synthesizer",
+                Icon = "📊",
+                AccentColor = "#B0BEC5",
+                SystemPromptTemplate = """
+                    You are a results synthesizer. Your job:
+                    - Combine outputs from multiple agents into a unified, coherent report
+                    - Resolve contradictions between agent findings
+                    - Highlight consensus and disagreements
+                    - Produce actionable executive summary
+                    Never just concatenate. Always synthesize, prioritize, and conclude.
+                    """
+            },
+            [AgentRole.Critic] = new()
+            {
+                Role = AgentRole.Critic,
+                DisplayName = "Critic",
+                Icon = "⚖️",
+                AccentColor = "#FFAB91",
+                SystemPromptTemplate = """
+                    You are an adversarial reviewer. Your job:
+                    - Challenge every assumption in the presented work
+                    - Identify logical gaps, missing edge cases, and unverified claims
+                    - Grade the work (PASS / NEEDS_REVISION / FAIL) with specific reasons
+                    - Suggest concrete improvements for each issue found
+                    Be rigorous. Do not rubber-stamp. Quality depends on your honesty.
+                    """
+            },
+            [AgentRole.GeneralPurpose] = new()
+            {
+                Role = AgentRole.GeneralPurpose,
+                DisplayName = "Agent",
+                Icon = "🤖",
+                AccentColor = "#E0E0E0",
+                SystemPromptTemplate = """
+                    You are a capable AI assistant. Complete the assigned task thoroughly
+                    and accurately. If you encounter ambiguity, state your assumptions explicitly.
+                    """
+            }
+        };
+}
+```
+
+### 14.5 Role Selection Decision Tree
+
+The task decomposer uses this logic when assigning roles to work chunks:
+
+```
+Task Content Analysis
+    │
+    ├── Contains "security", "auth", "vulnerability", "OWASP" → SecurityAnalyst
+    ├── Contains "performance", "optimize", "profile", "bottleneck" → PerformanceEngineer
+    ├── Contains "test", "coverage", "QA", "regression" → QualityAssurance
+    ├── Contains "review", "code quality", "refactor" → CodeReviewer
+    ├── Contains "design", "architecture", "API contract" → Architect
+    ├── Contains "database", "schema", "SQL", "migration" → DatabaseExpert
+    ├── Contains "deploy", "CI/CD", "pipeline", "infrastructure" → DevOpsSpecialist
+    ├── Contains "research", "compare", "analyze", "document" → Researcher
+    ├── Contains "implement", "build", "fix", "develop" → Developer
+    ├── Contains "synthesize", "summarize", "aggregate" → Synthesizer
+    ├── Contains "critique", "review adversarially", "validate" → Critic
+    └── No match → GeneralPurpose (log warning: role assignment missed)
+```
+
+**NOTE**: This is a **heuristic fallback**. The primary role assignment is done by the LLM during
+task decomposition — the LLM includes a `role` field in each chunk's JSON. The heuristic only
+applies when the LLM omits or provides an unrecognized role.
+
+### 14.6 Migration Guide (from Current Enum)
+
+| Old Value | New Value | Notes |
+|-----------|-----------|-------|
+| `Generic` | `GeneralPurpose` | Renamed for clarity |
+| `Planning` | `Architect` | Planning is an activity, not an expertise |
+| `CodeAnalysis` | `CodeReviewer` | More specific, human-recognizable |
+| `MemoryDiagnostics` | `PerformanceEngineer` | Broadened scope (memory is one aspect of performance) |
+| `Performance` | `PerformanceEngineer` | More professional title |
+| `Testing` | `QualityAssurance` | Industry-standard terminology |
+| `Implementation` | `Developer` | Universally understood |
+| `Synthesis` | `Synthesizer` | Consistent noun form |
+| — | `SecurityAnalyst` | **NEW** — Critical gap filled |
+| — | `DatabaseExpert` | **NEW** — Specialized data expertise |
+| — | `DevOpsSpecialist` | **NEW** — Infrastructure expertise |
+| — | `Researcher` | **NEW** — Non-code task support |
+| — | `Critic` | **NEW** — Enables Critique-Refine pattern |
+
+### 14.7 Design Rules
+
+1. **Role names are domain expertise nouns**, not activity verbs. "SecurityAnalyst" not "AnalyzingSecurity".
+2. **Every role has a unique system prompt** — never reuse prompts across roles.
+3. **The LLM assigns roles during planning** — the enum exists for type safety and UI mapping.
+4. **GeneralPurpose is the fallback of last resort** — log a warning when it's used.
+5. **New roles require the full checklist**: enum value → config → prompt → UI → test.
+6. **AccentColors must be WCAG AA compliant** against both `#1E1E1E` (dark) and `#FFFFFF` (light) backgrounds.
+
+---
+
+## 15. Pattern 10: Enterprise Conversation Management
+
+### 15.1 Pattern Description
+
+Conversation history is a **first-class concern** in multi-agent orchestration. Every message
+exchanged between the orchestrator LLM and the system must be tracked, queryable, exportable,
+and bounded in memory. This pattern extracts conversation management from service internals
+into a dedicated, testable, thread-safe abstraction.
+
+### 15.2 Interface Contract
+
+```csharp
+/// <summary>
+/// Thread-safe conversation history manager for multi-agent orchestration.
+///
+/// THREAD SAFETY: All methods are safe for concurrent access from multiple workers.
+/// MEMORY MANAGEMENT: Auto-trims when message count exceeds configured maximum.
+/// PERSISTENCE: Supports export/import for session recovery and audit trails.
+///
+/// CRITICAL: Implementations MUST:
+///   1. Never expose internal mutable collections.
+///   2. Return defensive copies from all Get* methods.
+///   3. Log all mutations at Debug level with ConversationId prefix.
+///   4. Respect CancellationToken at every async boundary.
+/// </summary>
+public interface IAgentConversation : IDisposable
+{
+    /// <summary>Unique identifier for correlation and logging.</summary>
+    string ConversationId { get; }
+
+    /// <summary>
+    /// Adds a message. Thread-safe via internal SemaphoreSlim.
+    /// Auto-trims oldest messages when MaxMessages threshold is exceeded.
+    /// </summary>
+    /// <exception cref="ArgumentNullException">If message is null.</exception>
+    /// <exception cref="ObjectDisposedException">If conversation is disposed.</exception>
+    Task AddMessageAsync(ChatMessage message, CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns complete history as an immutable snapshot.
+    /// Never returns null — returns empty list if no messages exist.
+    /// Performance: O(n) — creates defensive copy.
+    /// </summary>
+    IReadOnlyList<ChatMessage> GetHistory();
+
+    /// <summary>
+    /// Returns the last N messages. Useful for context window management.
+    /// If lastN > MessageCount, returns all messages.
+    /// If lastN &lt;= 0, returns empty list.
+    /// </summary>
+    IReadOnlyList<ChatMessage> GetHistory(int lastN);
+
+    /// <summary>
+    /// Filters by role. Returns immutable filtered snapshot.
+    /// </summary>
+    IReadOnlyList<ChatMessage> GetHistoryByRole(MessageRole role);
+
+    /// <summary>
+    /// Clears all messages. Irreversible. Emits ConversationChanged event.
+    /// </summary>
+    Task ClearAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Exports conversation to JSON file including all metadata.
+    /// </summary>
+    /// <exception cref="IOException">On file write failure.</exception>
+    Task ExportAsync(string filePath, CancellationToken ct = default);
+
+    /// <summary>Current message count. Thread-safe read.</summary>
+    int MessageCount { get; }
+
+    /// <summary>
+    /// Raised when conversation is modified (add, clear, trim).
+    /// Handlers MUST NOT block — offload heavy work to background threads.
+    /// </summary>
+    event EventHandler<ConversationChangedEventArgs>? ConversationChanged;
+}
+
+/// <summary>
+/// Event args for conversation modifications.
+/// </summary>
+public sealed class ConversationChangedEventArgs : EventArgs
+{
+    public required string ConversationId { get; init; }
+    public required ConversationChangeType ChangeType { get; init; }
+    public int MessageCount { get; init; }
+    public int TrimmedCount { get; init; }
+}
+
+public enum ConversationChangeType
+{
+    MessageAdded,
+    HistoryCleared,
+    HistoryTrimmed,
+    HistoryExported
+}
+```
+
+### 15.3 Canonical Implementation Pattern
+
+```csharp
+/// <summary>
+/// Production implementation of IAgentConversation.
+///
+/// Memory Management:
+///   - Default MaxMessages = 1000 (configurable via constructor).
+///   - When threshold exceeded, trims oldest 20% of messages.
+///   - Trimming preserves the first message (system prompt) if present.
+///
+/// Thread Safety:
+///   - SemaphoreSlim(1,1) guards all list mutations.
+///   - Read operations return defensive copies (safe without lock).
+///
+/// Disposal:
+///   - Releases semaphore, clears internal list, nulls event handlers.
+///   - Post-disposal access throws ObjectDisposedException.
+/// </summary>
+public sealed class ConversationManager : IAgentConversation
+{
+    private readonly List<ChatMessage> _messages = [];
+    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly int _maxMessages;
+    private readonly ILogger<ConversationManager> _logger;
+    private bool _disposed;
+
+    public string ConversationId { get; }
+    public int MessageCount => _messages.Count;
+
+    public event EventHandler<ConversationChangedEventArgs>? ConversationChanged;
+
+    public ConversationManager(
+        string conversationId,
+        ILogger<ConversationManager> logger,
+        int maxMessages = 1000)
+    {
+        ConversationId = conversationId;
+        _logger = logger;
+        _maxMessages = Math.Max(10, maxMessages); // Floor at 10
+    }
+
+    public async Task AddMessageAsync(ChatMessage message, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(message);
+
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            _messages.Add(message);
+            _logger.LogDebug("[{ConvId}] Message added: Role={Role}, Length={Length}",
+                ConversationId, message.Role, message.Content?.Length ?? 0);
+
+            // Auto-trim when threshold exceeded
+            var trimmed = 0;
+            if (_messages.Count > _maxMessages)
+            {
+                var trimCount = _maxMessages / 5; // Remove oldest 20%
+                // Preserve first message (system prompt) if it's a System role
+                var startIndex = _messages.Count > 0 
+                    && _messages[0].Role == MessageRole.System ? 1 : 0;
+                _messages.RemoveRange(startIndex, Math.Min(trimCount, _messages.Count - startIndex));
+                trimmed = trimCount;
+
+                _logger.LogInformation(
+                    "[{ConvId}] Auto-trimmed {Count} messages (threshold: {Max})",
+                    ConversationId, trimmed, _maxMessages);
+            }
+
+            RaiseChanged(trimmed > 0
+                ? ConversationChangeType.HistoryTrimmed
+                : ConversationChangeType.MessageAdded, trimmed);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public IReadOnlyList<ChatMessage> GetHistory()
+    {
+        // Defensive copy — caller cannot mutate our internal list
+        return _messages.ToList().AsReadOnly();
+    }
+
+    public IReadOnlyList<ChatMessage> GetHistory(int lastN)
+    {
+        if (lastN <= 0) return [];
+        var skip = Math.Max(0, _messages.Count - lastN);
+        return _messages.Skip(skip).ToList().AsReadOnly();
+    }
+
+    public IReadOnlyList<ChatMessage> GetHistoryByRole(MessageRole role)
+    {
+        return _messages.Where(m => m.Role == role).ToList().AsReadOnly();
+    }
+
+    public async Task ClearAsync(CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            var count = _messages.Count;
+            _messages.Clear();
+            _logger.LogInformation("[{ConvId}] Conversation cleared ({Count} messages removed)",
+                ConversationId, count);
+            RaiseChanged(ConversationChangeType.HistoryCleared);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task ExportAsync(string filePath, CancellationToken ct = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var snapshot = GetHistory(); // Defensive copy
+        var json = JsonSerializer.Serialize(new
+        {
+            ConversationId,
+            ExportedAtUtc = DateTime.UtcNow,
+            MessageCount = snapshot.Count,
+            Messages = snapshot
+        }, new JsonSerializerOptions { WriteIndented = true });
+
+        await File.WriteAllTextAsync(filePath, json, ct).ConfigureAwait(false);
+        _logger.LogInformation("[{ConvId}] Exported {Count} messages to {Path}",
+            ConversationId, snapshot.Count, filePath);
+        RaiseChanged(ConversationChangeType.HistoryExported);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _gate.Dispose();
+        _messages.Clear();
+        ConversationChanged = null;
+    }
+
+    private void RaiseChanged(ConversationChangeType type, int trimmed = 0)
+    {
+        try
+        {
+            ConversationChanged?.Invoke(this, new ConversationChangedEventArgs
+            {
+                ConversationId = ConversationId,
+                ChangeType = type,
+                MessageCount = _messages.Count,
+                TrimmedCount = trimmed
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[{ConvId}] Error in ConversationChanged handler", ConversationId);
+        }
+    }
+}
+```
+
+### 15.4 Integration with Existing Services
+
+```csharp
+// In IOrchestratorService — expose conversation as read-only
+public interface IOrchestratorService
+{
+    // ... existing methods ...
+
+    /// <summary>
+    /// Returns a read-only view of the orchestrator's conversation history.
+    /// Useful for debugging, export, and context carryover between tasks.
+    /// </summary>
+    IReadOnlyList<ChatMessage> GetConversationHistory();
+
+    /// <summary>Returns the last N messages from conversation history.</summary>
+    IReadOnlyList<ChatMessage> GetConversationHistory(int lastNMessages);
+}
+
+// In OrchestratorService — delegate to IAgentConversation
+public IReadOnlyList<ChatMessage> GetConversationHistory()
+    => _conversation.GetHistory();
+
+public IReadOnlyList<ChatMessage> GetConversationHistory(int lastNMessages)
+    => _conversation.GetHistory(lastNMessages);
+```
+
+### 15.5 Failure Modes & Recovery
+
+| Failure | Detection | Recovery | User Impact |
+|---------|-----------|----------|-------------|
+| Memory pressure (>10K messages) | Auto-trim threshold | Trim oldest 20%, preserve system prompt | None (transparent) |
+| Export file locked by another process | `IOException` during `ExportAsync` | Retry with timestamped filename suffix | Toast notification |
+| Concurrent mutation contention | `SemaphoreSlim` wait timeout | Queue via internal Channel | None (serialized internally) |
+| Post-disposal access | `ObjectDisposedException` | Re-create conversation, log warning | Session reset prompt |
+| JSON serialization failure | `JsonException` during export | Fall back to plain-text export | Degraded export format |
+
+### 15.6 Performance Characteristics
+
+| Operation | Time Complexity | Memory | Notes |
+|-----------|----------------|--------|-------|
+| `AddMessageAsync` | O(1) amortized | ~1KB per message | O(n) during trim cycles |
+| `GetHistory()` | O(n) | Creates full copy | Use `GetHistory(int)` for large conversations |
+| `GetHistory(n)` | O(n) | Copy of last n | Preferred for context window management |
+| `GetHistoryByRole` | O(n) | Filtered copy | Consider caching if called frequently |
+| `ExportAsync` | O(n) | JSON string + file I/O | Async file write, non-blocking |
+| `ClearAsync` | O(1) | Releases references | GC reclaims on next collection |
+
+### 15.7 Testing Requirements
+
+```csharp
+[Fact]
+public async Task AddMessageAsync_ConcurrentAccess_AllMessagesPreserved()
+{
+    var conversation = CreateTestConversation(maxMessages: 10_000);
+    var tasks = Enumerable.Range(0, 100)
+        .Select(i => conversation.AddMessageAsync(
+            new ChatMessage { Role = MessageRole.User, Content = $"Msg {i}" }));
+
+    await Task.WhenAll(tasks);
+
+    Assert.Equal(100, conversation.MessageCount);
+}
+
+[Fact]
+public async Task AddMessageAsync_ExceedsMax_TrimsOldestPreservesSystemPrompt()
+{
+    var conversation = CreateTestConversation(maxMessages: 10);
+
+    // Add system prompt first
+    await conversation.AddMessageAsync(
+        new ChatMessage { Role = MessageRole.System, Content = "System" });
+
+    for (var i = 0; i < 15; i++)
+        await conversation.AddMessageAsync(
+            new ChatMessage { Role = MessageRole.User, Content = $"Msg {i}" });
+
+    Assert.True(conversation.MessageCount <= 10);
+    Assert.Equal(MessageRole.System, conversation.GetHistory().First().Role);
+}
+
+[Fact]
+public async Task ExportAsync_ProducesValidJson_CanBeDeserialized()
+{
+    var conversation = CreateTestConversation();
+    await conversation.AddMessageAsync(
+        new ChatMessage { Role = MessageRole.User, Content = "Hello" });
+
+    var path = Path.GetTempFileName();
+    await conversation.ExportAsync(path);
+
+    var json = await File.ReadAllTextAsync(path);
+    var doc = JsonDocument.Parse(json); // Should not throw
+    Assert.Equal(1, doc.RootElement.GetProperty("MessageCount").GetInt32());
+
+    File.Delete(path);
+}
+```
+
+### 15.8 Design Rules
+
+1. **Never expose mutable collections** — all `Get*` methods return defensive copies.
+2. **Always trim, never crash** — memory pressure is handled gracefully via auto-trim.
+3. **System prompt is sacred** — trimming preserves the first System-role message.
+4. **Export is non-destructive** — exporting does not modify the conversation.
+5. **Disposal is final** — post-disposal access throws; callers must handle gracefully.
+6. **Events are fire-and-forget** — handlers must not block the calling thread.
+
+---
+
+## 16. Pattern 11: Critique-Refine Quality Gates
+
+### 16.1 Pattern Description
+
+In complex multi-agent workflows, the output of one agent should be **adversarially reviewed**
+by another before the orchestration proceeds. This pattern formalizes the relationship between
+"proposer" agents and "critic" agents as a typed dependency in the execution plan.
+
+This is **not** a simple sequential dependency ("B needs data from A"). It's a structured
+quality gate: the critic's output determines whether the proposer's work is accepted, revised,
+or escalated.
+
+### 16.2 Dependency Type Taxonomy
+
+```csharp
+/// <summary>
+/// Classifies the relationship between dependent work chunks.
+/// Used by the DependencyScheduler to determine execution strategy.
+/// </summary>
+public enum ChunkDependencyType
+{
+    /// <summary>
+    /// Standard data flow: Chunk B needs the output from Chunk A as input context.
+    /// Scheduler: B executes after A completes. B receives A's output in its prompt.
+    /// </summary>
+    DataFlow,
+
+    /// <summary>
+    /// Quality gate: Chunk B reviews/critiques the output of Chunk A.
+    /// Scheduler: B executes after A. B's prompt includes A's output + critique instructions.
+    /// If B returns FAIL, the orchestrator may re-plan or abort.
+    /// </summary>
+    CritiqueGate,
+
+    /// <summary>
+    /// Refinement loop: Chunk C refines Chunk A's work based on Chunk B's critique.
+    /// Scheduler: C executes after both A and B. C receives both outputs.
+    /// This creates a Propose → Critique → Refine chain.
+    /// </summary>
+    RefinementFromCritique
+}
+```
+
+### 16.3 Extended WorkChunk Model
+
+```csharp
+/// <summary>
+/// Extended work chunk with critique-refine support.
+/// Backward-compatible: existing chunks without critique fields work unchanged.
+/// </summary>
+public class WorkChunk
+{
+    // ── Existing fields (unchanged) ────────────────────────
+    public string ChunkId { get; set; } = string.Empty;
+    public string Title { get; set; } = string.Empty;
+    public string Prompt { get; set; } = string.Empty;
+    public AgentRole Role { get; set; } = AgentRole.GeneralPurpose;
+    public List<string> DependsOnChunkIds { get; set; } = [];
+
+    // ── NEW: Critique-Refine fields ────────────────────────
+
+    /// <summary>
+    /// Maps each dependency to its type. Keys must match DependsOnChunkIds entries.
+    /// If a dependency is not in this dictionary, it defaults to DataFlow.
+    /// </summary>
+    public Dictionary<string, ChunkDependencyType> DependencyTypes { get; set; } = [];
+
+    /// <summary>
+    /// When true, this chunk acts as a quality gate. Its output MUST contain
+    /// a structured verdict (PASS / NEEDS_REVISION / FAIL) parseable by the scheduler.
+    /// </summary>
+    public bool IsCritiqueChunk { get; set; }
+
+    /// <summary>
+    /// Optional: Override prompt template for critique chunks.
+    /// If null, the default critique prompt for the assigned Role is used.
+    /// </summary>
+    public string? CritiquePromptOverride { get; set; }
+
+    /// <summary>
+    /// Maximum number of critique-refine iterations before force-accepting.
+    /// Default 1 (one critique pass). Set to 0 to disable critique for this chunk.
+    /// </summary>
+    public int MaxCritiqueRounds { get; set; } = 1;
+
+    // ── Helper methods ─────────────────────────────────────
+
+    /// <summary>Returns the dependency type for a given chunk ID, defaulting to DataFlow.</summary>
+    public ChunkDependencyType GetDependencyType(string dependencyChunkId)
+        => DependencyTypes.TryGetValue(dependencyChunkId, out var type) ? type : ChunkDependencyType.DataFlow;
+}
+```
+
+### 16.4 Critique-Refine Execution Flow
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ Stage 1: Proposal                                                │
+│ ┌───────────────────────────────────┐                           │
+│ │ Chunk: "design-api"               │                           │
+│ │ Role: Architect                   │                           │
+│ │ Output: API specification         │──────────┐                │
+│ └───────────────────────────────────┘          │                │
+│                                                 ▼                │
+│ Stage 2: Critique                     ┌────────────────────────┐│
+│ ┌───────────────────────────────────┐ │ Critique Prompt:       ││
+│ │ Chunk: "critique-api-security"    │ │ "Review the API design ││
+│ │ Role: SecurityAnalyst             │◄│  for auth, injection,  ││
+│ │ IsCritiqueChunk: true             │ │  data validation gaps" ││
+│ │ DependsOn: ["design-api"]         │ └────────────────────────┘│
+│ │ DependencyType: CritiqueGate      │                           │
+│ │                                   │                           │
+│ │ Output: { "verdict": "NEEDS_REVISION",                        │
+│ │           "issues": [...],                                     │
+│ │           "severity": "HIGH" }    │──────────┐                │
+│ └───────────────────────────────────┘          │                │
+│                                                 ▼                │
+│ Stage 3: Refinement                   ┌────────────────────────┐│
+│ ┌───────────────────────────────────┐ │ Context injected:      ││
+│ │ Chunk: "refine-api"               │ │ - Original design      ││
+│ │ Role: Architect                   │◄│ - Critique findings    ││
+│ │ DependsOn: ["design-api",         │ │ - Specific issues      ││
+│ │             "critique-api-sec"]   │ └────────────────────────┘│
+│ │ DependencyTypes:                  │                           │
+│ │   design-api: DataFlow            │                           │
+│ │   critique-api-sec: Refinement    │                           │
+│ │                                   │                           │
+│ │ Output: Revised API specification │                           │
+│ └───────────────────────────────────┘                           │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 16.5 Critique Verdict Contract
+
+```csharp
+/// <summary>
+/// Structured verdict from a critique chunk. The DependencyScheduler parses
+/// the critic agent's output to extract this verdict.
+///
+/// The critique agent's output MUST contain a JSON block with these fields.
+/// If parsing fails, the scheduler treats the critique as PASS (fail-open).
+/// </summary>
+public sealed record CritiqueVerdict
+{
+    /// <summary>Overall verdict: PASS, NEEDS_REVISION, or FAIL.</summary>
+    public required CritiqueDecision Decision { get; init; }
+
+    /// <summary>Specific issues found, ordered by severity.</summary>
+    public IReadOnlyList<CritiqueIssue> Issues { get; init; } = [];
+
+    /// <summary>Free-form rationale for the verdict.</summary>
+    public string? Rationale { get; init; }
+
+    /// <summary>
+    /// Confidence score (0.0 to 1.0) in the verdict.
+    /// Below 0.5 = low confidence → may warrant human review.
+    /// </summary>
+    public double Confidence { get; init; } = 1.0;
+}
+
+public enum CritiqueDecision
+{
+    /// <summary>Work meets quality bar. Proceed without changes.</summary>
+    Pass,
+
+    /// <summary>Work has issues but is salvageable. Refinement chunk should address them.</summary>
+    NeedsRevision,
+
+    /// <summary>Work is fundamentally flawed. Re-planning may be necessary.</summary>
+    Fail
+}
+
+public sealed record CritiqueIssue
+{
+    public required string Description { get; init; }
+    public required IssueSeverity Severity { get; init; }
+    public string? SuggestedFix { get; init; }
+}
+
+public enum IssueSeverity { Low, Medium, High, Critical }
+```
+
+### 16.6 Scheduler Integration
+
+```csharp
+// In DependencyScheduler — enhanced stage building
+public List<ExecutionStage> BuildSchedule(OrchestrationPlan plan)
+{
+    var stages = BuildTopologicalStages(plan); // Existing DAG sort
+
+    // Post-process: inject critique context into dependent chunks
+    foreach (var stage in stages)
+    {
+        foreach (var chunk in stage.Chunks)
+        {
+            foreach (var depId in chunk.DependsOnChunkIds)
+            {
+                var depType = chunk.GetDependencyType(depId);
+
+                if (depType == ChunkDependencyType.CritiqueGate && chunk.IsCritiqueChunk)
+                {
+                    // Inject critique-specific prompt wrapper
+                    chunk.Prompt = WrapWithCritiqueInstructions(chunk.Prompt, chunk.Role);
+                }
+                else if (depType == ChunkDependencyType.RefinementFromCritique)
+                {
+                    // Inject both original work AND critique findings
+                    // (actual injection happens in InjectDependencyOutputs)
+                }
+            }
+        }
+    }
+
+    return stages;
+}
+
+private static string WrapWithCritiqueInstructions(string originalPrompt, AgentRole role)
+{
+    return $"""
+        {originalPrompt}
+
+        ## Critique Output Format (REQUIRED)
+        You MUST include a JSON block in your response with this structure:
+        ```json
+        {{
+          "verdict": "PASS" | "NEEDS_REVISION" | "FAIL",
+          "confidence": 0.0-1.0,
+          "issues": [
+            {{ "description": "...", "severity": "Low|Medium|High|Critical", "suggestedFix": "..." }}
+          ],
+          "rationale": "Brief explanation of your overall assessment"
+        }}
+        ```
+        Be thorough but fair. Only mark FAIL for fundamental flaws.
+        """;
+}
+```
+
+### 16.7 Validation Rules
+
+```csharp
+/// <summary>
+/// Validates critique-refine relationships in a plan. Called before execution.
+/// </summary>
+public static class CritiqueValidation
+{
+    public static ValidationResult Validate(OrchestrationPlan plan)
+    {
+        var errors = new List<string>();
+
+        foreach (var chunk in plan.Chunks)
+        {
+            // Rule 1: Critique chunks must have at least one CritiqueGate dependency
+            if (chunk.IsCritiqueChunk && !chunk.DependencyTypes.ContainsValue(ChunkDependencyType.CritiqueGate))
+            {
+                errors.Add($"Chunk '{chunk.ChunkId}' is marked as critique but has no CritiqueGate dependency.");
+            }
+
+            // Rule 2: CritiqueGate dependencies must target an existing chunk
+            foreach (var (depId, depType) in chunk.DependencyTypes)
+            {
+                if (!plan.Chunks.Any(c => c.ChunkId == depId))
+                {
+                    errors.Add($"Chunk '{chunk.ChunkId}' has dependency on non-existent chunk '{depId}'.");
+                }
+            }
+
+            // Rule 3: No circular critique chains (A critiques B which critiques A)
+            if (chunk.IsCritiqueChunk)
+            {
+                var critiqued = chunk.DependsOnChunkIds;
+                foreach (var targetId in critiqued)
+                {
+                    var target = plan.Chunks.FirstOrDefault(c => c.ChunkId == targetId);
+                    if (target?.IsCritiqueChunk == true && target.DependsOnChunkIds.Contains(chunk.ChunkId))
+                    {
+                        errors.Add($"Circular critique: '{chunk.ChunkId}' ↔ '{targetId}'.");
+                    }
+                }
+            }
+
+            // Rule 4: MaxCritiqueRounds must be bounded
+            if (chunk.MaxCritiqueRounds > 3)
+            {
+                errors.Add($"Chunk '{chunk.ChunkId}' has MaxCritiqueRounds={chunk.MaxCritiqueRounds} (max allowed: 3).");
+            }
+        }
+
+        return new ValidationResult { IsValid = errors.Count == 0, Errors = errors };
+    }
+}
+```
+
+### 16.8 Example Plan with Critique-Refine
+
+```json
+{
+  "planId": "plan-secure-api-001",
+  "planSummary": "Design secure REST API with adversarial security review",
+  "chunks": [
+    {
+      "chunkId": "design-api",
+      "title": "Design REST API",
+      "role": "Architect",
+      "prompt": "Design a REST API for user management with CRUD operations...",
+      "dependsOnChunkIds": [],
+      "isCritiqueChunk": false
+    },
+    {
+      "chunkId": "security-review",
+      "title": "Security Review",
+      "role": "SecurityAnalyst",
+      "prompt": "Review the API design for security vulnerabilities...",
+      "dependsOnChunkIds": ["design-api"],
+      "dependencyTypes": { "design-api": "CritiqueGate" },
+      "isCritiqueChunk": true,
+      "maxCritiqueRounds": 1
+    },
+    {
+      "chunkId": "refine-api",
+      "title": "Refine API Design",
+      "role": "Architect",
+      "prompt": "Address all security findings and produce revised API design...",
+      "dependsOnChunkIds": ["design-api", "security-review"],
+      "dependencyTypes": {
+        "design-api": "DataFlow",
+        "security-review": "RefinementFromCritique"
+      },
+      "isCritiqueChunk": false
+    },
+    {
+      "chunkId": "implement-api",
+      "title": "Implement API",
+      "role": "Developer",
+      "prompt": "Implement the refined API design...",
+      "dependsOnChunkIds": ["refine-api"],
+      "dependencyTypes": { "refine-api": "DataFlow" },
+      "isCritiqueChunk": false
+    }
+  ]
+}
+```
+
+### 16.9 Design Rules
+
+1. **Critique is opt-in** — existing plans without critique fields work unchanged (backward compatible).
+2. **Fail-open on parse failure** — if critique output can't be parsed, treat as PASS and log warning.
+3. **Max 3 critique rounds** — prevents infinite loops. After max rounds, force-accept with warning.
+4. **No circular critiques** — validation rejects mutual critique relationships.
+5. **Critic role is distinct from reviewer** — Critics are adversarial by design; CodeReviewers are constructive.
+6. **Verdicts are structured** — JSON format enables automated processing, not just human reading.
+7. **Low-confidence critiques flag for human review** — confidence < 0.5 triggers optional user notification.
+
+---
+
+## 17. Pattern 12: Moderator-Based Dynamic Orchestration
+
+### 17.1 Pattern Description
+
+The default execution strategy (DAG-based dependency scheduling) is **static**: the full execution
+order is determined at planning time. For exploratory or open-ended tasks, a **dynamic** strategy
+allows the orchestrator LLM to select the next work unit based on accumulated results.
+
+This pattern introduces a **pluggable work selection strategy** that enables both approaches.
+
+### 17.2 Strategy Interface
+
+```csharp
+/// <summary>
+/// Selects the next work chunk(s) to execute from the remaining plan.
+///
+/// Two implementations:
+///   1. DependencyBasedSelector — static DAG (default, deterministic, fast)
+///   2. ModeratorBasedSelector — LLM-driven (adaptive, exploratory, slower)
+///
+/// SELECTION RULES:
+///   - Must never return an already-completed chunk.
+///   - Must respect dependency constraints (no chunk before its dependencies).
+///   - Must return empty list when all chunks are complete.
+///   - Must be cancellation-aware.
+/// </summary>
+public interface IWorkChunkSelector
+{
+    /// <summary>
+    /// Returns the next batch of chunks eligible for parallel execution.
+    /// Empty list = all work complete (or no eligible chunks remain).
+    /// </summary>
+    Task<IReadOnlyList<WorkChunk>> SelectNextBatchAsync(
+        OrchestrationPlan plan,
+        IReadOnlyList<AgentResult> completedResults,
+        CancellationToken ct = default);
+
+    /// <summary>Human-readable strategy name for logging and UI display.</summary>
+    string StrategyName { get; }
+}
+```
+
+### 17.3 Static Strategy (Current — Default)
+
+```csharp
+/// <summary>
+/// Deterministic DAG-based scheduling. Builds all execution stages upfront
+/// via topological sort and dispatches stage-by-stage.
+///
+/// Properties:
+///   - Deterministic: same plan always produces same execution order.
+///   - Fast: O(V+E) topological sort, no LLM calls during execution.
+///   - Predictable: user can see full execution order before starting.
+///
+/// When to use:
+///   - Well-defined tasks with clear dependencies.
+///   - Cost-sensitive scenarios (no extra LLM calls).
+///   - When user wants full execution plan visibility upfront.
+/// </summary>
+public sealed class DependencyBasedSelector : IWorkChunkSelector
+{
+    private readonly IDependencyScheduler _scheduler;
+    private List<ExecutionStage>? _stages;
+    private int _currentStageIndex;
+
+    public string StrategyName => "Static (DAG)";
+
+    public Task<IReadOnlyList<WorkChunk>> SelectNextBatchAsync(
+        OrchestrationPlan plan,
+        IReadOnlyList<AgentResult> completedResults,
+        CancellationToken ct = default)
+    {
+        // Build stages once, then advance through them
+        _stages ??= _scheduler.BuildSchedule(plan);
+
+        if (_currentStageIndex >= _stages.Count)
+            return Task.FromResult<IReadOnlyList<WorkChunk>>([]);
+
+        var stage = _stages[_currentStageIndex++];
+        return Task.FromResult<IReadOnlyList<WorkChunk>>(stage.Chunks);
+    }
+}
+```
+
+### 17.4 Dynamic Strategy (Moderator-Driven)
+
+```csharp
+/// <summary>
+/// LLM-driven dynamic work selection. After each batch completes, asks the
+/// orchestrator LLM which chunks to execute next based on accumulated results.
+///
+/// Properties:
+///   - Adaptive: can skip low-value work, reprioritize based on findings.
+///   - Exploratory: ideal for research, investigation, or loosely defined tasks.
+///   - Slower: adds one LLM call per selection round.
+///   - Less predictable: execution order depends on LLM decisions.
+///
+/// When to use:
+///   - Research or investigation tasks where findings drive next steps.
+///   - Tasks where early results may invalidate later planned work.
+///   - When adaptability is more valuable than predictability.
+///
+/// When NOT to use:
+///   - Well-defined implementation tasks with clear dependencies.
+///   - Cost-sensitive scenarios (adds ~1 LLM call per execution round).
+///   - When the user needs full execution plan visibility upfront.
+/// </summary>
+public sealed class ModeratorBasedSelector : IWorkChunkSelector
+{
+    private readonly Func<string, CancellationToken, Task<string>> _sendToLlm;
+    private readonly ILogger<ModeratorBasedSelector> _logger;
+
+    public string StrategyName => "Dynamic (Moderator)";
+
+    public async Task<IReadOnlyList<WorkChunk>> SelectNextBatchAsync(
+        OrchestrationPlan plan,
+        IReadOnlyList<AgentResult> completedResults,
+        CancellationToken ct = default)
+    {
+        var completedIds = new HashSet<string>(completedResults.Select(r => r.ChunkId));
+        var remaining = plan.Chunks.Where(c => !completedIds.Contains(c.ChunkId)).ToList();
+
+        if (remaining.Count == 0)
+            return [];
+
+        // Filter to dependency-satisfied chunks only
+        var eligible = remaining.Where(c =>
+            c.DependsOnChunkIds.All(d => completedIds.Contains(d))).ToList();
+
+        if (eligible.Count == 0)
+        {
+            _logger.LogWarning("No eligible chunks despite {Remaining} remaining — possible dead dependency",
+                remaining.Count);
+            return [];
+        }
+
+        // If only one eligible, no need to ask LLM
+        if (eligible.Count == 1)
+            return eligible;
+
+        // Ask orchestrator LLM which chunks to execute next
+        var prompt = BuildSelectionPrompt(eligible, completedResults);
+        var response = await _sendToLlm(prompt, ct).ConfigureAwait(false);
+        var selectedIds = ParseSelectionResponse(response, eligible);
+
+        // Fallback: if LLM response is unparseable, execute all eligible
+        if (selectedIds.Count == 0)
+        {
+            _logger.LogWarning("Moderator selection returned no valid chunks — executing all eligible");
+            return eligible;
+        }
+
+        return eligible.Where(c => selectedIds.Contains(c.ChunkId)).ToList();
+    }
+
+    private static string BuildSelectionPrompt(
+        IReadOnlyList<WorkChunk> eligible, IReadOnlyList<AgentResult> completed)
+    {
+        var completedSummary = string.Join("\n", completed.Select(r =>
+            $"- [{r.ChunkId}] ({(r.IsSuccess ? "✅" : "❌")}): {Truncate(r.Response ?? "", 100)}"));
+
+        var eligibleList = string.Join("\n", eligible.Select(c =>
+            $"- [{c.ChunkId}] Role: {c.Role}, Title: {c.Title}"));
+
+        return $"""
+            You are the orchestration moderator. Based on completed work, select which
+            chunks should execute next for maximum value.
+
+            ## Completed Work
+            {completedSummary}
+
+            ## Eligible Chunks (dependencies satisfied)
+            {eligibleList}
+
+            ## Instructions
+            Select 1-{eligible.Count} chunks to execute in the next parallel batch.
+            Consider: which chunks provide the most value given current findings?
+            Skip chunks that completed work has made unnecessary.
+
+            Respond with a JSON array of chunk IDs:
+            ["chunk-id-1", "chunk-id-2"]
+            """;
+    }
+
+    private List<string> ParseSelectionResponse(string response, IReadOnlyList<WorkChunk> eligible)
+    {
+        try
+        {
+            var json = ExtractJsonArray(response);
+            if (json is null) return [];
+
+            var ids = JsonSerializer.Deserialize<List<string>>(json);
+            var validIds = new HashSet<string>(eligible.Select(c => c.ChunkId));
+
+            return ids?.Where(id => validIds.Contains(id)).ToList() ?? [];
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Failed to parse moderator selection response");
+            return [];
+        }
+    }
+
+    private static string? ExtractJsonArray(string text)
+    {
+        var start = text.IndexOf('[');
+        var end = text.LastIndexOf(']');
+        return start >= 0 && end > start ? text[start..(end + 1)] : null;
+    }
+
+    private static string Truncate(string value, int max)
+        => value.Length <= max ? value : value[..max] + "…";
+}
+```
+
+### 17.5 Strategy Selection Setting
+
+```csharp
+/// <summary>
+/// Controls how the orchestrator selects work chunks during execution.
+/// </summary>
+public enum WorkflowStrategy
+{
+    /// <summary>
+    /// Static DAG-based scheduling. Default. Deterministic, fast, predictable.
+    /// Best for: well-defined tasks, cost-sensitive users, implementation work.
+    /// </summary>
+    Static,
+
+    /// <summary>
+    /// LLM-driven dynamic selection. Adaptive, exploratory, adds LLM call overhead.
+    /// Best for: research tasks, investigation, loosely defined objectives.
+    /// </summary>
+    Dynamic
+}
+
+// In MultiAgentSettings
+public class MultiAgentSettings
+{
+    // ... existing properties ...
+
+    /// <summary>
+    /// Workflow execution strategy. Default: Static (DAG-based).
+    /// </summary>
+    public string WorkflowStrategy { get; set; } = "Static";
+}
+```
+
+### 17.6 Decision Matrix
+
+| Criterion | Static (DAG) | Dynamic (Moderator) |
+|-----------|-------------|---------------------|
+| **Determinism** | ✅ Same plan → same order | ⚠️ Order depends on LLM decisions |
+| **Speed** | ✅ No LLM overhead | ⚠️ +1 LLM call per round |
+| **Cost** | ✅ Zero extra LLM calls | ⚠️ N additional LLM calls (N = execution rounds) |
+| **Adaptability** | ❌ Fixed execution order | ✅ Can skip/reprioritize based on findings |
+| **Visibility** | ✅ Full plan visible upfront | ⚠️ Next batch revealed one round at a time |
+| **Best for** | Implementation, well-defined tasks | Research, investigation, exploration |
+| **Failure mode** | Predictable (dependency errors) | LLM may hallucinate chunk IDs (handled via fallback) |
+
+### 17.7 Design Rules
+
+1. **Static is the default** — dynamic requires explicit user opt-in via settings.
+2. **Dynamic has a fallback** — if LLM selection fails, execute all eligible chunks (never deadlock).
+3. **Both strategies respect dependencies** — dynamic cannot execute chunks with unsatisfied dependencies.
+4. **Strategy is set per task** — cannot change mid-execution (would invalidate state).
+5. **Moderator prompts are lean** — minimize token usage to control cost overhead.
+6. **Log every selection decision** — for debugging and cost tracking.
+
+---
+
+# Part III — Production Readiness Standards
+
+> These standards apply to **every feature** built on the patterns above.
+> They are non-negotiable for an application serving millions of users worldwide.
+
+---
+
+## 18. Scalability & Performance Guidelines
+
+### 18.1 Memory Management Rules
+
+| Rule | Implementation | Rationale |
+|------|---------------|-----------|
+| **Cap all collections** | `ObservableCollection` capped at 500 items; conversation history at 1000 | Prevents unbounded growth in long-running sessions |
+| **Dispose worker sessions in `finally`** | `try { ... } finally { TerminateSessionProcess(id); }` | Prevents session leaks on error paths |
+| **Use `IDisposable` on ViewModels** | Unsubscribe events, stop timers, cancel tokens | Prevents event handler leaks across tab switches |
+| **Avoid closure captures in hot paths** | Pre-allocate delegates for frequently-invoked callbacks | Reduces GC pressure from captured closures |
+| **Return `IReadOnlyList<T>` not `List<T>`** | All public APIs return immutable views | Prevents consumer mutation of internal state |
+
+### 18.2 Async Best Practices
+
+```csharp
+// ✅ CORRECT: ConfigureAwait(false) in library/service code
+var result = await _copilotService.SendMessageAsync(session, prompt, ct)
+    .ConfigureAwait(false);
+
+// ✅ CORRECT: Linked cancellation tokens for timeout + user cancellation
+using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+timeoutCts.CancelAfter(timeout);
+
+// ✅ CORRECT: ThrowIfCancellationRequested at every async boundary
+ct.ThrowIfCancellationRequested();
+var response = await _llm.SendAsync(prompt, ct).ConfigureAwait(false);
+ct.ThrowIfCancellationRequested();
+
+// ❌ WRONG: Fire-and-forget without error observation
+Task.Run(() => DoWorkAsync()); // Exception silently swallowed!
+
+// ✅ CORRECT: Observe faults
+var task = Task.Run(() => DoWorkAsync(ct));
+task.ContinueWith(t => _logger.LogError(t.Exception, "Background task failed"),
+    TaskContinuationOptions.OnlyOnFaulted);
+```
+
+### 18.3 Event Throttling Strategy
+
+When events fire faster than the UI can render (e.g., streaming LLM tokens):
+
+```csharp
+// Throttle rapid events to avoid UI thread starvation
+private DateTime _lastEventRender = DateTime.MinValue;
+private static readonly TimeSpan ThrottleInterval = TimeSpan.FromMilliseconds(50); // 20 FPS max
+
+private void OnHighFrequencyEvent(object? sender, StreamingEvent e)
+{
+    var now = DateTime.UtcNow;
+    if (now - _lastEventRender < ThrottleInterval)
+        return; // Skip this frame
+    
+    _lastEventRender = now;
+    _dispatcher.InvokeAsync(() => UpdateStreamingDisplay(e.Delta));
+}
+```
+
+### 18.4 Concurrency Limits
+
+| Resource | Limit | Rationale |
+|----------|-------|-----------|
+| Parallel worker sessions | Configurable, default 3, max 10 | LLM API rate limits + memory |
+| Approval queue concurrency | 1 (SemaphoreSlim) | Prevent dialog storms |
+| Settings file access | 1 (SemaphoreSlim) | Prevent concurrent write corruption |
+| Event log entries | 500 | UI rendering performance |
+| Conversation history | 1000 messages | Memory + context window limits |
+
+---
+
+## 19. Error Recovery Playbook
+
+### 19.1 Error Classification & Recovery Matrix
+
+| Error Class | Examples | Detection | Recovery | User Communication |
+|-------------|----------|-----------|----------|-------------------|
+| **Transient** | Network timeout, rate limit, 503 | Specific exception types | Retry with exponential backoff (max 3 attempts) | "Retrying... (attempt 2/3)" |
+| **Connection Lost** | Session disconnect, pipe broken | `IsConnectionLossException()` | Recreate session, replay last prompt | "Reconnecting to Copilot..." |
+| **LLM Parse Failure** | Unparseable JSON, missing fields | `JsonException`, null checks | Retry with clarification prompt; fallback to raw text | Transparent (handled internally) |
+| **Worker Failure** | Worker timeout, crash, bad output | `AgentResult.IsSuccess == false` | Retry per `RetryPolicy`; if exhausted, continue with partial results | "Worker [name] failed — continuing with partial results" |
+| **Fatal** | Out of memory, disk full, app crash | Unhandled exception at top level | Transition to Error state, log full stack, persist state for recovery | "An unexpected error occurred. Please reset and try again." |
+| **User Cancellation** | Cancel button, tab close | `OperationCanceledException` | Clean shutdown: cancel tokens, dispose sessions, preserve state | "Cancelled. Your progress has been saved." |
+
+### 19.2 Retry Policy
+
+```csharp
+/// <summary>
+/// Retry policy applied to worker execution and LLM calls.
+/// Uses exponential backoff with jitter to prevent thundering herd.
+/// </summary>
+public sealed record RetryPolicy
+{
+    /// <summary>Maximum number of retry attempts. 0 = no retries.</summary>
+    public int MaxRetries { get; init; } = 2;
+
+    /// <summary>Base delay between retries. Actual delay = base * 2^attempt + jitter.</summary>
+    public TimeSpan BaseDelay { get; init; } = TimeSpan.FromSeconds(5);
+
+    /// <summary>Maximum delay cap to prevent excessively long waits.</summary>
+    public TimeSpan MaxDelay { get; init; } = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Calculates delay for a given attempt number.
+    /// Includes random jitter (±25%) to prevent synchronized retries.
+    /// </summary>
+    public TimeSpan GetDelay(int attempt)
+    {
+        var exponential = BaseDelay * Math.Pow(2, attempt);
+        var capped = TimeSpan.FromTicks(Math.Min(exponential.Ticks, MaxDelay.Ticks));
+        var jitter = capped * (0.75 + Random.Shared.NextDouble() * 0.5); // ±25%
+        return jitter;
+    }
+}
+```
+
+### 19.3 Circuit Breaker for LLM Calls
+
+```
+State: CLOSED (normal operation)
+    │
+    ├── Success → stay CLOSED, reset failure counter
+    ├── Failure → increment counter
+    │   └── Counter >= 5 → transition to OPEN
+    │
+State: OPEN (reject all calls immediately)
+    │
+    ├── Wait 60 seconds → transition to HALF-OPEN
+    │
+State: HALF-OPEN (allow one probe call)
+    │
+    ├── Success → transition to CLOSED, reset counter
+    └── Failure → transition to OPEN, restart timer
+```
+
+**Implementation Note**: The circuit breaker is implemented per-service (orchestrator, office manager),
+not globally. A failure in Agent Office does not affect Agent Team.
+
+---
+
+## 20. Debugging & Observability Standards
+
+### 20.1 Structured Logging Requirements
+
+Every log message MUST include:
+
+```csharp
+// ✅ Required fields for production debugging
+_logger.LogInformation(
+    "[{Component}] {Action}: {Detail}. " +
+    "SessionId={SessionId}, Phase={Phase}, CorrelationId={CorrelationId}",
+    "OrchestratorService", "PhaseTransition", "Planning → Executing",
+    _sessionId, _currentPhase, correlationId);
+
+// ❌ NEVER log like this — unstructured, unfilterable
+_logger.LogInformation("Phase changed to executing");
+```
+
+### 20.2 Log Level Guidelines
+
+| Level | Usage | Examples |
+|-------|-------|---------|
+| `Trace` | Internal state dumps (disabled in production) | Full LLM prompt text, raw JSON responses |
+| `Debug` | Detailed operation flow | "Sending evaluation prompt", "Worker created" |
+| `Information` | Significant lifecycle events | Phase transitions, task submission, completion |
+| `Warning` | Recoverable issues | Parse failures, retry attempts, timeout reached |
+| `Error` | Unrecoverable issues requiring attention | Session lost, disk full, unhandled exception |
+| `Critical` | Application-wide failures | Iteration loop crash, DI failure, startup error |
+
+### 20.3 Correlation ID Propagation
+
+```
+User Action (Submit Task)
+    │ correlationId = "task-{guid}"
+    │
+    ├── OrchestratorService.SubmitTaskAsync     [correlationId logged]
+    │   ├── SendToOrchestratorLlmAsync          [correlationId logged]
+    │   ├── PlanTaskAsync                       [correlationId logged]
+    │   │   └── TaskDecomposer.DecomposeAsync   [correlationId logged]
+    │   └── ExecutePlanAsync                    [correlationId logged]
+    │       ├── AgentPool.DispatchBatchAsync     [correlationId logged]
+    │       │   ├── Worker #1                   [correlationId in context]
+    │       │   ├── Worker #2                   [correlationId in context]
+    │       │   └── Worker #3                   [correlationId in context]
+    │       └── ResultAggregator.AggregateAsync [correlationId logged]
+    │
+    └── All events emitted carry same correlationId
+        → UI can trace entire operation from one ID
+```
+
+### 20.4 Telemetry Points
+
+| Point | Metric | Purpose |
+|-------|--------|---------|
+| `task.submitted` | Counter | Track usage volume |
+| `task.completed` | Counter + Duration | Track success rate and latency |
+| `worker.dispatched` | Counter | Track worker pool utilization |
+| `worker.duration` | Histogram | Identify slow workers |
+| `llm.call.duration` | Histogram | Track LLM response times |
+| `llm.call.tokens` | Counter | Track cost (tokens consumed) |
+| `session.created` | Counter | Track session lifecycle |
+| `session.terminated` | Counter | Detect session leaks (created - terminated ≠ 0) |
+| `error.count` | Counter by error class | Alert on error rate spikes |
+| `approval.queue.depth` | Gauge | Detect approval bottlenecks |
+
+---
+
+## 21. Cost & Resource Management
+
+### 21.1 LLM Call Cost Awareness
+
+Every LLM call has a cost. The architecture must track and minimize unnecessary calls.
+
+| Call Type | Frequency | Cost Impact | Optimization |
+|-----------|-----------|-------------|-------------|
+| Evaluation (clarify/proceed) | 1 per task | Low | Cache evaluation for identical prompts |
+| Plan decomposition | 1 per task | Medium | Reuse plan on re-execute |
+| Worker execution | N per task | **High** | Minimize prompt size, use cheaper models for simple chunks |
+| Aggregation | 1 per task | Medium | Limit result context to summaries, not full outputs |
+| Moderator selection (dynamic) | N per execution round | Medium | Use only when Static strategy is insufficient |
+| Critique | 1 per critique chunk | Medium | Gate critique behind user opt-in |
+
+### 21.2 Model Tier Strategy
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Tier 1: Premium Model (e.g., gpt-4o, claude-3-opus)         │
+│ Used for: Orchestrator, Architect role, Synthesizer role     │
+│ Rationale: These roles require deep reasoning                │
+├─────────────────────────────────────────────────────────────┤
+│ Tier 2: Standard Model (e.g., gpt-4o-mini, claude-3-sonnet)│
+│ Used for: Developer, QA, Researcher, most worker roles       │
+│ Rationale: Good quality at lower cost for execution tasks    │
+├─────────────────────────────────────────────────────────────┤
+│ Tier 3: Fast Model (e.g., gpt-4o-mini)                     │
+│ Used for: Moderator selection, simple parsing, classification│
+│ Rationale: Speed and cost matter more than deep reasoning    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 21.3 Resource Budget Rules
+
+1. **Worker sessions are bounded** — never exceed `MaxParallelSessions` (default 3).
+2. **Conversation history is bounded** — auto-trim at 1000 messages.
+3. **Event logs are bounded** — cap at 500 entries in UI, archive overflow to disk.
+4. **LLM prompts are bounded** — truncate context to fit model's context window.
+5. **Critique rounds are bounded** — max 3 rounds per chunk, then force-accept.
+6. **REST periods are mandatory** (Office) — prevents runaway iteration loops.
+
+---
+
+## 22. Production Readiness Checklist
+
+### 22.1 Before Shipping a New Feature
+
+| # | Check | Owner | Status |
+|---|-------|-------|--------|
+| 1 | State machine enum defined with all lifecycle phases | Engineer | ☐ |
+| 2 | `TransitionTo()` emits typed event on every transition | Engineer | ☐ |
+| 3 | Guard clauses prevent invalid phase transitions | Engineer | ☐ |
+| 4 | All async methods accept and respect `CancellationToken` | Engineer | ☐ |
+| 5 | Worker sessions disposed in `finally` blocks | Engineer | ☐ |
+| 6 | Manager session reuse with `HasActiveSession()` health check | Engineer | ☐ |
+| 7 | Settings snapshot record defined with all fields | Engineer | ☐ |
+| 8 | Dirty tracking wired: `OnXxxChanged → RecalculateDirtyState` | Engineer | ☐ |
+| 9 | Apply/Discard commands gated by `HasPendingChanges` | Engineer | ☐ |
+| 10 | `SettingsRequireRestart` flag set when applying during active session | Engineer | ☐ |
+| 11 | All event handlers wrapped in `Dispatcher.InvokeAsync` | Engineer | ☐ |
+| 12 | Event subscriptions unsubscribed in `Dispose()` | Engineer | ☐ |
+| 13 | Collections capped (`EventLog` ≤ 500, `History` ≤ 1000) | Engineer | ☐ |
+| 14 | Structured logging with `[ClassName]` prefix on all messages | Engineer | ☐ |
+| 15 | Error recovery: retry policy + graceful degradation | Engineer | ☐ |
+| 16 | LLM response parsing: JSON extraction with fallback | Engineer | ☐ |
+| 17 | Side panel with slide animation (300ms in, 250ms out) | Engineer | ☐ |
+| 18 | Session health polling timer (configurable interval) | Engineer | ☐ |
+| 19 | Tool approval integration via `IApprovalQueue` | Engineer | ☐ |
+| 20 | Agent roles use domain-expertise names from `AgentRole` enum | Engineer | ☐ |
+
+### 22.2 Before Shipping to Production
+
+| # | Check | Owner | Status |
+|---|-------|-------|--------|
+| 1 | Memory profile: create/destroy 50 sessions → flat memory graph | QA | ☐ |
+| 2 | Stress test: 10 concurrent worker sessions for 30 minutes | QA | ☐ |
+| 3 | Network disconnect: verify reconnection and state recovery | QA | ☐ |
+| 4 | Tab switching: verify no event handler leaks across tab changes | QA | ☐ |
+| 5 | Long-running session: 8-hour continuous operation (Office) | QA | ☐ |
+| 6 | Cancellation: verify all tokens respected, no orphaned tasks | QA | ☐ |
+| 7 | UI responsiveness: 60 FPS during worker execution | QA | ☐ |
+| 8 | Settings persistence: verify round-trip (save → close → open → load) | QA | ☐ |
+| 9 | Error messages: no stack traces shown to users | QA | ☐ |
+| 10 | Logging: verify correlation IDs propagate through full operation | QA | ☐ |
+
+---
+
+## 23. Future Architecture Roadmap
+
+### 23.1 Potential Base Class Extraction
 
 Both ViewModels share significant duplicated code. A future refactoring could extract:
 
 ```csharp
-// Hypothetical shared base
 public abstract class MultiAgentViewModelBase<TSnapshot> : ViewModelBase, IDisposable
     where TSnapshot : class
 {
@@ -1118,30 +2828,48 @@ public abstract class MultiAgentViewModelBase<TSnapshot> : ViewModelBase, IDispo
 - ⚠️ Adds coupling between features via shared base
 - ⚠️ May over-constrain future features with different settings patterns
 
-### 14.2 Shared Event Infrastructure
+### 23.2 Shared Event Infrastructure
 
-Both event hierarchies (`OrchestratorEvent`, `OfficeEvent`) have similar shapes. A shared base could be introduced:
+Both event hierarchies (`OrchestratorEvent`, `OfficeEvent`) have similar shapes. A shared base:
 
 ```csharp
 public abstract class AgentEvent
 {
-    public string EventId { get; set; }
-    public DateTime TimestampUtc { get; set; }
-    public string Message { get; set; }
+    public string EventId { get; set; } = Guid.NewGuid().ToString("N");
+    public DateTime TimestampUtc { get; set; } = DateTime.UtcNow;
+    public string Message { get; set; } = string.Empty;
     public string? CorrelationId { get; set; }
 }
 ```
 
-### 14.3 Extension Points
+### 23.3 Extension Points
 
 The current architecture supports these future additions without structural changes:
 
-- **New multi-agent features**: Follow the patterns in this doc
-- **Cloud scalability**: Service interfaces abstract away local vs. remote execution (see [Appendix E in Agent Team design](MULTI_AGENT_ORCHESTRATOR_DESIGN.md))
-- **Persistent event logs**: `IOfficeEventLog` / `ITaskLogStore` can be backed by database instead of in-memory
-- **Settings sync**: Persistence layer can be extended to sync across machines
-- **Feature composition**: A future "super-orchestrator" could compose Agent Team and Agent Office
+- **New multi-agent features**: Follow the patterns in Parts I and II
+- **Cloud scalability**: Service interfaces abstract away local vs. remote execution
+- **Persistent event logs**: `IOfficeEventLog` / `ITaskLogStore` backed by database
+- **Settings sync**: Persistence layer extended to sync across machines
+- **Feature composition**: A "super-orchestrator" composing Agent Team and Agent Office
+- **Agent marketplace**: User-defined role configurations loaded from shared repository
+- **Conversation replay**: Load exported conversations to replay or analyze past sessions
+- **A/B testing**: Strategy selection (Static vs Dynamic) measured by success rate metrics
+- **Multi-model routing**: Per-role model assignment (premium for Architect, standard for Developer)
+
+### 23.4 Technology Watch
+
+| Technology | Relevance | Adoption Criteria |
+|------------|-----------|-------------------|
+| **Semantic Kernel** | AI orchestration framework | Adopt if we need: memory management, plugin ecosystem, multi-provider support |
+| **System.Reactive (Rx.NET)** | Reactive event streams | Adopt if event volume exceeds Dispatcher.InvokeAsync capacity |
+| **Stateless library** | Formal state machine | Adopt if state machines grow beyond 15 states with complex guard conditions |
+| **gRPC / SignalR** | Remote agent execution | Adopt when cloud-hosted agent workers are needed |
+| **SQLite / LiteDB** | Local persistence | Adopt when JSON file persistence hits performance limits (>100MB settings) |
 
 ---
 
-*End of Shared Architecture Patterns Document*
+*End of Shared Architecture Patterns Document — Version 2.0*
+
+*This document is the canonical architectural reference for CopilotDesktop.*  
+*Every pattern documented here has been designed for an application serving millions of users.*  
+*No shortcuts. No quick fixes. Clean, extensible, debuggable, maintainable.*
