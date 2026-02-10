@@ -133,6 +133,23 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
                 };
             }
 
+            // Handle conversational / non-task responses (e.g., "hi", greetings, casual chat).
+            // The LLM returns {"action":"respond"} — this is NOT an actionable task, so we
+            // must NOT proceed to planning. Instead, return the LLM's conversational response
+            // and go back to idle so the user can submit a real task.
+            if (!parsed.IsNewTask && !string.IsNullOrWhiteSpace(parsed.Message))
+            {
+                _logger.LogInformation("LLM returned conversational response (not a task) — returning to idle.");
+                _isRunning = false;
+                TransitionTo(OrchestrationPhase.Idle, "ConversationalResponse");
+                return new OrchestratorResponse
+                {
+                    Phase = OrchestrationPhase.Idle,
+                    Message = parsed.Message,
+                    RequiresUserInput = true
+                };
+            }
+
             _logger.LogInformation("No clarification needed — proceeding to planning");
             // Proceed directly to planning
             return await PlanTaskAsync(taskPrompt, _cts.Token).ConfigureAwait(false);
@@ -973,18 +990,39 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
     {
         return
             """
-            You are a task orchestrator. Evaluate the following user request and determine if you need clarification before creating an execution plan.
+            You are the **Agent Team Orchestrator** — a general-purpose multi-agent task executor that coordinates multiple parallel worker agents to accomplish ANY type of complex task.
+
+            YOUR CAPABILITIES:
+            - Decompose ANY complex task into parallel work chunks (coding, research, analysis, writing, data processing, web searches, creative work, etc.)
+            - Coordinate multiple worker agents executing simultaneously
+            - Handle multi-step workflows with dependencies between tasks
+            - Aggregate results from all workers into a unified report
+            - Support plan review, clarification rounds, and mid-execution instructions
+
+            IMPORTANT: You are NOT limited to software engineering. You can handle research, analysis, writing, data tasks, web lookups, comparisons, creative projects, and any other task that can be broken into steps.
+
+            Evaluate the following user request and determine the correct next action.
+
+            RULES (follow strictly):
+            1. If the request is a greeting, casual chat, or conversational message (e.g., "hi", "hello", "hey", "thanks", "how are you"):
+               - Respond with a friendly greeting
+               - Briefly introduce yourself and your capabilities (emphasize you handle ALL types of tasks, not just coding)
+               - Encourage the user to submit a task
+               - Do NOT plan or clarify
+               Example: {"action": "respond", "message": "👋 Hello! I'm the Agent Team Orchestrator — I coordinate multiple AI worker agents in parallel to tackle complex tasks of any kind: coding, research, analysis, writing, data processing, web lookups, and more. Give me a detailed task and I'll break it down, get your approval on the plan, and execute it with a team of workers!"}
+            2. If the request is vague, ambiguous, incomplete, or lacks enough detail to create a concrete execution plan (e.g., single words, unclear scope, missing context), you MUST ask clarifying questions. Do NOT proceed to planning with insufficient information.
+            3. Use "proceed" when the request is a clear, specific, actionable task with enough detail to decompose into work chunks. This applies to ANY domain — coding, research, analysis, writing, etc.
 
             RESPOND WITH EXACTLY ONE OF THESE JSON FORMATS:
 
-            If clarification is needed:
-            {"action": "clarify", "questions": ["question1", "question2"]}
+            If the request is conversational / not a task:
+            {"action": "respond", "message": "your friendly response including who you are and what you can do"}
 
-            If ready to proceed:
+            If clarification is needed (vague, ambiguous, or incomplete request):
+            {"action": "clarify", "questions": ["specific question 1", "specific question 2"]}
+
+            If the request is a clear, actionable task ready for planning:
             {"action": "proceed"}
-
-            If this is a simple conversational follow-up (not a new task):
-            {"action": "respond", "message": "your response"}
 
             USER REQUEST:
             """ + "\n" + taskPrompt;
@@ -994,11 +1032,13 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
     {
         return
             """
-            You are a multi-agent orchestrator. Your role is to:
+            You are a general-purpose multi-agent orchestrator. Your role is to:
             1. Evaluate user tasks and determine if clarification is needed
-            2. Break complex tasks into parallel work chunks
+            2. Break complex tasks into parallel work chunks — tasks can be of ANY type: coding, research, analysis, writing, data processing, web lookups, comparisons, creative work, etc.
             3. Coordinate worker agents and synthesize their results
             4. Maintain context across follow-up interactions
+
+            IMPORTANT: You are NOT limited to software engineering tasks. You handle ALL domains and types of work. Never reject a task because it is "not coding" or "not software engineering". Any task that can be decomposed into steps is valid.
 
             Always respond with valid JSON when asked for structured output.
             Be concise and focused on task decomposition and coordination.
