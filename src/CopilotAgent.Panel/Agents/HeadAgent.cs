@@ -100,6 +100,15 @@ public sealed class HeadAgent : PanelAgentBase
             If the request is already crystal clear, respond with:
             "CLEAR: No further clarification needed."
 
+            ## Discussion Depth Detection
+            Also detect the user's desired discussion depth from their language:
+            - QUICK indicators: 'briefly', 'quickly', 'quick', 'summary', 'overview', 'in short', 'fast', 'high-level'
+            - DEEP indicators: 'thoroughly', 'comprehensively', 'in-depth', 'detailed', 'deep dive', 'extensive', 'analyze deeply', 'exhaustive'
+            - STANDARD: default if no clear indicators are present
+
+            At the END of your response, on a new line, include exactly:
+            DISCUSSION_DEPTH: Quick|Standard|Deep
+
             USER REQUEST:
             {userPrompt}
             """;

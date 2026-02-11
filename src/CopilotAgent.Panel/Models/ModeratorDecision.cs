@@ -44,6 +44,26 @@ public sealed class ModeratorDecision
     public string? RedirectMessage { get; init; }
 
     /// <summary>
+    /// Whether the Moderator recommends parallel thinking for this turn.
+    /// True when the Moderator determines that selected panelists can
+    /// reason independently on orthogonal aspects.
+    /// </summary>
+    public bool AllowParallelThinking { get; init; }
+
+    /// <summary>
+    /// Names of panelists that should think in parallel (2-3 agents).
+    /// Non-empty only when <see cref="AllowParallelThinking"/> is true.
+    /// Agents think concurrently but their messages are recorded sequentially.
+    /// </summary>
+    public IReadOnlyList<string> ParallelGroup { get; init; } = [];
+
+    /// <summary>
+    /// Moderator's rationale for choosing parallel vs sequential execution.
+    /// Null when parallel thinking is not recommended.
+    /// </summary>
+    public string? ParallelRationale { get; init; }
+
+    /// <summary>
     /// Create a fail-open fallback decision: continue discussion, round-robin, zero convergence.
     /// Used when the LLM response cannot be parsed into a structured decision.
     /// </summary>
@@ -55,7 +75,10 @@ public sealed class ModeratorDecision
         ConvergenceScore = 0,
         StopDiscussion = false,
         Reason = $"[Fallback] {reason}",
-        RedirectMessage = null
+        RedirectMessage = null,
+        AllowParallelThinking = false,
+        ParallelGroup = [],
+        ParallelRationale = null
     };
 
     /// <summary>
@@ -70,7 +93,10 @@ public sealed class ModeratorDecision
         ConvergenceScore = Math.Clamp(convergenceScore, 0, 100),
         StopDiscussion = true,
         Reason = reason,
-        RedirectMessage = null
+        RedirectMessage = null,
+        AllowParallelThinking = false,
+        ParallelGroup = [],
+        ParallelRationale = null
     };
 }
 

@@ -177,6 +177,16 @@
                                    FontSize="12" FontWeight="SemiBold" Foreground="White"/>
                     </Border>
 
+                    <!-- Depth Badge (appears after LLM-driven depth detection) -->
+                    <Border Grid.Column="1" Style="{StaticResource PhaseBadge}"
+                            Margin="6,0,0,0" VerticalAlignment="Center"
+                            HorizontalAlignment="Left"
+                            Background="#455A64"
+                            Visibility="{Binding ShowDepthBadge, Converter={StaticResource BoolToVis}}">
+                        <emoji:TextBlock Text="{Binding DetectedDepthBadge}"
+                                   FontSize="11" Foreground="White"/>
+                    </Border>
+
                     <!-- Status Display (center) -->
                     <StackPanel Grid.Column="2" Orientation="Horizontal"
                                 HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -286,13 +296,44 @@
                     CornerRadius="6"
                     Opacity="{Binding ExecutionPulseOpacity}"
                     Visibility="{Binding IsExecutionIndicatorVisible, Converter={StaticResource BoolToVis}}">
-                <StackPanel Orientation="Horizontal">
-                    <Ellipse Width="10" Height="10" Fill="#2E7D32" Margin="0,0,8,0"
-                             VerticalAlignment="Center"/>
-                    <TextBlock Text="{Binding ExecutionStatusText}" FontSize="13"
-                               FontWeight="SemiBold" Foreground="#1B5E20"
-                               VerticalAlignment="Center"/>
-                </StackPanel>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>     <!-- Col 1: Status text with animated dots -->
+                        <ColumnDefinition Width="Auto"/>  <!-- Col 2: Active panelist names -->
+                        <ColumnDefinition Width="Auto"/>  <!-- Col 3: Parallel execution indicator -->
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Col 1: Green dot + animated status text -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse Width="10" Height="10" Fill="#2E7D32" Margin="0,0,8,0"
+                                 VerticalAlignment="Center"/>
+                        <emoji:TextBlock Text="{Binding ExecutionStatusText}" FontSize="13"
+                                   FontWeight="SemiBold" Foreground="#1B5E20"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
+
+                    <!-- Col 2: Active panelist names with icons -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+                                Margin="12,0,0,0"
+                                Visibility="{Binding ActiveAgentName, Converter={StaticResource StringToVis}}">
+                        <Border CornerRadius="10" Padding="8,3"
+                                Background="#C8E6C9" BorderBrush="#81C784" BorderThickness="1">
+                            <emoji:TextBlock Text="{Binding ActiveAgentName}" FontSize="11"
+                                       FontWeight="SemiBold" Foreground="#1B5E20"
+                                       VerticalAlignment="Center"/>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Col 3: Parallel execution indicator (⚙) -->
+                    <Border Grid.Column="2" CornerRadius="10" Padding="6,3"
+                            Margin="8,0,0,0" VerticalAlignment="Center"
+                            Background="#FFF8E1" BorderBrush="#FFE082" BorderThickness="1"
+                            Visibility="{Binding ShowParallelIndicator, Converter={StaticResource BoolToVis}}">
+                        <emoji:TextBlock Text="⚙ Parallel" FontSize="11"
+                                   FontWeight="SemiBold" Foreground="#F57F17"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+                </Grid>
             </Border>
 
             <!-- ═══════════════════════════════════════════════════════ -->
@@ -900,8 +941,8 @@
                         <!-- ══ Model Selection ══ -->
                         <TextBlock Text="🧠 Model Selection" Style="{StaticResource SidePanelSectionHeader}"/>
 
-                        <StackPanel Margin="0,0,0,12">
-                            <TextBlock Text="Primary Model:" Style="{StaticResource SettingsLabel}" Margin="0,0,0,4"/>
+                        <StackPanel Margin="0,0,0,10">
+                            <TextBlock Text="Primary Model (Head / Moderator):" Style="{StaticResource SettingsLabel}" Margin="0,0,0,4"/>
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*"/>
@@ -920,6 +961,51 @@
                                     <emoji:TextBlock Text="🔄" FontSize="12"/>
                                 </Button>
                             </Grid>
+                        </StackPanel>
+
+                        <!-- Panelist Model Pool (multi-select checkbox list) -->
+                        <StackPanel Margin="0,0,0,12">
+                            <Grid Margin="0,0,0,4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="🤖 Panelist Model Pool:" Style="{StaticResource SettingsLabel}"/>
+                                <Border Grid.Column="1" CornerRadius="8" Padding="6,2" Margin="4,0"
+                                        Background="#E3F2FD" VerticalAlignment="Center">
+                                    <TextBlock FontSize="10" FontWeight="SemiBold" Foreground="#1565C0">
+                                        <Run Text="{Binding SelectedPanelistModelsCount, Mode=OneWay}"/>
+                                        <Run Text=" selected"/>
+                                    </TextBlock>
+                                </Border>
+                                <Button Grid.Column="2"
+                                        Style="{StaticResource IconButton}"
+                                        Command="{Binding RefreshModelsCommand}"
+                                        ToolTip="Refresh model list"
+                                        Padding="4">
+                                    <emoji:TextBlock Text="🔄" FontSize="12"/>
+                                </Button>
+                            </Grid>
+                            <Border BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="4"
+                                    MaxHeight="150" Padding="2">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding PanelistModelItems}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <CheckBox IsChecked="{Binding IsSelected}" Margin="4,2"
+                                                          VerticalContentAlignment="Center">
+                                                    <TextBlock Text="{Binding Name}" FontSize="12"
+                                                               Foreground="#424242" TextTrimming="CharacterEllipsis"/>
+                                                </CheckBox>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Border>
+                            <TextBlock Text="Select models for panelists. Empty = use Primary Model for all."
+                                       FontSize="10" Foreground="#9E9E9E" FontStyle="Italic"
+                                       Margin="0,3,0,0"/>
                         </StackPanel>
 
                         <Separator Background="#E0E0E0" Margin="0,0,0,12"/>
@@ -986,13 +1072,28 @@
                             </StackPanel>
                         </Grid>
 
-                        <!-- Commentary Mode -->
-                        <StackPanel Margin="0,0,0,8">
-                            <TextBlock Text="Commentary Mode:" Style="{StaticResource SettingsLabel}" Margin="0,0,0,4"/>
-                            <ComboBox ItemsSource="{Binding CommentaryModes}"
-                                      SelectedItem="{Binding SettingsCommentaryMode}"
-                                      FontSize="12" Padding="6,4"/>
-                        </StackPanel>
+                        <!-- Commentary Mode + Discussion Depth -->
+                        <Grid Margin="0,0,0,8">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Margin="0,0,8,0">
+                                <TextBlock Text="Commentary Mode:" Style="{StaticResource SettingsLabel}" Margin="0,0,0,4"/>
+                                <ComboBox ItemsSource="{Binding CommentaryModes}"
+                                          SelectedItem="{Binding SettingsCommentaryMode}"
+                                          FontSize="12" Padding="6,4"/>
+                            </StackPanel>
+
+                            <StackPanel Grid.Column="1" Margin="8,0,0,0">
+                                <TextBlock Text="Discussion Depth:" Style="{StaticResource SettingsLabel}" Margin="0,0,0,4"/>
+                                <ComboBox ItemsSource="{Binding DiscussionDepthOptions}"
+                                          SelectedItem="{Binding SettingsDiscussionDepth}"
+                                          FontSize="12" Padding="6,4"
+                                          ToolTip="Auto = LLM detects depth from prompt. Override to force a specific depth."/>
+                            </StackPanel>
+                        </Grid>
 
                         <!-- Allow File System Access -->
                         <StackPanel Orientation="Horizontal" Margin="0,4,0,12">
@@ -1000,6 +1101,31 @@
                                       VerticalAlignment="Center" Margin="0,0,6,0"/>
                             <TextBlock Text="Allow file system access for tools"
                                        Style="{StaticResource SettingsLabel}"/>
+                        </StackPanel>
+
+                        <!-- Working Directory (visible only when file system access is enabled) -->
+                        <StackPanel Margin="0,0,0,10"
+                                    Visibility="{Binding SettingsAllowFileSystemAccess, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="📂 Working Directory:" Style="{StaticResource SettingsLabel}" Margin="0,0,0,4"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
+                                         Text="{Binding SettingsWorkingDirectory, UpdateSourceTrigger=PropertyChanged}"
+                                         FontSize="12" Padding="6,4"
+                                         ToolTip="Directory for file system tools. Leave empty to use the default."
+                                         VerticalAlignment="Center"/>
+                                <Button Grid.Column="1" Margin="6,0,0,0"
+                                        Style="{StaticResource ActionButton}"
+                                        Background="#E0E0E0" Foreground="#424242"
+                                        Padding="8,4" FontSize="12"
+                                        Command="{Binding BrowseWorkingDirectoryCommand}"
+                                        ToolTip="Browse for folder">
+                                    <TextBlock Text="📁 Browse"/>
+                                </Button>
+                            </Grid>
                         </StackPanel>
 
                         <!-- Apply / Discard buttons -->

@@ -56,4 +56,12 @@ public class PanelSettings
     /// <summary>Convergence score threshold (0-100) to trigger synthesis.</summary>
     [JsonPropertyName("convergenceThreshold")]
     public int ConvergenceThreshold { get; set; } = 80;
+
+    /// <summary>
+    /// Manual discussion depth override: "Auto", "Quick", "Standard", or "Deep".
+    /// When "Auto" (default), the Head agent detects depth from the user's prompt.
+    /// Any other value bypasses LLM detection and uses the specified depth directly.
+    /// </summary>
+    [JsonPropertyName("discussionDepthOverride")]
+    public string DiscussionDepthOverride { get; set; } = "Auto";
 }

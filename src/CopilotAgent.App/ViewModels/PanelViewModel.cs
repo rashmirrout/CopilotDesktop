@@ -38,9 +38,12 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
 
     // Animation infrastructure
     private readonly DispatcherTimer _pulseTimer;
-    private DateTime _discussionStartTime;
     private bool _pulseToggle;
+
+    // Active agent tracking — drives pulse timer lifecycle and elapsed time display
+    private int _activeAgentCount;
     private int _animationDotCount;
+    private DateTime _discussionStartTime;
 
     /// <summary>
     /// Snapshot of persisted PanelSettings values — used to compute HasPendingChanges.
@@ -187,6 +190,20 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private string _activeAgentName = string.Empty;
 
+    [ObservableProperty]
+    private bool _showParallelIndicator;
+
+    // ── Depth Badge ─────────────────────────────────────────────
+
+    [ObservableProperty]
+    private string _detectedDepthBadge = string.Empty;
+
+    [ObservableProperty]
+    private bool _showDepthBadge;
+
+    /// <summary>Tracks whether the current turn involves parallel execution (⚙ indicator).</summary>
+    private bool _isParallelExecutionActive;
+
     // ── Side Panel (Settings) ───────────────────────────────────
 
     [ObservableProperty]
@@ -249,6 +266,29 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
     partial void OnSettingsAllowFileSystemAccessChanged(bool value) => RecalculateDirtyState();
 
     [ObservableProperty]
+    private string _settingsDiscussionDepth = "Auto";
+    partial void OnSettingsDiscussionDepthChanged(string value) => RecalculateDirtyState();
+
+    [ObservableProperty]
+    private string _settingsWorkingDirectory = string.Empty;
+    partial void OnSettingsWorkingDirectoryChanged(string value) => RecalculateDirtyState();
+
+    /// <summary>Comma-separated list of model names for the panelist model pool (used for snapshot tracking).</summary>
+    [ObservableProperty]
+    private string _settingsPanelistModels = string.Empty;
+    partial void OnSettingsPanelistModelsChanged(string value)
+    {
+        RecalculateDirtyState();
+        SelectedPanelistModelsCount = ParsePanelistModels(value).Count;
+    }
+
+    /// <summary>Selectable model items for the panelist model pool checkbox list.</summary>
+    public ObservableCollection<SelectableModelItem> PanelistModelItems { get; } = new();
+
+    [ObservableProperty]
+    private int _selectedPanelistModelsCount;
+
+    [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ApplySettingsCommand))]
     [NotifyCanExecuteChangedFor(nameof(DiscardSettingsCommand))]
     private bool _hasPendingChanges;
@@ -263,6 +303,7 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
     private bool _isLoadingModels;
 
     public string[] CommentaryModes { get; } = ["Detailed", "Brief", "Off"];
+    public string[] DiscussionDepthOptions { get; } = ["Auto", "Quick", "Standard", "Deep"];
     public int[] PanelistOptions { get; } = [2, 3, 4, 5, 7];
     public int[] TurnOptions { get; } = [10, 15, 20, 30, 50];
     public int[] DurationOptions { get; } = [5, 10, 15, 30, 60];
@@ -534,6 +575,69 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         }
     }
 
+    /// <summary>
+    /// Rebuilds the PanelistModelItems checkbox list from AvailableModels,
+    /// preserving current selections from SettingsPanelistModels.
+    /// </summary>
+    private void RebuildPanelistModelItems()
+    {
+        var selected = new HashSet<string>(
+            ParsePanelistModels(SettingsPanelistModels),
+            StringComparer.OrdinalIgnoreCase);
+
+        PanelistModelItems.Clear();
+        foreach (var model in AvailableModels)
+        {
+            var item = new SelectableModelItem { Name = model, IsSelected = selected.Contains(model) };
+            item.SelectionChanged += OnPanelistModelSelectionChanged;
+            PanelistModelItems.Add(item);
+        }
+
+        // Also add any previously-selected models not currently in AvailableModels
+        foreach (var s in selected)
+        {
+            if (!AvailableModels.Contains(s, StringComparer.OrdinalIgnoreCase))
+            {
+                var item = new SelectableModelItem { Name = s, IsSelected = true };
+                item.SelectionChanged += OnPanelistModelSelectionChanged;
+                PanelistModelItems.Add(item);
+            }
+        }
+
+        SelectedPanelistModelsCount = PanelistModelItems.Count(i => i.IsSelected);
+    }
+
+    private void OnPanelistModelSelectionChanged(object? sender, EventArgs e)
+    {
+        // Sync checkbox states → comma-separated string for dirty tracking
+        var selectedNames = PanelistModelItems
+            .Where(i => i.IsSelected)
+            .Select(i => i.Name);
+        SettingsPanelistModels = string.Join(", ", selectedNames);
+    }
+
+    [RelayCommand]
+    private void BrowseWorkingDirectory()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "Select Working Directory for Panel Discussion",
+            Multiselect = false
+        };
+
+        if (!string.IsNullOrWhiteSpace(SettingsWorkingDirectory)
+            && System.IO.Directory.Exists(SettingsWorkingDirectory))
+        {
+            dialog.InitialDirectory = SettingsWorkingDirectory;
+        }
+
+        if (dialog.ShowDialog() == true)
+        {
+            SettingsWorkingDirectory = dialog.FolderName;
+            _logger.LogInformation("[PanelVM] Working directory set to: {Dir}", dialog.FolderName);
+        }
+    }
+
     [RelayCommand]
     private void ToggleSidePanel()
     {
@@ -593,6 +697,7 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         finally
         {
             IsLoadingModels = false;
+            _dispatcher.Invoke(RebuildPanelistModelItems);
         }
     }
 
@@ -614,6 +719,9 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
             ps.CommentaryMode = SettingsCommentaryMode;
             ps.ConvergenceThreshold = SettingsConvergenceThreshold;
             ps.AllowFileSystemAccess = SettingsAllowFileSystemAccess;
+            ps.DiscussionDepthOverride = SettingsDiscussionDepth;
+            ps.WorkingDirectory = SettingsWorkingDirectory;
+            ps.PanelistModels = ParsePanelistModels(SettingsPanelistModels);
 
             await _persistenceService.SaveSettingsAsync(_appSettings);
 
@@ -662,6 +770,9 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         SettingsCommentaryMode = "Brief";
         SettingsConvergenceThreshold = 80;
         SettingsAllowFileSystemAccess = true;
+        SettingsDiscussionDepth = "Auto";
+        SettingsWorkingDirectory = string.Empty;
+        SettingsPanelistModels = string.Empty;
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -777,6 +888,7 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
                 IsPaused = false;
                 IsFollowUpAvailable = true;
                 StopExecutionAnimation();
+                StopPulseAnimations();
                 break;
 
             case PanelPhase.Stopped:
@@ -785,6 +897,7 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
                 IsDiscussionActive = false;
                 IsPaused = false;
                 StopExecutionAnimation();
+                StopPulseAnimations();
                 break;
 
             case PanelPhase.Failed:
@@ -793,6 +906,7 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
                 IsDiscussionActive = false;
                 IsPaused = false;
                 StopExecutionAnimation();
+                StopPulseAnimations();
                 break;
 
             case PanelPhase.Idle:
@@ -856,16 +970,29 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
 
     private void OnAgentStatusChanged(AgentStatusChangedEvent e)
     {
-        _logger.LogDebug("[PanelVM] Agent status: {Name} → {Status}", e.AgentName, e.NewStatus);
+        _logger.LogInformation("[PanelVM] Agent status: {Name} -> {New}", e.AgentName, e.NewStatus);
 
-        var isActive = e.NewStatus is PanelAgentStatus.Active or PanelAgentStatus.Thinking;
+        // Deterministic: only Active/Thinking are "working" states.
+        // Every other status (Created, Idle, Paused, Disposed) clears the flag.
+        var isActivelyWorking = e.NewStatus is PanelAgentStatus.Active or PanelAgentStatus.Thinking;
 
         var agent = PanelAgents.FirstOrDefault(a => a.Name == e.AgentName);
         if (agent is not null)
         {
+            var wasWorking = agent.IsActivelyWorking;
             agent.Status = e.NewStatus.ToString();
             agent.StatusColor = GetAgentStatusColor(e.NewStatus);
-            agent.IsActivelyWorking = isActive;
+            agent.IsActivelyWorking = isActivelyWorking;
+
+            // Immediately reset pulse opacity when going idle
+            if (!isActivelyWorking)
+                agent.PulseOpacity = 1.0;
+
+            // Track active agent count transitions
+            if (!wasWorking && isActivelyWorking)
+                _activeAgentCount++;
+            else if (wasWorking && !isActivelyWorking)
+                _activeAgentCount = Math.Max(0, _activeAgentCount - 1);
         }
         else
         {
@@ -876,31 +1003,24 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
                 Status = e.NewStatus.ToString(),
                 StatusColor = GetAgentStatusColor(e.NewStatus),
                 RoleIcon = GetRoleIcon(e.Role),
-                IsActivelyWorking = isActive
+                IsActivelyWorking = isActivelyWorking,
+                PulseOpacity = 1.0
             });
+
+            if (isActivelyWorking)
+                _activeAgentCount++;
         }
 
-        // Clear IsActivelyWorking for all other agents when one becomes active
-        if (isActive)
+        _logger.LogDebug("[PanelVM] Active agent count: {Count}", _activeAgentCount);
+
+        // When all agents go idle, stop all animations cleanly
+        if (_activeAgentCount == 0)
         {
-            foreach (var other in PanelAgents.Where(a => a.Name != e.AgentName))
-                other.IsActivelyWorking = false;
-
-            ActiveAgentName = e.AgentName;
-
-            // Move active agent to top of inspector list
-            if (agent is not null)
-            {
-                var idx = PanelAgents.IndexOf(agent);
-                if (idx > 0)
-                    PanelAgents.Move(idx, 0);
-            }
+            StopPulseAnimations();
         }
         else
         {
-            // If no agent is active, clear the active agent name
-            if (!PanelAgents.Any(a => a.IsActivelyWorking))
-                ActiveAgentName = string.Empty;
+            UpdateActiveAgentDisplay();
         }
 
         AddEvent($"[{e.Timestamp:HH:mm:ss}] {e.AgentName}: {e.NewStatus}");
@@ -939,6 +1059,26 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
 
         // Fix: Track moderator activity so message count increments
         UpdateAgentActivity("Moderator", PanelAgentRole.Moderator, e.Commentary);
+
+        // Detect depth badge from orchestrator commentary
+        if (e.Commentary.Contains("Discussion depth:", StringComparison.OrdinalIgnoreCase))
+        {
+            if (e.Commentary.Contains("Quick", StringComparison.OrdinalIgnoreCase))
+            {
+                DetectedDepthBadge = "⚡ Quick";
+                ShowDepthBadge = true;
+            }
+            else if (e.Commentary.Contains("Deep", StringComparison.OrdinalIgnoreCase))
+            {
+                DetectedDepthBadge = "🔬 Deep";
+                ShowDepthBadge = true;
+            }
+            else if (e.Commentary.Contains("Standard", StringComparison.OrdinalIgnoreCase))
+            {
+                DetectedDepthBadge = "📐 Standard";
+                ShowDepthBadge = true;
+            }
+        }
     }
 
     private void OnModeration(ModerationEvent e)
@@ -984,11 +1124,11 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
 
     private void StartExecutionAnimation()
     {
-        _discussionStartTime = DateTime.UtcNow;
-        _animationDotCount = 0;
         IsExecutionIndicatorVisible = true;
-        ExecutionStatusText = "🔥 Discussion in progress...";
+        _animationDotCount = 0;
+        ExecutionStatusText = "🔥 Discussion.";
         ExecutionPulseOpacity = 1.0;
+        _discussionStartTime = DateTime.UtcNow;
     }
 
     private void StopExecutionAnimation()
@@ -998,8 +1138,65 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         ExecutionPulseOpacity = 1.0;
     }
 
+    /// <summary>
+    /// Terminates all per-agent pulse animations, clears the active agent display,
+    /// and hides the execution indicator. Called on terminal phases (Completed/Stopped/Failed)
+    /// and when the last active agent transitions to idle.
+    /// </summary>
+    private void StopPulseAnimations()
+    {
+        foreach (var agent in PanelAgents)
+        {
+            agent.IsActivelyWorking = false;
+            agent.PulseOpacity = 1.0;
+        }
+
+        ActiveAgentName = string.Empty;
+        _isParallelExecutionActive = false;
+        ShowParallelIndicator = false;
+        _activeAgentCount = 0;
+        _animationDotCount = 0;
+        CurrentPhaseBadgeOpacity = 1.0;
+        IsExecutionIndicatorVisible = false;
+        ExecutionStatusText = string.Empty;
+        ExecutionPulseOpacity = 1.0;
+
+        _logger.LogDebug("[PanelVM] Pulse animations stopped — all agents idle.");
+    }
+
+    /// <summary>
+    /// Recalculates ActiveAgentName, parallel execution flag, and ExecutionStatusText
+    /// from the current PanelAgents collection. Includes elapsed time display.
+    /// Called from OnAgentStatusChanged and OnPulseTimerTick.
+    /// </summary>
+    private void UpdateActiveAgentDisplay()
+    {
+        var activeAgents = PanelAgents.Where(a => a.IsActivelyWorking).ToList();
+
+        ActiveAgentName = activeAgents.Count > 0
+            ? string.Join("  ", activeAgents.Select(a => $"{a.RoleIcon} {a.Name}"))
+            : string.Empty;
+
+        _isParallelExecutionActive = activeAgents.Count >= 2;
+        ShowParallelIndicator = _isParallelExecutionActive;
+
+        if (IsExecutionIndicatorVisible && _activeAgentCount > 0)
+        {
+            _animationDotCount = (_animationDotCount + 1) % 4;
+            var dots = new string('.', _animationDotCount + 1);
+            var elapsed = DateTime.UtcNow - _discussionStartTime;
+            var activePanelists = activeAgents.Count;
+
+            ExecutionStatusText = $"🔥 Discussion{dots} ({elapsed.TotalSeconds:F0}s, {activePanelists} active, Turn {CompletedTurns}/{EstimatedTotalTurns})";
+        }
+    }
+
     private void OnPulseTimerTick(object? sender, EventArgs e)
     {
+        // No active agents → nothing to animate; skip all work
+        if (_activeAgentCount == 0)
+            return;
+
         _pulseToggle = !_pulseToggle;
 
         // Phase badge pulse for active phases
@@ -1019,16 +1216,10 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
             agent.PulseOpacity = agent.IsActivelyWorking ? (_pulseToggle ? 1.0 : 0.5) : 1.0;
         }
 
-        // Execution indicator animation — now shows active agent name
+        // Update execution indicator with elapsed time and active agent names
         if (IsExecutionIndicatorVisible)
         {
-            _animationDotCount = (_animationDotCount + 1) % 4;
-            var dots = new string('.', _animationDotCount + 1);
-            var elapsed = DateTime.UtcNow - _discussionStartTime;
-            var activePanelists = PanelAgents.Count(a => a.IsActivelyWorking);
-            var agentLabel = !string.IsNullOrEmpty(ActiveAgentName) ? $" ▸ {ActiveAgentName}" : string.Empty;
-
-            ExecutionStatusText = $"🔥 Discussion{dots} ({elapsed.TotalSeconds:F0}s, {activePanelists} active, Turn {CompletedTurns}/{EstimatedTotalTurns}{agentLabel})";
+            UpdateActiveAgentDisplay();
             ExecutionPulseOpacity = _pulseToggle ? 1.0 : 0.6;
         }
     }
@@ -1047,6 +1238,11 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         SettingsCommentaryMode = ps.CommentaryMode;
         SettingsConvergenceThreshold = ps.ConvergenceThreshold;
         SettingsAllowFileSystemAccess = ps.AllowFileSystemAccess;
+        SettingsDiscussionDepth = !string.IsNullOrWhiteSpace(ps.DiscussionDepthOverride) ? ps.DiscussionDepthOverride : "Auto";
+        SettingsWorkingDirectory = ps.WorkingDirectory ?? string.Empty;
+        SettingsPanelistModels = ps.PanelistModels is { Count: > 0 }
+            ? string.Join(", ", ps.PanelistModels)
+            : string.Empty;
     }
 
     private void LoadSettingsFromSnapshot(PanelSettingsSnapshot snapshot)
@@ -1058,6 +1254,9 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         SettingsCommentaryMode = snapshot.CommentaryMode;
         SettingsConvergenceThreshold = snapshot.ConvergenceThreshold;
         SettingsAllowFileSystemAccess = snapshot.AllowFileSystemAccess;
+        SettingsDiscussionDepth = snapshot.DiscussionDepth;
+        SettingsWorkingDirectory = snapshot.WorkingDirectory;
+        SettingsPanelistModels = snapshot.PanelistModels;
     }
 
     private PanelSettingsSnapshot CaptureCurrentSnapshot() => new(
@@ -1067,7 +1266,10 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         SettingsMaxDurationMinutes,
         SettingsCommentaryMode,
         SettingsConvergenceThreshold,
-        SettingsAllowFileSystemAccess);
+        SettingsAllowFileSystemAccess,
+        SettingsDiscussionDepth,
+        SettingsWorkingDirectory,
+        SettingsPanelistModels);
 
     private void RecalculateDirtyState()
     {
@@ -1088,9 +1290,25 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         if (!string.Equals(current.CommentaryMode, _persistedSnapshot.CommentaryMode, StringComparison.Ordinal)) count++;
         if (current.ConvergenceThreshold != _persistedSnapshot.ConvergenceThreshold) count++;
         if (current.AllowFileSystemAccess != _persistedSnapshot.AllowFileSystemAccess) count++;
+        if (!string.Equals(current.DiscussionDepth, _persistedSnapshot.DiscussionDepth, StringComparison.Ordinal)) count++;
+        if (!string.Equals(current.WorkingDirectory, _persistedSnapshot.WorkingDirectory, StringComparison.Ordinal)) count++;
+        if (!string.Equals(current.PanelistModels, _persistedSnapshot.PanelistModels, StringComparison.Ordinal)) count++;
 
         PendingChangesCount = count;
         HasPendingChanges = count > 0;
+    }
+
+    /// <summary>Parses a comma-separated model string into a List&lt;string&gt;.</summary>
+    private static List<string> ParsePanelistModels(string commaDelimited)
+    {
+        if (string.IsNullOrWhiteSpace(commaDelimited))
+            return [];
+
+        return commaDelimited
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(s => s.Length > 0)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     private sealed record PanelSettingsSnapshot(
@@ -1100,7 +1318,10 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         int MaxDurationMinutes,
         string CommentaryMode,
         int ConvergenceThreshold,
-        bool AllowFileSystemAccess);
+        bool AllowFileSystemAccess,
+        string DiscussionDepth,
+        string WorkingDirectory,
+        string PanelistModels);
 
     // ══════════════════════════════════════════════════════════════
     // Config Builder
@@ -1117,10 +1338,11 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
             CommentaryMode = SettingsCommentaryMode,
             ConvergenceThreshold = SettingsConvergenceThreshold,
             AllowFileSystemAccess = SettingsAllowFileSystemAccess,
-            PanelistModels = _appSettings.Panel.PanelistModels,
+            DiscussionDepthOverride = SettingsDiscussionDepth,
+            PanelistModels = ParsePanelistModels(SettingsPanelistModels),
             MaxTotalTokens = _appSettings.Panel.MaxTotalTokens,
             MaxToolCalls = _appSettings.Panel.MaxToolCalls,
-            WorkingDirectory = _appSettings.Panel.WorkingDirectory,
+            WorkingDirectory = SettingsWorkingDirectory,
             EnabledMcpServers = _appSettings.Panel.EnabledMcpServers
         };
     }
@@ -1160,6 +1382,13 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         StatusIcon = "💬";
         IsEventLogExpanded = false;
         IsExecutionIndicatorVisible = false;
+        DetectedDepthBadge = string.Empty;
+        ShowDepthBadge = false;
+        _isParallelExecutionActive = false;
+        ShowParallelIndicator = false;
+        _activeAgentCount = 0;
+        _animationDotCount = 0;
+        _discussionStartTime = default;
         UpdateSendInputButton();
     }
 
@@ -1308,6 +1537,28 @@ public sealed class PanelDiscussionItem : ObservableObject
     public string RoleColor { get; set; } = "#9E9E9E";
     public string RoleIcon { get; set; } = "❓";
     public bool IsCommentary { get; set; }
+}
+
+/// <summary>
+/// A selectable model item for the panelist model pool checkbox list.
+/// </summary>
+public sealed class SelectableModelItem : ObservableObject
+{
+    public string Name { get; set; } = string.Empty;
+
+    private bool _isSelected;
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (SetProperty(ref _isSelected, value))
+                SelectionChanged?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    /// <summary>Raised when IsSelected changes, so the parent ViewModel can sync the comma-separated string.</summary>
+    public event EventHandler? SelectionChanged;
 }
 
 /// <summary>

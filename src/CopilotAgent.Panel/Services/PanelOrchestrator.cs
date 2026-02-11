@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Reactive.Subjects;
+using System.Text.RegularExpressions;
 using CopilotAgent.Panel.Agents;
 using CopilotAgent.Panel.Domain.Entities;
 using CopilotAgent.Panel.Domain.Enums;
@@ -64,6 +65,7 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
     private CancellationTokenSource? _discussionCts;
     private Task? _discussionTask;
     private TurnNumber _currentTurn = new(0);
+    private DiscussionDepth _detectedDepth = DiscussionDepth.Standard;
     private bool _disposed;
 
     public PanelSessionId? ActiveSessionId => _session?.Id;
@@ -115,8 +117,48 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
             _headAgent = (HeadAgent)headIpAgent;
             _allAgents.Add(headIpAgent);
 
+            // Set active session so Head emits status events during LLM calls
+            ((PanelAgentBase)_headAgent).SetActivePanelSession(sessionId);
+
             // Head analyzes the prompt and generates clarification questions
             var clarification = await _headAgent.ClarifyAsync(userPrompt, sessionId, ct);
+
+            // Determine discussion depth: manual override or LLM-detected
+            var depthOverride = settings.DiscussionDepthOverride?.Trim();
+            if (!string.IsNullOrEmpty(depthOverride)
+                && !depthOverride.Equals("Auto", StringComparison.OrdinalIgnoreCase)
+                && Enum.TryParse<DiscussionDepth>(depthOverride, ignoreCase: true, out var manualDepth)
+                && manualDepth != DiscussionDepth.Auto)
+            {
+                // Manual override — skip LLM depth detection entirely
+                _detectedDepth = manualDepth;
+                ApplyDepthPreset(settings, _detectedDepth);
+                _logger.LogInformation(
+                    "[Orchestrator] Manual depth override: {Depth} — MaxTurns={MaxTurns}",
+                    _detectedDepth, settings.MaxTurns);
+
+                _eventStream.OnNext(new CommentaryEvent(
+                    sessionId, Guid.Empty, "Orchestrator", PanelAgentRole.Head,
+                    $"📏 Discussion depth (manual): **{_detectedDepth}**",
+                    CommentaryMode.Brief, DateTimeOffset.UtcNow));
+            }
+            else
+            {
+                // Auto mode — parse depth from Head's clarification response
+                _detectedDepth = ParseDiscussionDepth(clarification);
+                if (_detectedDepth != DiscussionDepth.Standard)
+                {
+                    ApplyDepthPreset(settings, _detectedDepth);
+                    _logger.LogInformation(
+                        "[Orchestrator] Detected discussion depth: {Depth} — adjusted MaxTurns={MaxTurns}",
+                        _detectedDepth, settings.MaxTurns);
+
+                    _eventStream.OnNext(new CommentaryEvent(
+                        sessionId, Guid.Empty, "Orchestrator", PanelAgentRole.Head,
+                        $"📏 Discussion depth detected: **{_detectedDepth}**",
+                        CommentaryMode.Brief, DateTimeOffset.UtcNow));
+                }
+            }
 
             // Record the user's original prompt
             var userMessage = PanelMessage.Create(
@@ -343,6 +385,20 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
             catch (OperationCanceledException) { /* expected */ }
         }
 
+        // Emit Idle status for all agents so the UI stops blinking indicators
+        if (_session is not null)
+        {
+            foreach (var agent in _allAgents)
+            {
+                if (agent is PanelAgentBase baseAgent && baseAgent.Status is not PanelAgentStatus.Disposed)
+                {
+                    _eventStream.OnNext(new AgentStatusChangedEvent(
+                        _session.Id, agent.Id, agent.Name,
+                        agent.Role, PanelAgentStatus.Idle, DateTimeOffset.UtcNow));
+                }
+            }
+        }
+
         if (_stateMachine?.CanFire(PanelTrigger.UserStopped) == true)
             await _stateMachine.FireAsync(PanelTrigger.UserStopped);
     }
@@ -361,6 +417,17 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
         {
             try { await _discussionTask; }
             catch (OperationCanceledException) { /* expected */ }
+        }
+
+        // Emit Disposed status for all agents so the UI clears their indicators
+        if (_session is not null)
+        {
+            foreach (var agent in _allAgents)
+            {
+                _eventStream.OnNext(new AgentStatusChangedEvent(
+                    _session.Id, agent.Id, agent.Name,
+                    agent.Role, PanelAgentStatus.Disposed, DateTimeOffset.UtcNow));
+            }
         }
 
         // Dispose all agents
@@ -433,43 +500,22 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
                     break;
                 }
 
-                // 3. Run panelist turn(s)
-                var panelists = SelectPanelists(decision);
-                foreach (var panelist in panelists)
+                // 3. Run panelist turn(s) — parallel or sequential based on Moderator decision
+                bool forceConverge;
+                if (decision.AllowParallelThinking && decision.ParallelGroup.Count >= 2)
                 {
-                    ct.ThrowIfCancellationRequested();
+                    forceConverge = await ExecuteParallelTurnAsync(decision, sessionId, ct);
+                }
+                else
+                {
+                    var panelists = SelectPanelists(decision);
+                    forceConverge = await ExecuteSequentialTurnAsync(panelists, sessionId, ct);
+                }
 
-                    var input = new AgentInput(
-                        sessionId,
-                        _session.Messages,
-                        string.Empty,
-                        _currentTurn,
-                        ToolOutputs: null);
-
-                    var output = await panelist.ProcessAsync(input, ct);
-
-                    // Record message and emit event
-                    _session.AddMessage(output.Message);
-                    _eventStream.OnNext(new AgentMessageEvent(
-                        sessionId, output.Message, DateTimeOffset.UtcNow));
-
-                    // Validate message through moderator
-                    var modResult = await _moderatorAgent.ValidateMessageAsync(
-                        output.Message, _currentTurn, sessionId, ct);
-
-                    if (modResult.Action == ModerationAction.ForceConverge)
-                    {
-                        _logger.LogInformation("[Orchestrator] Moderator forced convergence");
-                        await _stateMachine!.FireAsync(PanelTrigger.ConvergenceDetected);
-                        goto EndLoop;
-                    }
-
-                    if (modResult.Action == ModerationAction.Blocked)
-                    {
-                        _logger.LogWarning(
-                            "[Orchestrator] Message blocked: {Reason}", modResult.Reason);
-                        // Message already in session but UI can filter blocked messages
-                    }
+                if (forceConverge)
+                {
+                    await _stateMachine!.FireAsync(PanelTrigger.ConvergenceDetected);
+                    break;
                 }
 
                 // 4. Emit progress
@@ -497,8 +543,6 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
                 }
             }
 
-            EndLoop:
-
             // If we converged, proceed to synthesis
             if (CurrentPhase == PanelPhase.Converging)
             {
@@ -516,6 +560,109 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
             EmitError("DiscussionLoop", ex);
             await TryTransitionToFailed();
         }
+    }
+
+    /// <summary>
+    /// Execute a sequential turn: each panelist speaks one at a time, with moderation after each.
+    /// </summary>
+    /// <returns>True if convergence was forced during this turn.</returns>
+    private async Task<bool> ExecuteSequentialTurnAsync(
+        IReadOnlyList<IPanelAgent> panelists, PanelSessionId sessionId, CancellationToken ct)
+    {
+        foreach (var panelist in panelists)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var input = new AgentInput(
+                sessionId, _session!.Messages, string.Empty, _currentTurn, ToolOutputs: null);
+
+            var output = await panelist.ProcessAsync(input, ct);
+
+            _session.AddMessage(output.Message);
+            _eventStream.OnNext(new AgentMessageEvent(sessionId, output.Message, DateTimeOffset.UtcNow));
+
+            var modResult = await _moderatorAgent!.ValidateMessageAsync(
+                output.Message, _currentTurn, sessionId, ct);
+
+            if (modResult.Action == ModerationAction.ForceConverge)
+            {
+                _logger.LogInformation("[Orchestrator] Moderator forced convergence");
+                return true;
+            }
+
+            if (modResult.Action == ModerationAction.Blocked)
+            {
+                _logger.LogWarning("[Orchestrator] Message blocked: {Reason}", modResult.Reason);
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Execute a parallel turn: panelists think concurrently via Task.WhenAll,
+    /// then their messages are recorded sequentially to maintain conversation coherence.
+    /// Falls back to sequential if any named panelist is not found.
+    /// </summary>
+    /// <returns>True if convergence was forced during this turn.</returns>
+    private async Task<bool> ExecuteParallelTurnAsync(
+        ModeratorDecision decision, PanelSessionId sessionId, CancellationToken ct)
+    {
+        // Resolve panelists by name from the parallel group
+        var parallelAgents = decision.ParallelGroup
+            .Select(name => _panelistAgents.FirstOrDefault(
+                p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase)))
+            .Where(p => p is not null)
+            .Cast<IPanelAgent>()
+            .ToList();
+
+        // Fallback to sequential if we couldn't resolve at least 2 agents
+        if (parallelAgents.Count < 2)
+        {
+            _logger.LogWarning(
+                "[Orchestrator] Parallel group resolved only {Count} agents — falling back to sequential",
+                parallelAgents.Count);
+            var panelists = SelectPanelists(decision);
+            return await ExecuteSequentialTurnAsync(panelists, sessionId, ct);
+        }
+
+        _logger.LogInformation(
+            "[Orchestrator] ⚙ Parallel turn: {Names} ({Rationale})",
+            string.Join(", ", parallelAgents.Select(a => a.Name)),
+            decision.ParallelRationale ?? "orthogonal perspectives");
+
+        _eventStream.OnNext(new CommentaryEvent(
+            sessionId, Guid.Empty, "Orchestrator", PanelAgentRole.Moderator,
+            $"⚙ Parallel thinking: {string.Join(", ", parallelAgents.Select(a => a.Name))}",
+            CommentaryMode.Brief, DateTimeOffset.UtcNow));
+
+        // All panelists think concurrently
+        var input = new AgentInput(
+            sessionId, _session!.Messages, string.Empty, _currentTurn, ToolOutputs: null);
+
+        var tasks = parallelAgents
+            .Select(p => p.ProcessAsync(input, ct))
+            .ToList();
+
+        var outputs = await Task.WhenAll(tasks);
+
+        // Record messages sequentially to maintain coherent conversation order
+        foreach (var output in outputs)
+        {
+            _session.AddMessage(output.Message);
+            _eventStream.OnNext(new AgentMessageEvent(sessionId, output.Message, DateTimeOffset.UtcNow));
+
+            var modResult = await _moderatorAgent!.ValidateMessageAsync(
+                output.Message, _currentTurn, sessionId, ct);
+
+            if (modResult.Action == ModerationAction.ForceConverge)
+            {
+                _logger.LogInformation("[Orchestrator] Moderator forced convergence during parallel turn");
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -722,10 +869,10 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
             "Moderator", PanelAgentRole.Moderator,
             new ModelIdentifier("copilot", _settings!.PrimaryModel)));
 
-        // Emit status for Moderator so inspector shows it immediately
+        // Emit Idle status for Moderator so inspector shows it as ready (not actively working)
         _eventStream.OnNext(new AgentStatusChangedEvent(
             _session.Id, modAgent.Id, modAgent.Name,
-            PanelAgentRole.Moderator, PanelAgentStatus.Active, DateTimeOffset.UtcNow));
+            PanelAgentRole.Moderator, PanelAgentStatus.Idle, DateTimeOffset.UtcNow));
 
         // Select panelist profiles
         var profiles = SelectPanelistProfiles(_settings);
@@ -747,18 +894,25 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
                 profile.DisplayName, PanelAgentRole.Panelist,
                 new ModelIdentifier("copilot", model)));
 
-            // Emit status for each panelist so inspector shows them immediately
+            // Emit Idle status for each panelist so inspector shows them as ready (not actively working)
             _eventStream.OnNext(new AgentStatusChangedEvent(
                 _session.Id, panelist.Id, panelist.Name,
-                PanelAgentRole.Panelist, PanelAgentStatus.Active, DateTimeOffset.UtcNow));
+                PanelAgentRole.Panelist, PanelAgentStatus.Idle, DateTimeOffset.UtcNow));
         }
 
-        // Also emit status for the Head agent (already created earlier)
+        // Also emit Idle status for the Head agent (already created earlier)
         if (_headAgent is not null)
         {
             _eventStream.OnNext(new AgentStatusChangedEvent(
                 _session.Id, _headAgent.Id, _headAgent.Name,
-                PanelAgentRole.Head, PanelAgentStatus.Active, DateTimeOffset.UtcNow));
+                PanelAgentRole.Head, PanelAgentStatus.Idle, DateTimeOffset.UtcNow));
+        }
+
+        // Wire SetActivePanelSession on all agents so SendToLlmAsync emits status events
+        foreach (var agent in _allAgents)
+        {
+            if (agent is PanelAgentBase baseAgent)
+                baseAgent.SetActivePanelSession(_session.Id);
         }
 
         _logger.LogInformation(
@@ -828,6 +982,51 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
 
     private static string Truncate(string value, int maxLength) =>
         value.Length <= maxLength ? value : value[..maxLength] + "...";
+
+    /// <summary>
+    /// Parse the DISCUSSION_DEPTH tag from the Head agent's clarification response.
+    /// Returns <see cref="DiscussionDepth.Standard"/> if the tag is absent or unrecognized.
+    /// </summary>
+    private static DiscussionDepth ParseDiscussionDepth(string headResponse)
+    {
+        var match = Regex.Match(headResponse, @"DISCUSSION_DEPTH:\s*(Quick|Standard|Deep)",
+            RegexOptions.IgnoreCase | RegexOptions.Multiline);
+
+        if (!match.Success)
+            return DiscussionDepth.Standard;
+
+        return match.Groups[1].Value.ToLowerInvariant() switch
+        {
+            "quick" => DiscussionDepth.Quick,
+            "deep" => DiscussionDepth.Deep,
+            _ => DiscussionDepth.Standard
+        };
+    }
+
+    /// <summary>
+    /// Apply depth-specific presets to the settings. Modifies MaxTurns and ConvergenceThreshold
+    /// based on the detected depth. Standard is a no-op (uses user-configured values).
+    /// </summary>
+    private static void ApplyDepthPreset(PanelSettings settings, DiscussionDepth depth)
+    {
+        switch (depth)
+        {
+            case DiscussionDepth.Quick:
+                settings.MaxTurns = Math.Min(settings.MaxTurns, 10);
+                settings.ConvergenceThreshold = 60;
+                break;
+
+            case DiscussionDepth.Deep:
+                settings.MaxTurns = Math.Max(settings.MaxTurns, 50);
+                settings.ConvergenceThreshold = 90;
+                break;
+
+            case DiscussionDepth.Standard:
+            default:
+                // No changes — use configured values
+                break;
+        }
+    }
 
     #endregion
 

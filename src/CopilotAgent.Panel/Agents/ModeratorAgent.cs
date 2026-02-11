@@ -116,7 +116,9 @@ public sealed class ModeratorAgent : PanelAgentBase
               "convergenceScore": <0-100>,
               "stopDiscussion": <true/false>,
               "reason": "<brief explanation>",
-              "redirectMessage": "<optional message to refocus discussion or null>"
+              "redirectMessage": "<optional message to refocus discussion or null>",
+              "parallelGroup": ["<name1>", "<name2>"] or null,
+              "parallelRationale": "<why parallel is safe here>" or null
             }
 
             DECISION CRITERIA:
@@ -124,6 +126,14 @@ public sealed class ModeratorAgent : PanelAgentBase
             - stopDiscussion = true: discussion should end (convergence or resource limits)
             - nextSpeaker: target the panelist who can add most value next (or null for all)
             - redirectMessage: if discussion has drifted off-topic, provide a refocus prompt
+
+            PARALLEL EXECUTION:
+            - You may schedule 2-3 panelists to think in PARALLEL when their perspectives are ORTHOGONAL
+              (e.g., security vs performance, frontend vs backend, legal vs technical).
+            - Set "parallelGroup" to an array of 2-3 panelist names. They will think concurrently
+              but comment sequentially. Set "nextSpeaker" to null when using parallelGroup.
+            - Only use parallel when topics are truly independent. If panelists need to respond
+              to each other's points, keep them sequential (parallelGroup: null).
             """;
 
         try
@@ -210,6 +220,22 @@ public sealed class ModeratorAgent : PanelAgentBase
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
 
+            // Parse parallelGroup array if present
+            var parallelGroup = new List<string>();
+            if (root.TryGetProperty("parallelGroup", out var pg) && pg.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in pg.EnumerateArray())
+                {
+                    var name = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(name))
+                        parallelGroup.Add(name);
+                }
+            }
+
+            var parallelRationale = root.TryGetProperty("parallelRationale", out var pr) && pr.ValueKind != JsonValueKind.Null
+                ? pr.GetString()
+                : null;
+
             return new ModeratorDecision
             {
                 NextSpeaker = root.TryGetProperty("nextSpeaker", out var ns) && ns.ValueKind != JsonValueKind.Null
@@ -222,7 +248,10 @@ public sealed class ModeratorAgent : PanelAgentBase
                 Reason = root.TryGetProperty("reason", out var r) ? r.GetString() : null,
                 RedirectMessage = root.TryGetProperty("redirectMessage", out var rm) && rm.ValueKind != JsonValueKind.Null
                     ? rm.GetString()
-                    : null
+                    : null,
+                AllowParallelThinking = parallelGroup.Count >= 2,
+                ParallelGroup = parallelGroup,
+                ParallelRationale = parallelRationale
             };
         }
         catch (Exception ex)

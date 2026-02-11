@@ -129,8 +129,28 @@ public abstract class PanelAgentBase : IPanelAgent
     }
 
     /// <summary>
+    /// The panel session ID for the currently active discussion.
+    /// Set by the orchestrator before the discussion loop starts,
+    /// enabling status events to be emitted with the correct session context.
+    /// </summary>
+    private PanelSessionId? _activePanelSessionId;
+
+    /// <summary>
+    /// Set the active panel session ID for event emission.
+    /// Called by the orchestrator so that <see cref="SendToLlmAsync"/> can emit
+    /// <see cref="AgentStatusChangedEvent"/>s without requiring a session ID parameter
+    /// on every call.
+    /// </summary>
+    internal void SetActivePanelSession(PanelSessionId sessionId)
+    {
+        _activePanelSessionId = sessionId;
+    }
+
+    /// <summary>
     /// Send a message to the LLM and return the complete response text.
-    /// Automatically handles status transitions (Thinking → Idle).
+    /// Automatically handles status transitions (Thinking → Idle) and emits
+    /// <see cref="AgentStatusChangedEvent"/>s so the UI agent inspector
+    /// can track which agents are actively working.
     /// </summary>
     /// <param name="message">The user/system message to send.</param>
     /// <param name="ct">Cancellation token.</param>
@@ -145,6 +165,10 @@ public abstract class PanelAgentBase : IPanelAgent
 
         var previousStatus = Status;
         Status = PanelAgentStatus.Thinking;
+
+        // Emit Thinking status so the UI agent inspector shows this agent as active
+        if (_activePanelSessionId is { } activeSessionId)
+            EmitStatusChanged(activeSessionId, PanelAgentStatus.Thinking);
 
         try
         {
@@ -166,6 +190,10 @@ public abstract class PanelAgentBase : IPanelAgent
             Status = previousStatus == PanelAgentStatus.Thinking
                 ? PanelAgentStatus.Idle
                 : previousStatus;
+
+            // Emit restored status so the UI stops showing this agent as active
+            if (_activePanelSessionId is { } sid)
+                EmitStatusChanged(sid, Status);
         }
     }
 
@@ -257,6 +285,10 @@ public abstract class PanelAgentBase : IPanelAgent
 
         _disposed = true;
         Status = PanelAgentStatus.Disposed;
+
+        // Emit Disposed status so the UI clears this agent's blinking indicator
+        if (_activePanelSessionId is { } sessionId)
+            EmitStatusChanged(sessionId, PanelAgentStatus.Disposed);
 
         if (_session is not null)
         {
