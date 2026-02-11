@@ -43,6 +43,7 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
 {
     private readonly IPanelAgentFactory _agentFactory;
     private readonly IConvergenceDetector _convergenceDetector;
+    private readonly IKnowledgeBriefService _knowledgeBriefService;
     private readonly ISubject<PanelEvent> _eventStream;
     private readonly ILogger<PanelOrchestrator> _logger;
     private readonly ILoggerFactory _loggerFactory;
@@ -72,11 +73,13 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
     public PanelOrchestrator(
         IPanelAgentFactory agentFactory,
         IConvergenceDetector convergenceDetector,
+        IKnowledgeBriefService knowledgeBriefService,
         ISubject<PanelEvent> eventStream,
         ILoggerFactory loggerFactory)
     {
         _agentFactory = agentFactory ?? throw new ArgumentNullException(nameof(agentFactory));
         _convergenceDetector = convergenceDetector ?? throw new ArgumentNullException(nameof(convergenceDetector));
+        _knowledgeBriefService = knowledgeBriefService ?? throw new ArgumentNullException(nameof(knowledgeBriefService));
         _eventStream = eventStream ?? throw new ArgumentNullException(nameof(eventStream));
         _loggerFactory = loggerFactory ?? throw new ArgumentNullException(nameof(loggerFactory));
         _logger = loggerFactory.CreateLogger<PanelOrchestrator>();
@@ -534,8 +537,15 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
     }
 
     /// <summary>
-    /// Run the synthesis phase using the Head agent.
+    /// Run the synthesis phase using the Head agent, then generate a KnowledgeBrief
+    /// for follow-up Q&amp;A.
     /// </summary>
+    /// <remarks>
+    /// For long discussions, panelist messages are compressed before synthesis to stay
+    /// within LLM context limits and avoid streaming timeouts. Each message is truncated
+    /// to ~500 chars and only the most recent 40 messages are sent in full — older
+    /// messages are represented as one-line summaries.
+    /// </remarks>
     private async Task RunSynthesisAsync(CancellationToken ct)
     {
         var sessionId = _session!.Id;
@@ -545,7 +555,11 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
             .Where(m => m.AuthorRole == PanelAgentRole.Panelist)
             .ToList();
 
-        var synthesis = await _headAgent!.SynthesizeAsync(panelistMessages, sessionId, ct);
+        // Compress messages for synthesis to avoid timeout on long discussions.
+        // Keep the last 40 messages in detail; summarize older ones.
+        var compressedMessages = CompressForSynthesis(panelistMessages, maxDetailMessages: 40, maxContentLength: 500);
+
+        var synthesis = await _headAgent!.SynthesizeAsync(compressedMessages, sessionId, ct);
 
         var synthMessage = PanelMessage.Create(
             sessionId, _headAgent.Id, _headAgent.Name, PanelAgentRole.Head,
@@ -553,12 +567,86 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
         _session.AddMessage(synthMessage);
         _eventStream.OnNext(new AgentMessageEvent(sessionId, synthMessage, DateTimeOffset.UtcNow));
 
+        // Generate KnowledgeBrief for follow-up Q&A
+        try
+        {
+            _logger.LogInformation("[Orchestrator] Generating KnowledgeBrief for follow-up Q&A");
+            var brief = await _knowledgeBriefService.GenerateAsync(_session, ct);
+            _headAgent.KnowledgeBrief = brief;
+            _logger.LogInformation(
+                "[Orchestrator] KnowledgeBrief generated: {KeyArgs} arguments, {Consensus} consensus points",
+                brief.KeyArguments.Count, brief.ConsensusPoints.Count);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Non-fatal: synthesis succeeded, follow-up just won't use structured brief.
+            // HeadAgent.AnswerFollowUpAsync will show error message but session is still valid.
+            _logger.LogWarning(ex,
+                "[Orchestrator] KnowledgeBrief generation failed — follow-up Q&A may be limited");
+        }
+
         // Transition: Synthesizing → Completed
         await _stateMachine!.FireAsync(PanelTrigger.SynthesisComplete);
 
         _logger.LogInformation(
             "[Orchestrator] Panel completed: {TurnCount} turns, {MessageCount} messages",
             _currentTurn, _session.Messages.Count);
+    }
+
+    /// <summary>
+    /// Compress panelist messages for synthesis to avoid LLM context overflow and streaming timeouts.
+    /// Keeps <paramref name="maxDetailMessages"/> most recent messages with content capped at
+    /// <paramref name="maxContentLength"/>. Older messages are collapsed to a one-line summary.
+    /// </summary>
+    private static IReadOnlyList<Domain.Entities.PanelMessage> CompressForSynthesis(
+        IReadOnlyList<Domain.Entities.PanelMessage> messages,
+        int maxDetailMessages,
+        int maxContentLength)
+    {
+        if (messages.Count <= maxDetailMessages)
+            return messages;
+
+        var result = new List<Domain.Entities.PanelMessage>(maxDetailMessages + 1);
+
+        // Summarize older messages as a single aggregate message
+        var olderMessages = messages.Take(messages.Count - maxDetailMessages).ToList();
+        var olderSummary = string.Join("\n",
+            olderMessages.Select(m =>
+            {
+                var snippet = m.Content.Length > 120
+                    ? m.Content[..120].Replace("\n", " ") + "..."
+                    : m.Content.Replace("\n", " ");
+                return $"- {m.AuthorName}: {snippet}";
+            }));
+
+        var summaryMsg = Domain.Entities.PanelMessage.Create(
+            messages[0].SessionId,
+            Guid.Empty,
+            "Summary",
+            PanelAgentRole.Panelist,
+            $"[Condensed summary of {olderMessages.Count} earlier messages]\n{olderSummary}",
+            PanelMessageType.PanelistArgument);
+        result.Add(summaryMsg);
+
+        // Add recent messages with content truncation
+        var recentMessages = messages.Skip(messages.Count - maxDetailMessages);
+        foreach (var msg in recentMessages)
+        {
+            if (msg.Content.Length > maxContentLength)
+            {
+                var truncated = Domain.Entities.PanelMessage.Create(
+                    msg.SessionId, msg.AuthorAgentId, msg.AuthorName, msg.AuthorRole,
+                    msg.Content[..maxContentLength] + "\n[...truncated]",
+                    msg.Type);
+                result.Add(truncated);
+            }
+            else
+            {
+                result.Add(msg);
+            }
+        }
+
+        return result;
     }
 
     #endregion
