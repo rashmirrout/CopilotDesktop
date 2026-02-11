@@ -12,6 +12,11 @@ using CopilotAgent.App.Services;
 using CopilotAgent.MultiAgent.Models;
 using CopilotAgent.MultiAgent.Services;
 using CopilotAgent.Office.Services;
+using System.Reactive.Subjects;
+using CopilotAgent.Panel.Agents;
+using CopilotAgent.Panel.Domain.Events;
+using CopilotAgent.Panel.Domain.Interfaces;
+using CopilotAgent.Panel.Services;
 
 namespace CopilotAgent.App;
 
@@ -202,6 +207,18 @@ public partial class App : Application
                         return new PlaywrightBrowserService(logger, settings.BrowserAutomation);
                     });
 
+                    // Panel Discussion Services
+                    // Shared Rx event bus — single Subject<PanelEvent> used by
+                    // PanelOrchestrator, PanelAgentFactory, and CostEstimationService
+                    services.AddSingleton<ISubject<PanelEvent>>(new Subject<PanelEvent>());
+
+                    services.AddSingleton<IPanelOrchestrator, PanelOrchestrator>();
+                    services.AddSingleton<IPanelAgentFactory, PanelAgentFactory>();
+                    services.AddSingleton<IConvergenceDetector, ConvergenceDetector>();
+                    services.AddSingleton<IKnowledgeBriefService, KnowledgeBriefService>();
+                    services.AddSingleton<CostEstimationService>();
+                    services.AddSingleton<PanelCleanupService>();
+
                     // UI Services
                     services.AddSingleton<ToolApprovalUIService>();
 
@@ -217,6 +234,7 @@ public partial class App : Application
                     services.AddTransient<AddSkillDialogViewModel>();
                     services.AddTransient<AgentTeamViewModel>();
                     services.AddTransient<OfficeViewModel>();
+                    services.AddTransient<PanelViewModel>();
 
                     // Main Window
                     services.AddSingleton<MainWindow>();

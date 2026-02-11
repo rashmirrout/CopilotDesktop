@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using CopilotAgent.Core.Models;
 using CopilotAgent.Core.Services;
 using CopilotAgent.Office.Services;
+using CopilotAgent.Panel.Domain.Interfaces;
 
 namespace CopilotAgent.App.ViewModels;
 
@@ -46,6 +47,12 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private bool _showOffice;
 
+    [ObservableProperty]
+    private PanelViewModel? _panelViewModel;
+
+    [ObservableProperty]
+    private bool _showPanel;
+
     public MainWindowViewModel(
         ISessionManager sessionManager,
         IServiceProvider serviceProvider,
@@ -85,6 +92,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // Initialize Office ViewModel
         OfficeViewModel = _serviceProvider.GetRequiredService<OfficeViewModel>();
+
+        // Initialize Panel ViewModel
+        PanelViewModel = _serviceProvider.GetRequiredService<PanelViewModel>();
         
         _logger.LogInformation("MainWindow initialized with {Count} sessions", Sessions.Count);
     }
@@ -177,6 +187,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         ShowAgentTeam = false;
         ShowOffice = false;
+        ShowPanel = false;
     }
 
     [RelayCommand]
@@ -184,6 +195,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         ShowAgentTeam = true;
         ShowOffice = false;
+        ShowPanel = false;
     }
 
     [RelayCommand]
@@ -191,6 +203,15 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         ShowOffice = true;
         ShowAgentTeam = false;
+        ShowPanel = false;
+    }
+
+    [RelayCommand]
+    private void ShowPanelView()
+    {
+        ShowPanel = true;
+        ShowAgentTeam = false;
+        ShowOffice = false;
     }
 
     [RelayCommand]

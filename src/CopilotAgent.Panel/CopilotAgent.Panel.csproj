@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>CopilotAgent.Panel</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- State Machine -->
+    <PackageReference Include="Stateless" Version="5.16.0" />
+
+    <!-- Reactive Extensions for IObservable event streaming -->
+    <PackageReference Include="System.Reactive" Version="6.0.1" />
+
+    <!-- Logging -->
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.2" />
+
+    <!-- DI Abstractions -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CopilotAgent.Core\CopilotAgent.Core.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -153,4 +153,12 @@ public class AppSettings
     /// </summary>
     [JsonPropertyName("office")]
     public OfficeSettings Office { get; set; } = new();
+
+    /// <summary>
+    /// Panel Discussion settings.
+    /// Controls default configuration for multi-agent panel discussions
+    /// including panelist limits, convergence thresholds, and resource budgets.
+    /// </summary>
+    [JsonPropertyName("panel")]
+    public PanelSettings Panel { get; set; } = new();
 }

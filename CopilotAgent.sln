@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CopilotAgent.MultiAgent", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CopilotAgent.Office", "src\CopilotAgent.Office\CopilotAgent.Office.csproj", "{3BEEC446-3F27-418E-953D-D63D903C53D0}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CopilotAgent.Panel", "src\CopilotAgent.Panel\CopilotAgent.Panel.csproj", "{D25E99FD-C615-4CE1-88B6-DBAF3E19C30F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -101,6 +103,18 @@ Global
 		{3BEEC446-3F27-418E-953D-D63D903C53D0}.Release|x64.Build.0 = Release|Any CPU
 		{3BEEC446-3F27-418E-953D-D63D903C53D0}.Release|x86.ActiveCfg = Release|Any CPU
 		{3BEEC446-3F27-418E-953D-D63D903C53D0}.Release|x86.Build.0 = Release|Any CPU
+		{D25E99FD-C615-4CE1-88B6-DBAF3E19C30F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D25E99FD-C615-4CE1-88B6-DBAF3E19C30F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D25E99FD-C615-4CE1-88B6-DBAF3E19C30F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{D25E99FD-C615-4CE1-88B6-DBAF3E19C30F}.Debug|x64.Build.0 = Debug|Any CPU
+		{D25E99FD-C615-4CE1-88B6-DBAF3E19C30F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{D25E99FD-C615-4CE1-88B6-DBAF3E19C30F}.Debug|x86.Build.0 = Debug|Any CPU
+		{D25E99FD-C615-4CE1-88B6-DBAF3E19C30F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D25E99FD-C615-4CE1-88B6-DBAF3E19C30F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D25E99FD-C615-4CE1-88B6-DBAF3E19C30F}.Release|x64.ActiveCfg = Release|Any CPU
+		{D25E99FD-C615-4CE1-88B6-DBAF3E19C30F}.Release|x64.Build.0 = Release|Any CPU
+		{D25E99FD-C615-4CE1-88B6-DBAF3E19C30F}.Release|x86.ActiveCfg = Release|Any CPU
+		{D25E99FD-C615-4CE1-88B6-DBAF3E19C30F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -112,5 +126,6 @@ Global
 		{D4E5F6A7-B8C9-7D8E-1F0A-2B3C4D5E6F7A} = {F6A7B8C9-DAEB-9FAC-3B2C-4D5E6F7A8B9C}
 		{F5FAB576-6F80-4690-A867-B427B0222C54} = {E5F6A7B8-C9DA-8E9F-2A1B-3C4D5E6F7A8B}
 		{3BEEC446-3F27-418E-953D-D63D903C53D0} = {E5F6A7B8-C9DA-8E9F-2A1B-3C4D5E6F7A8B}
+		{D25E99FD-C615-4CE1-88B6-DBAF3E19C30F} = {E5F6A7B8-C9DA-8E9F-2A1B-3C4D5E6F7A8B}
 	EndGlobalSection
 EndGlobal
