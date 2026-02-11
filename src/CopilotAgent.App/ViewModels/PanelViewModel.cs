@@ -184,6 +184,9 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private double _executionPulseOpacity = 1.0;
 
+    [ObservableProperty]
+    private string _activeAgentName = string.Empty;
+
     // ── Side Panel (Settings) ───────────────────────────────────
 
     [ObservableProperty]
@@ -355,6 +358,41 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         {
             _logger.LogError(ex, "[PanelVM] Failed to approve and start panel.");
             SetError($"Approval failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Rejects the Head's discussion plan and returns to the Clarifying phase.
+    /// The Head will ask targeted questions to refine the plan based on user feedback.
+    /// </summary>
+    [RelayCommand]
+    private async Task RejectPlanAsync()
+    {
+        _logger.LogInformation("[PanelVM] User rejected panel plan. Returning to clarification...");
+        IsAwaitingApproval = false;
+
+        var feedback = string.IsNullOrWhiteSpace(UserInput) ? null : UserInput.Trim();
+
+        if (!string.IsNullOrWhiteSpace(feedback))
+        {
+            AddHeadChatMessage("You", $"❌ Rejected plan: {feedback}", isUser: true);
+            UserInput = string.Empty;
+        }
+        else
+        {
+            AddHeadChatMessage("You", "❌ Rejected the plan — please refine.", isUser: true);
+        }
+
+        AddEvent("❌ Plan rejected — returning to clarification.");
+
+        try
+        {
+            await _orchestrator.RejectPlanAsync(feedback);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[PanelVM] Failed to reject plan.");
+            SetError($"Reject failed: {ex.Message}");
         }
     }
 
@@ -820,11 +858,14 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
     {
         _logger.LogDebug("[PanelVM] Agent status: {Name} → {Status}", e.AgentName, e.NewStatus);
 
+        var isActive = e.NewStatus is PanelAgentStatus.Active or PanelAgentStatus.Thinking;
+
         var agent = PanelAgents.FirstOrDefault(a => a.Name == e.AgentName);
         if (agent is not null)
         {
             agent.Status = e.NewStatus.ToString();
             agent.StatusColor = GetAgentStatusColor(e.NewStatus);
+            agent.IsActivelyWorking = isActive;
         }
         else
         {
@@ -834,8 +875,32 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
                 Role = e.Role,
                 Status = e.NewStatus.ToString(),
                 StatusColor = GetAgentStatusColor(e.NewStatus),
-                RoleIcon = GetRoleIcon(e.Role)
+                RoleIcon = GetRoleIcon(e.Role),
+                IsActivelyWorking = isActive
             });
+        }
+
+        // Clear IsActivelyWorking for all other agents when one becomes active
+        if (isActive)
+        {
+            foreach (var other in PanelAgents.Where(a => a.Name != e.AgentName))
+                other.IsActivelyWorking = false;
+
+            ActiveAgentName = e.AgentName;
+
+            // Move active agent to top of inspector list
+            if (agent is not null)
+            {
+                var idx = PanelAgents.IndexOf(agent);
+                if (idx > 0)
+                    PanelAgents.Move(idx, 0);
+            }
+        }
+        else
+        {
+            // If no agent is active, clear the active agent name
+            if (!PanelAgents.Any(a => a.IsActivelyWorking))
+                ActiveAgentName = string.Empty;
         }
 
         AddEvent($"[{e.Timestamp:HH:mm:ss}] {e.AgentName}: {e.NewStatus}");
@@ -871,12 +936,18 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
             RoleIcon = "💭",
             IsCommentary = true
         });
+
+        // Fix: Track moderator activity so message count increments
+        UpdateAgentActivity("Moderator", PanelAgentRole.Moderator, e.Commentary);
     }
 
     private void OnModeration(ModerationEvent e)
     {
         _logger.LogDebug("[PanelVM] Moderation: {Action}", e.Action);
         AddEvent($"[{e.Timestamp:HH:mm:ss}] 🔒 Moderation: {e.Action}");
+
+        // Fix: Track moderator activity so message count increments
+        UpdateAgentActivity("Moderator", PanelAgentRole.Moderator, e.Action);
 
         // Update convergence if provided
         if (e.ConvergenceScore is > 0 and var score)
@@ -942,16 +1013,22 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
             CurrentPhaseBadgeOpacity = 1.0;
         }
 
-        // Execution indicator animation
+        // Pulse active agents' opacity for visual blinking
+        foreach (var agent in PanelAgents)
+        {
+            agent.PulseOpacity = agent.IsActivelyWorking ? (_pulseToggle ? 1.0 : 0.5) : 1.0;
+        }
+
+        // Execution indicator animation — now shows active agent name
         if (IsExecutionIndicatorVisible)
         {
             _animationDotCount = (_animationDotCount + 1) % 4;
             var dots = new string('.', _animationDotCount + 1);
             var elapsed = DateTime.UtcNow - _discussionStartTime;
-            var activePanelists = PanelAgents.Count(a => a.Status == PanelAgentStatus.Active.ToString()
-                || a.Status == PanelAgentStatus.Thinking.ToString());
+            var activePanelists = PanelAgents.Count(a => a.IsActivelyWorking);
+            var agentLabel = !string.IsNullOrEmpty(ActiveAgentName) ? $" ▸ {ActiveAgentName}" : string.Empty;
 
-            ExecutionStatusText = $"🔥 Discussion{dots} ({elapsed.TotalSeconds:F0}s, {activePanelists} active, Turn {CompletedTurns}/{EstimatedTotalTurns})";
+            ExecutionStatusText = $"🔥 Discussion{dots} ({elapsed.TotalSeconds:F0}s, {activePanelists} active, Turn {CompletedTurns}/{EstimatedTotalTurns}{agentLabel})";
             ExecutionPulseOpacity = _pulseToggle ? 1.0 : 0.6;
         }
     }
@@ -1282,5 +1359,19 @@ public sealed class PanelAgentInspectorItem : ObservableObject
     {
         get => _toolCallCount;
         set => SetProperty(ref _toolCallCount, value);
+    }
+
+    private bool _isActivelyWorking;
+    public bool IsActivelyWorking
+    {
+        get => _isActivelyWorking;
+        set => SetProperty(ref _isActivelyWorking, value);
+    }
+
+    private double _pulseOpacity = 1.0;
+    public double PulseOpacity
+    {
+        get => _pulseOpacity;
+        set => SetProperty(ref _pulseOpacity, value);
     }
 }

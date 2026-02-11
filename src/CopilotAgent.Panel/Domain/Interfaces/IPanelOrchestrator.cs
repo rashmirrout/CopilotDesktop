@@ -18,6 +18,7 @@ public interface IPanelOrchestrator
     Task<PanelSessionId> StartAsync(string userPrompt, PanelSettings settings, CancellationToken ct = default);
     Task SendUserMessageAsync(string message, CancellationToken ct = default);
     Task ApproveAndStartPanelAsync(CancellationToken ct = default);
+    Task RejectPlanAsync(string? feedback, CancellationToken ct = default);
     Task PauseAsync();
     Task ResumeAsync();
     Task StopAsync();

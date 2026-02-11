@@ -235,6 +235,55 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
     }
 
     /// <inheritdoc/>
+    public async Task RejectPlanAsync(string? feedback, CancellationToken ct = default)
+    {
+        await _lock.WaitAsync(ct);
+        try
+        {
+            EnsureSession();
+
+            if (CurrentPhase != PanelPhase.AwaitingApproval)
+                throw new InvalidOperationException(
+                    $"Cannot reject: current phase is {CurrentPhase}, expected AwaitingApproval.");
+
+            _logger.LogInformation("[Orchestrator] User rejected plan — returning to Clarifying");
+
+            // Transition: AwaitingApproval → Clarifying
+            await _stateMachine!.FireAsync(PanelTrigger.UserRejected);
+
+            // Build rejection context for the Head agent
+            var rejectionPrompt = string.IsNullOrWhiteSpace(feedback)
+                ? "The user rejected your proposed discussion plan. Please ask targeted clarification questions to understand what they want changed, then propose a revised plan."
+                : $"The user rejected your proposed discussion plan with this feedback: \"{feedback}\"\n\nPlease ask targeted clarification questions to address their concerns, then propose a revised plan.";
+
+            var response = await _headAgent!.ProcessClarificationReplyAsync(
+                rejectionPrompt, _session!.Id, ct);
+
+            var headMsg = PanelMessage.Create(
+                _session.Id, _headAgent.Id, _headAgent.Name, PanelAgentRole.Head,
+                response, PanelMessageType.Clarification);
+            _session.AddMessage(headMsg);
+            _eventStream.OnNext(new AgentMessageEvent(_session.Id, headMsg, DateTimeOffset.UtcNow));
+
+            // If Head says "CLEAR:", transition back to approval
+            if (response.Contains("CLEAR:", StringComparison.OrdinalIgnoreCase))
+            {
+                await BuildTopicAndTransitionToApproval(
+                    _session.OriginalUserPrompt, _session.Id, ct);
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            EmitError("RejectPlanAsync", ex);
+            _logger.LogWarning(ex, "[Orchestrator] RejectPlanAsync error handled gracefully.");
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task PauseAsync()
     {
         if (CurrentPhase != PanelPhase.Running)
