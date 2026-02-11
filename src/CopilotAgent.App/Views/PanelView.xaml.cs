@@ -124,18 +124,10 @@ public partial class PanelView : UserControl
             e.Handled = true;
             if (DataContext is not PanelViewModel vm) return;
 
-            // Decide which command to invoke based on state
-            if (vm.IsDiscussionActive && vm.SendMessageCommand.CanExecute(null))
+            // Use the unified command — it routes based on orchestrator phase
+            if (vm.SendInputCommand.CanExecute(null))
             {
-                vm.SendMessageCommand.Execute(null);
-            }
-            else if (vm.IsFollowUpAvailable && vm.AskFollowUpCommand.CanExecute(null))
-            {
-                vm.AskFollowUpCommand.Execute(null);
-            }
-            else if (vm.StartDiscussionCommand.CanExecute(null))
-            {
-                vm.StartDiscussionCommand.Execute(null);
+                vm.SendInputCommand.Execute(null);
             }
         }
     }

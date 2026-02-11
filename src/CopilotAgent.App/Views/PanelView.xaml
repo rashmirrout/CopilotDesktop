@@ -746,22 +746,13 @@
                         </TextBlock>
                     </Grid>
 
-                    <!-- Submit button -->
+                    <!-- Unified submit button — routes based on phase (Start / Send / Follow-up) -->
                     <Button Grid.Column="1" Margin="8,0,0,0"
                             Style="{StaticResource ActionButton}"
-                            Background="#1976D2" Foreground="White"
-                            Command="{Binding StartDiscussionCommand}"
-                            Visibility="{Binding IsDiscussionActive, Converter={StaticResource InverseBoolToVis}}">
-                        <emoji:TextBlock Text="🚀 Start"/>
-                    </Button>
-
-                    <!-- Send button (during discussion) -->
-                    <Button Grid.Column="1" Margin="8,0,0,0"
-                            Style="{StaticResource ActionButton}"
-                            Background="#7B1FA2" Foreground="White"
-                            Command="{Binding SendMessageCommand}"
-                            Visibility="{Binding IsDiscussionActive, Converter={StaticResource BoolToVis}}">
-                        <emoji:TextBlock Text="💬 Send"/>
+                            Background="{Binding SendInputButtonColor, Converter={StaticResource StringToBrush}}"
+                            Foreground="White"
+                            Command="{Binding SendInputCommand}">
+                        <emoji:TextBlock Text="{Binding SendInputButtonText}"/>
                     </Button>
                 </Grid>
             </Border>

@@ -184,7 +184,8 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             EmitError("SendUserMessageAsync", ex);
-            throw;
+            // Don't rethrow — session is still valid. UI sees the ErrorEvent and can retry.
+            _logger.LogWarning(ex, "[Orchestrator] SendUserMessageAsync error handled gracefully.");
         }
         finally
         {
@@ -363,6 +364,9 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
                     break;
 
                 _currentTurn = _currentTurn.Increment();
+
+                // Emit progress immediately so UI shows updated turn count
+                EmitProgress();
 
                 // 1. Moderator evaluates and decides next turn
                 var decision = await _moderatorAgent!.DecideNextTurnAsync(
@@ -581,6 +585,11 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
             "Moderator", PanelAgentRole.Moderator,
             new ModelIdentifier("copilot", _settings!.PrimaryModel)));
 
+        // Emit status for Moderator so inspector shows it immediately
+        _eventStream.OnNext(new AgentStatusChangedEvent(
+            _session.Id, modAgent.Id, modAgent.Name,
+            PanelAgentRole.Moderator, PanelAgentStatus.Active, DateTimeOffset.UtcNow));
+
         // Select panelist profiles
         var profiles = SelectPanelistProfiles(_settings);
 
@@ -600,6 +609,19 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
             _session.RegisterAgent(new AgentInstance(
                 profile.DisplayName, PanelAgentRole.Panelist,
                 new ModelIdentifier("copilot", model)));
+
+            // Emit status for each panelist so inspector shows them immediately
+            _eventStream.OnNext(new AgentStatusChangedEvent(
+                _session.Id, panelist.Id, panelist.Name,
+                PanelAgentRole.Panelist, PanelAgentStatus.Active, DateTimeOffset.UtcNow));
+        }
+
+        // Also emit status for the Head agent (already created earlier)
+        if (_headAgent is not null)
+        {
+            _eventStream.OnNext(new AgentStatusChangedEvent(
+                _session.Id, _headAgent.Id, _headAgent.Name,
+                PanelAgentRole.Head, PanelAgentStatus.Active, DateTimeOffset.UtcNow));
         }
 
         _logger.LogInformation(

@@ -114,6 +114,14 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private string _statusIcon = "💬";
 
+    // ── Unified Send/Start Button ───────────────────────────────
+
+    [ObservableProperty]
+    private string _sendInputButtonText = "🚀 Start";
+
+    [ObservableProperty]
+    private string _sendInputButtonColor = "#1976D2";
+
     // ── Left Pane: User ↔ Head Chat ─────────────────────────────
 
     [ObservableProperty]
@@ -294,6 +302,10 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
             SetError($"Failed to start: {ex.Message}");
             CurrentPhaseDisplay = "Failed";
             CurrentPhaseColor = GetPhaseColor(PanelPhase.Failed);
+            StatusText = "❌ Failed to start. Reset to try again.";
+            StatusIcon = "❌";
+            StopExecutionAnimation();
+            UpdateSendInputButton();
         }
     }
 
@@ -450,6 +462,39 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
     }
 
     private bool CanAskFollowUp() => IsFollowUpAvailable && !string.IsNullOrWhiteSpace(FollowUpQuestion);
+
+    /// <summary>
+    /// Unified input command — routes to Start, Send, or Follow-up based on current phase.
+    /// This replaces the dual Start/Send buttons in the bottom input bar.
+    /// </summary>
+    [RelayCommand]
+    private async Task SendInputAsync()
+    {
+        if (string.IsNullOrWhiteSpace(UserInput)) return;
+
+        var phase = _orchestrator.CurrentPhase;
+        _logger.LogDebug("[PanelVM] SendInput routed at phase={Phase}", phase);
+
+        switch (phase)
+        {
+            case PanelPhase.Idle:
+            case PanelPhase.Stopped:
+            case PanelPhase.Failed:
+                // Start a new discussion
+                await StartDiscussionAsync();
+                break;
+
+            case PanelPhase.Completed:
+                // Follow-up through Head agent
+                await SendMessageAsync();
+                break;
+
+            default:
+                // Clarifying, Running, AwaitingApproval, etc. — send to Head
+                await SendMessageAsync();
+                break;
+        }
+    }
 
     [RelayCommand]
     private void ToggleSidePanel()
@@ -720,6 +765,8 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
                 IsFollowUpAvailable = false;
                 break;
         }
+
+        UpdateSendInputButton();
     }
 
     private void OnAgentMessage(AgentMessageEvent e)
@@ -1036,6 +1083,24 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         StatusIcon = "💬";
         IsEventLogExpanded = false;
         IsExecutionIndicatorVisible = false;
+        UpdateSendInputButton();
+    }
+
+    /// <summary>
+    /// Updates the unified send/start button text and color based on the orchestrator's current phase.
+    /// </summary>
+    private void UpdateSendInputButton()
+    {
+        var phase = _orchestrator.CurrentPhase;
+        (SendInputButtonText, SendInputButtonColor) = phase switch
+        {
+            PanelPhase.Completed => ("💬 Follow-up", "#00695C"),
+            PanelPhase.Clarifying or PanelPhase.Running or PanelPhase.Paused
+                or PanelPhase.Converging or PanelPhase.Synthesizing
+                or PanelPhase.AwaitingApproval or PanelPhase.Preparing
+                => ("💬 Send", "#7B1FA2"),
+            _ => ("🚀 Start", "#1976D2"),
+        };
     }
 
     private void AddHeadChatMessage(string author, string content, bool isUser)

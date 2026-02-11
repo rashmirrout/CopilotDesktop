@@ -15,7 +15,8 @@ public class BoolToVisibilityConverter : IValueConverter
         {
             return boolValue ? Visibility.Visible : Visibility.Collapsed;
         }
-        return Visibility.Collapsed;
+        // Support non-bool values: null → Collapsed, non-null → Visible
+        return value is not null ? Visibility.Visible : Visibility.Collapsed;
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, CultureInfo culture)
