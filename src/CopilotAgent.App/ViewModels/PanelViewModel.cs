@@ -201,6 +201,20 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
     [ObservableProperty]
     private bool _showDepthBadge;
 
+    // ── Discussion Mode (Execution Bar) ─────────────────────────
+
+    [ObservableProperty]
+    private string _discussionModeDisplay = string.Empty;
+
+    [ObservableProperty]
+    private string _discussionModeBadgeBackground = string.Empty;
+
+    [ObservableProperty]
+    private string _discussionModeBadgeTextColor = string.Empty;
+
+    [ObservableProperty]
+    private bool _showDiscussionModeBadge;
+
     /// <summary>Tracks whether the current turn involves parallel execution (⚙ indicator).</summary>
     private bool _isParallelExecutionActive;
 
@@ -1073,16 +1087,19 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
             {
                 DetectedDepthBadge = "⚡ Quick";
                 ShowDepthBadge = true;
+                SetDiscussionModeBadge("⚡ Quick", "#FFF8E1", "#F57F17");
             }
             else if (e.Commentary.Contains("Deep", StringComparison.OrdinalIgnoreCase))
             {
                 DetectedDepthBadge = "🔬 Deep";
                 ShowDepthBadge = true;
+                SetDiscussionModeBadge("🔬 Deep", "#F3E5F5", "#7B1FA2");
             }
             else if (e.Commentary.Contains("Standard", StringComparison.OrdinalIgnoreCase))
             {
                 DetectedDepthBadge = "📐 Standard";
                 ShowDepthBadge = true;
+                SetDiscussionModeBadge("📐 Standard", "#E3F2FD", "#1565C0");
             }
         }
     }
@@ -1393,6 +1410,10 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         IsExecutionIndicatorVisible = false;
         DetectedDepthBadge = string.Empty;
         ShowDepthBadge = false;
+        DiscussionModeDisplay = string.Empty;
+        DiscussionModeBadgeBackground = string.Empty;
+        DiscussionModeBadgeTextColor = string.Empty;
+        ShowDiscussionModeBadge = false;
         _isParallelExecutionActive = false;
         ShowParallelIndicator = false;
         _activeAgentCount = 0;
@@ -1504,6 +1525,17 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         PanelAgentStatus.Disposed => "#757575",
         _ => "#9E9E9E"
     };
+
+    /// <summary>
+    /// Sets the discussion mode badge properties shown in the execution bar.
+    /// </summary>
+    private void SetDiscussionModeBadge(string display, string background, string textColor)
+    {
+        DiscussionModeDisplay = display;
+        DiscussionModeBadgeBackground = background;
+        DiscussionModeBadgeTextColor = textColor;
+        ShowDiscussionModeBadge = true;
+    }
 
     private static string Truncate(string value, int max) =>
         value.Length <= max ? value : value[..max] + "…";

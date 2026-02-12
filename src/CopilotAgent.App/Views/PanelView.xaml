@@ -298,7 +298,8 @@
                     Visibility="{Binding IsExecutionIndicatorVisible, Converter={StaticResource BoolToVis}}">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>     <!-- Col 1: Status text with animated dots -->
+                        <ColumnDefinition Width="*"/>     <!-- Col 0: Status text with animated dots -->
+                        <ColumnDefinition Width="Auto"/>  <!-- Col 1: Discussion mode badge -->
                         <ColumnDefinition Width="Auto"/>  <!-- Col 2: Active panelist names -->
                         <ColumnDefinition Width="Auto"/>  <!-- Col 3: Parallel execution indicator -->
                     </Grid.ColumnDefinitions>
@@ -312,8 +313,21 @@
                                    VerticalAlignment="Center"/>
                     </StackPanel>
 
+                    <!-- Col 1: Discussion mode badge (⚡ Quick / 📐 Standard / 🔬 Deep) -->
+                    <Border Grid.Column="1" CornerRadius="10" Padding="6,3"
+                            Margin="8,0,0,0" VerticalAlignment="Center"
+                            Background="{Binding DiscussionModeBadgeBackground, Converter={StaticResource StringToBrush}}"
+                            BorderBrush="{Binding DiscussionModeBadgeTextColor, Converter={StaticResource StringToBrush}}"
+                            BorderThickness="1"
+                            Visibility="{Binding ShowDiscussionModeBadge, Converter={StaticResource BoolToVis}}">
+                        <emoji:TextBlock Text="{Binding DiscussionModeDisplay}" FontSize="11"
+                                   FontWeight="SemiBold"
+                                   Foreground="{Binding DiscussionModeBadgeTextColor, Converter={StaticResource StringToBrush}}"
+                                   VerticalAlignment="Center"/>
+                    </Border>
+
                     <!-- Col 2: Active panelist names with icons -->
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center"
+                    <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center"
                                 Margin="12,0,0,0"
                                 Visibility="{Binding ActiveAgentName, Converter={StaticResource StringToVis}}">
                         <Border CornerRadius="10" Padding="8,3"
@@ -325,7 +339,7 @@
                     </StackPanel>
 
                     <!-- Col 3: Parallel execution indicator (⚙) -->
-                    <Border Grid.Column="2" CornerRadius="10" Padding="6,3"
+                    <Border Grid.Column="3" CornerRadius="10" Padding="6,3"
                             Margin="8,0,0,0" VerticalAlignment="Center"
                             Background="#FFF8E1" BorderBrush="#FFE082" BorderThickness="1"
                             Visibility="{Binding ShowParallelIndicator, Converter={StaticResource BoolToVis}}">
