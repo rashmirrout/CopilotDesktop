@@ -509,6 +509,17 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
             _logger.LogWarning(ex, "[PanelVM] Reset threw (may be expected if no session).");
         }
 
+        // Force-reconnect the Copilot SDK client so a dead JSON-RPC pipe
+        // doesn't poison every subsequent discussion after a failure.
+        try
+        {
+            await _copilotService.ReconnectAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[PanelVM] ReconnectAsync threw during reset (will retry on next use).");
+        }
+
         StopExecutionAnimation();
         ClearState();
         AddEvent("🔄 Panel reset.");

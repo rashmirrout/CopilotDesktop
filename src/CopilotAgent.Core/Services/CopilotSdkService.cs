@@ -1381,6 +1381,20 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
         {
             sdkSession = await client.CreateSessionAsync(config, cancellationToken);
         }
+        catch (Exception createEx) when (IsConnectionLostError(createEx))
+        {
+            // The JSON-RPC pipe is dead. Reconnect and retry once.
+            _logger.LogWarning(createEx,
+                "CreateSessionAsync hit a dead connection for {SessionId}. Reconnecting and retrying once...",
+                session.SessionId);
+
+            await ReconnectAsync(cancellationToken);
+            client = await EnsureClientAsync(cancellationToken);
+
+            // Single retry — if this fails, let it propagate.
+            sdkSession = await client.CreateSessionAsync(config, cancellationToken);
+            _logger.LogInformation("Retry after reconnect succeeded for {SessionId}", session.SessionId);
+        }
         catch (Exception createEx)
         {
             _logger.LogError(createEx, "CreateSessionAsync failed for {SessionId}. Error type: {ErrorType}, Message: {Message}",
@@ -2072,6 +2086,98 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
             default:
                 return null;
         }
+    }
+
+    /// <inheritdoc />
+    public async Task ReconnectAsync(CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("[Reconnect] Forcefully reconnecting — disposing dead client and all sessions...");
+
+        await _clientLock.WaitAsync(cancellationToken);
+        try
+        {
+            // 1. Dispose all SDK sessions
+            foreach (var kvp in _sdkSessions)
+            {
+                try
+                {
+                    _logger.LogDebug("[Reconnect] Disposing SDK session {SessionId}", kvp.Key);
+                    await kvp.Value.DisposeAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[Reconnect] Error disposing SDK session {SessionId} (expected if connection is dead)", kvp.Key);
+                }
+            }
+            _sdkSessions.Clear();
+            _appSessions.Clear();
+            _streamingContexts.Clear();
+            _observedToolsPerSession.Clear();
+
+            // 2. Dispose the client
+            if (_client != null)
+            {
+                try
+                {
+                    _logger.LogDebug("[Reconnect] Disposing dead CopilotClient...");
+                    await _client.DisposeAsync();
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "[Reconnect] Error disposing CopilotClient (expected if pipe is broken)");
+                }
+                _client = null;
+            }
+
+            _logger.LogInformation("[Reconnect] Client and sessions cleared. Service is now in fresh/startup state.");
+        }
+        finally
+        {
+            _clientLock.Release();
+        }
+
+        // 3. Pre-warm: create a new client so the next call doesn't have cold-start latency
+        try
+        {
+            _logger.LogInformation("[Reconnect] Pre-warming new CopilotClient connection...");
+            await EnsureClientAsync(cancellationToken);
+            _logger.LogInformation("[Reconnect] Pre-warm successful — new client is ready.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "[Reconnect] Pre-warm failed — client will be created on next use.");
+            // Not fatal: EnsureClientAsync will retry on next call
+        }
+    }
+
+    /// <summary>
+    /// Determines if an exception indicates the JSON-RPC connection to the Copilot CLI is dead.
+    /// Matches ConnectionLostException, IOException (broken pipe), and ObjectDisposedException
+    /// that all indicate the underlying transport is gone.
+    /// </summary>
+    private static bool IsConnectionLostError(Exception ex)
+    {
+        var current = ex;
+        while (current != null)
+        {
+            var typeName = current.GetType().Name;
+            var message = current.Message ?? string.Empty;
+
+            if (typeName.Contains("ConnectionLost", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (current is IOException)
+                return true;
+            if (current is ObjectDisposedException)
+                return true;
+            if (message.Contains("JSON-RPC connection", StringComparison.OrdinalIgnoreCase) &&
+                message.Contains("lost", StringComparison.OrdinalIgnoreCase))
+                return true;
+            if (message.Contains("broken pipe", StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            current = current.InnerException;
+        }
+        return false;
     }
 
     public void Dispose()

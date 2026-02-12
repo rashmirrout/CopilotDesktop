@@ -338,6 +338,13 @@ public class CopilotCliService : ICopilotService, IDisposable
     /// <summary>
     /// Clears all session tracking.
     /// </summary>
+    public Task ReconnectAsync(CancellationToken cancellationToken = default)
+    {
+        // CLI service spawns a new process per session — no persistent connection to reset.
+        TerminateAllProcesses();
+        return Task.CompletedTask;
+    }
+
     public void TerminateAllProcesses()
     {
         _sessionHasStarted.Clear();

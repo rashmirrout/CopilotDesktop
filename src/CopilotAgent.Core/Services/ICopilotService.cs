@@ -89,6 +89,15 @@ public interface ICopilotService : IDisposable
     /// <param name="sessionId">The session ID to check.</param>
     /// <returns>True if the session has an active SDK connection.</returns>
     bool HasActiveSession(string sessionId);
+
+    /// <summary>
+    /// Forcefully reconnects to the Copilot CLI by disposing the current client
+    /// and all SDK sessions, then re-establishing the connection on the next call.
+    /// Use this after a <c>ConnectionLostException</c> or when the SDK pipe is broken
+    /// and the service needs to recover to a clean state (equivalent to app startup).
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    Task ReconnectAsync(CancellationToken cancellationToken = default);
 }
 
 /// <summary>
