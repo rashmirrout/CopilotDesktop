@@ -950,8 +950,7 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
             }
 
             // If synthesis phase, capture the synthesis report
-            if (_orchestrator.CurrentPhase == PanelPhase.Synthesizing
-                || _orchestrator.CurrentPhase == PanelPhase.Completed)
+            if (_orchestrator.CurrentPhase == PanelPhase.Synthesizing)
             {
                 SynthesisReport = msg.Content;
                 ShowSynthesis = true;
