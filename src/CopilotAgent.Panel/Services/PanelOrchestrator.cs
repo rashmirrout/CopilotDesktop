@@ -385,16 +385,23 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
             catch (OperationCanceledException) { /* expected */ }
         }
 
-        // Emit Idle status for all agents so the UI stops blinking indicators
+        // Emit non-Thinking status for all agents so the UI stops blinking indicators.
+        // Use the agent's actual status (Active/Contributed) for semantic correctness.
         if (_session is not null)
         {
             foreach (var agent in _allAgents)
             {
                 if (agent is PanelAgentBase baseAgent && baseAgent.Status is not PanelAgentStatus.Disposed)
                 {
+                    // If agent is currently Thinking, emit its resting state;
+                    // otherwise emit its current status as-is
+                    var restingStatus = baseAgent.Status == PanelAgentStatus.Thinking
+                        ? PanelAgentStatus.Contributed
+                        : baseAgent.Status;
+
                     _eventStream.OnNext(new AgentStatusChangedEvent(
                         _session.Id, agent.Id, agent.Name,
-                        agent.Role, PanelAgentStatus.Idle, DateTimeOffset.UtcNow));
+                        agent.Role, restingStatus, DateTimeOffset.UtcNow));
                 }
             }
         }
@@ -869,10 +876,10 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
             "Moderator", PanelAgentRole.Moderator,
             new ModelIdentifier("copilot", _settings!.PrimaryModel)));
 
-        // Emit Idle status for Moderator so inspector shows it as ready (not actively working)
+        // Emit Active status for Moderator — ready to participate, hasn't contributed yet
         _eventStream.OnNext(new AgentStatusChangedEvent(
             _session.Id, modAgent.Id, modAgent.Name,
-            PanelAgentRole.Moderator, PanelAgentStatus.Idle, DateTimeOffset.UtcNow));
+            PanelAgentRole.Moderator, PanelAgentStatus.Active, DateTimeOffset.UtcNow));
 
         // Select panelist profiles
         var profiles = SelectPanelistProfiles(_settings);
@@ -894,18 +901,18 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
                 profile.DisplayName, PanelAgentRole.Panelist,
                 new ModelIdentifier("copilot", model)));
 
-            // Emit Idle status for each panelist so inspector shows them as ready (not actively working)
+            // Emit Active status for each panelist — ready to participate, hasn't contributed yet
             _eventStream.OnNext(new AgentStatusChangedEvent(
                 _session.Id, panelist.Id, panelist.Name,
-                PanelAgentRole.Panelist, PanelAgentStatus.Idle, DateTimeOffset.UtcNow));
+                PanelAgentRole.Panelist, PanelAgentStatus.Active, DateTimeOffset.UtcNow));
         }
 
-        // Also emit Idle status for the Head agent (already created earlier)
+        // Emit Contributed status for the Head agent — it already spoke during clarification
         if (_headAgent is not null)
         {
             _eventStream.OnNext(new AgentStatusChangedEvent(
                 _session.Id, _headAgent.Id, _headAgent.Name,
-                PanelAgentRole.Head, PanelAgentStatus.Idle, DateTimeOffset.UtcNow));
+                PanelAgentRole.Head, PanelAgentStatus.Contributed, DateTimeOffset.UtcNow));
         }
 
         // Wire SetActivePanelSession on all agents so SendToLlmAsync emits status events
@@ -948,7 +955,7 @@ public sealed class PanelOrchestrator : IPanelOrchestrator, IAsyncDisposable
         if (_session is null) return;
 
         var activePanelists = _panelistAgents.Count(p => p.Status is PanelAgentStatus.Active
-            or PanelAgentStatus.Thinking or PanelAgentStatus.Idle);
+            or PanelAgentStatus.Thinking or PanelAgentStatus.Idle or PanelAgentStatus.Contributed);
 
         _eventStream.OnNext(new ProgressEvent(
             _session.Id,

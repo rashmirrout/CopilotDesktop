@@ -36,6 +36,7 @@ public abstract class PanelAgentBase : IPanelAgent
     private readonly ILogger _logger;
     private Session? _session;
     private bool _disposed;
+    private bool _hasContributed;
 
     /// <summary>Unique identifier for this agent instance.</summary>
     public Guid Id { get; } = Guid.NewGuid();
@@ -109,7 +110,8 @@ public abstract class PanelAgentBase : IPanelAgent
     /// <inheritdoc/>
     public Task PauseAsync()
     {
-        if (Status is PanelAgentStatus.Active or PanelAgentStatus.Idle or PanelAgentStatus.Thinking)
+        if (Status is PanelAgentStatus.Active or PanelAgentStatus.Idle
+            or PanelAgentStatus.Thinking or PanelAgentStatus.Contributed)
         {
             Status = PanelAgentStatus.Paused;
             _logger.LogDebug("[{AgentName}] Paused", Name);
@@ -122,8 +124,9 @@ public abstract class PanelAgentBase : IPanelAgent
     {
         if (Status is PanelAgentStatus.Paused)
         {
-            Status = PanelAgentStatus.Active;
-            _logger.LogDebug("[{AgentName}] Resumed", Name);
+            // Restore to semantically correct state based on contribution history
+            Status = _hasContributed ? PanelAgentStatus.Contributed : PanelAgentStatus.Active;
+            _logger.LogDebug("[{AgentName}] Resumed → {Status}", Name, Status);
         }
         return Task.CompletedTask;
     }
@@ -170,6 +173,7 @@ public abstract class PanelAgentBase : IPanelAgent
         if (_activePanelSessionId is { } activeSessionId)
             EmitStatusChanged(activeSessionId, PanelAgentStatus.Thinking);
 
+        var succeeded = false;
         try
         {
             _logger.LogDebug(
@@ -183,13 +187,22 @@ public abstract class PanelAgentBase : IPanelAgent
                 "[{AgentName}] Received response ({Length} chars)",
                 Name, content.Length);
 
+            succeeded = true;
             return content;
         }
         finally
         {
-            Status = previousStatus == PanelAgentStatus.Thinking
-                ? PanelAgentStatus.Idle
-                : previousStatus;
+            if (succeeded)
+            {
+                // Agent successfully completed a turn — mark as Contributed
+                _hasContributed = true;
+                Status = PanelAgentStatus.Contributed;
+            }
+            else
+            {
+                // On failure, restore semantically correct state based on contribution history
+                Status = _hasContributed ? PanelAgentStatus.Contributed : PanelAgentStatus.Active;
+            }
 
             // Emit restored status so the UI stops showing this agent as active
             if (_activePanelSessionId is { } sid)

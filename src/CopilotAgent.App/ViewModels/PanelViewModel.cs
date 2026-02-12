@@ -974,7 +974,7 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
 
         // Deterministic: only Active/Thinking are "working" states.
         // Every other status (Created, Idle, Paused, Disposed) clears the flag.
-        var isActivelyWorking = e.NewStatus is PanelAgentStatus.Active or PanelAgentStatus.Thinking;
+        var isActivelyWorking = e.NewStatus is PanelAgentStatus.Thinking;
 
         var agent = PanelAgents.FirstOrDefault(a => a.Name == e.AgentName);
         if (agent is not null)
@@ -1013,15 +1013,11 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
 
         _logger.LogDebug("[PanelVM] Active agent count: {Count}", _activeAgentCount);
 
-        // When all agents go idle, stop all animations cleanly
-        if (_activeAgentCount == 0)
-        {
-            StopPulseAnimations();
-        }
-        else
-        {
-            UpdateActiveAgentDisplay();
-        }
+        // Always update active agent display — handles both 0→N and N→0 transitions.
+        // Execution bar visibility is driven by phase transitions (OnPhaseChanged),
+        // NOT by agent count. Between turns all agents may be in Contributed/Active
+        // with _activeAgentCount == 0 — that's normal, not a signal to kill the bar.
+        UpdateActiveAgentDisplay();
 
         AddEvent($"[{e.Timestamp:HH:mm:ss}] {e.AgentName}: {e.NewStatus}");
     }
@@ -1180,7 +1176,7 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         _isParallelExecutionActive = activeAgents.Count >= 2;
         ShowParallelIndicator = _isParallelExecutionActive;
 
-        if (IsExecutionIndicatorVisible && _activeAgentCount > 0)
+        if (IsExecutionIndicatorVisible)
         {
             _animationDotCount = (_animationDotCount + 1) % 4;
             var dots = new string('.', _animationDotCount + 1);
@@ -1193,15 +1189,18 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
 
     private void OnPulseTimerTick(object? sender, EventArgs e)
     {
-        // No active agents → nothing to animate; skip all work
-        if (_activeAgentCount == 0)
+        var phase = Enum.TryParse<PanelPhase>(CurrentPhaseDisplay, out var p) ? p : PanelPhase.Idle;
+        var isActivePhase = phase is PanelPhase.Running or PanelPhase.Converging
+                                  or PanelPhase.Synthesizing or PanelPhase.Preparing;
+
+        // Nothing to animate if no agents are working AND we're not in an active phase
+        if (_activeAgentCount == 0 && !isActivePhase)
             return;
 
         _pulseToggle = !_pulseToggle;
 
-        // Phase badge pulse for active phases
-        var phase = Enum.TryParse<PanelPhase>(CurrentPhaseDisplay, out var p) ? p : PanelPhase.Idle;
-        if (phase is PanelPhase.Running or PanelPhase.Converging or PanelPhase.Synthesizing or PanelPhase.Preparing)
+        // Phase badge pulse for active phases (continues between turns)
+        if (isActivePhase)
         {
             CurrentPhaseBadgeOpacity = _pulseToggle ? 1.0 : 0.5;
         }
@@ -1490,6 +1489,7 @@ public sealed partial class PanelViewModel : ViewModelBase, IDisposable
         PanelAgentStatus.Active => "#4CAF50",
         PanelAgentStatus.Thinking => "#2196F3",
         PanelAgentStatus.Idle => "#9E9E9E",
+        PanelAgentStatus.Contributed => "#00897B",
         PanelAgentStatus.Paused => "#FF9800",
         PanelAgentStatus.Disposed => "#757575",
         _ => "#9E9E9E"

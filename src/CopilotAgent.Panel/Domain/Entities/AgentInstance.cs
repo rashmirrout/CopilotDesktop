@@ -27,6 +27,7 @@ public sealed class AgentInstance
     public void Activate() => Status = PanelAgentStatus.Active;
     public void SetThinking() => Status = PanelAgentStatus.Thinking;
     public void SetIdle() => Status = PanelAgentStatus.Idle;
+    public void SetContributed() => Status = PanelAgentStatus.Contributed;
     public void SetPaused() => Status = PanelAgentStatus.Paused;
     public void IncrementTurn() => TurnsCompleted++;
     public void MarkDisposed() => Status = PanelAgentStatus.Disposed;
