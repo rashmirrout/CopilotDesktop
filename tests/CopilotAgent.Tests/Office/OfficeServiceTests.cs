@@ -636,7 +636,7 @@ public sealed class OfficeManagerServiceTests : IAsyncDisposable
         _sut.IsRunning.Should().BeFalse();
         // Reset clears the log then emits a final PhaseChanged(Idle→Idle),
         // so at most 1 event remains.
-        _eventLog.GetAll().Should().HaveCountLessOrEqualTo(1);
+        _eventLog.GetAll().Should().HaveCountLessThanOrEqualTo(1);
         _eventLog.GetAll().OfType<PhaseChangedEvent>()
             .Should().OnlyContain(e => e.NewPhase == ManagerPhase.Idle);
     }
@@ -1256,7 +1256,7 @@ public sealed class OfficeBugFixRegressionTests : IAsyncDisposable
         foreach (var prompt in taskPrompts)
         {
             var count = CountOccurrences(prompt, "Focus on testing");
-            count.Should().BeLessOrEqualTo(1,
+            count.Should().BeLessThanOrEqualTo(1,
                 "Bug #10 fix: Instruction should appear at most once per prompt (not drained twice)");
         }
     }

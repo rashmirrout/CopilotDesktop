@@ -1827,8 +1827,8 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
 
             if (server.Transport == McpTransport.Stdio)
             {
-                // Local/stdio server configuration
-                config["type"] = "local";
+                // Stdio server configuration - must use "stdio" to match Copilot CLI's expected type
+                config["type"] = "stdio";
                 config["command"] = server.Command ?? "";
                 config["args"] = server.Args ?? new List<string>();
                 config["tools"] = new List<string> { "*" }; // Allow all tools from this server

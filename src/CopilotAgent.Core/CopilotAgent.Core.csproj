@@ -9,25 +9,25 @@
 
   <ItemGroup>
     <!-- GitHub Copilot SDK -->
-    <PackageReference Include="GitHub.Copilot.SDK" Version="0.1.21" />
+    <PackageReference Include="GitHub.Copilot.SDK" Version="0.1.24" />
     
     <!-- System.Text.Json - upgraded to 10.x for SDK compatibility -->
-    <PackageReference Include="System.Text.Json" Version="10.0.2" />
+    <PackageReference Include="System.Text.Json" Version="10.0.3" />
     
     <!-- HTTP Client for potential HTTP-based MCP -->
-    <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.3" />
     
     <!-- Logging - upgraded to 10.x for SDK compatibility -->
-    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.3" />
     
     <!-- Options pattern -->
-    <PackageReference Include="Microsoft.Extensions.Options" Version="8.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.3" />
     
     <!-- Dependency Injection - upgraded to 10.x for SDK compatibility -->
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.3" />
     
     <!-- Playwright for browser automation (OAuth/SAML authentication) -->
-    <PackageReference Include="Microsoft.Playwright" Version="1.52.0" />
+    <PackageReference Include="Microsoft.Playwright" Version="1.58.0" />
   </ItemGroup>
 
 </Project>
