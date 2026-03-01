@@ -7,9 +7,16 @@ namespace CopilotAgent.Core.Models;
 /// </summary>
 public class AppSettings
 {
+    /// <summary>
+    /// Compile-time fallback model used as the default when no user preference is persisted.
+    /// This is the SINGLE SOURCE OF TRUTH for the default model across the entire codebase.
+    /// All property initializers and null-coalescing fallbacks must reference this constant.
+    /// </summary>
+    public const string FallbackModel = "claude-sonnet-4.5";
+
     /// <summary>Default model to use for new sessions</summary>
     [JsonPropertyName("defaultModel")]
-    public string DefaultModel { get; set; } = "gpt-4";
+    public string DefaultModel { get; set; } = FallbackModel;
 
     /// <summary>Base path for worktree sessions</summary>
     [JsonPropertyName("worktreeBasePath")]
@@ -65,9 +72,12 @@ public class AppSettings
     [JsonPropertyName("availableModels")]
     public List<string> AvailableModels { get; set; } = new()
     {
-        "gpt-4",
-        "gpt-4-turbo",
-        "gpt-3.5-turbo"
+        "claude-sonnet-4.5",
+        "claude-haiku-4.5",
+        "gpt-5.2-codex",
+        "gpt-5.1",
+        "gpt-4.1",
+        "gpt-4o"
     };
 
     /// <summary>Recently opened session IDs</summary>

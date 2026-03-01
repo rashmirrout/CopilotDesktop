@@ -240,7 +240,7 @@ public sealed class ResultAggregator : IResultAggregator
             SessionId = orchestratorSessionId,
             DisplayName = "Orchestrator-Synthesis",
             WorkingDirectory = config.WorkingDirectory,
-            ModelId = config.OrchestratorModelId ?? "gpt-4",
+            ModelId = config.OrchestratorModelId ?? AppSettings.FallbackModel,
             CreatedAt = DateTime.UtcNow,
             LastActiveAt = DateTime.UtcNow
         };

@@ -48,7 +48,7 @@ public sealed class AgentRoleProvider : IAgentRoleProvider
             SessionId = Guid.NewGuid().ToString(),
             DisplayName = $"Worker-{role}",
             WorkingDirectory = workspacePath,
-            ModelId = config.WorkerModelId ?? config.OrchestratorModelId ?? "gpt-4",
+            ModelId = config.WorkerModelId ?? config.OrchestratorModelId ?? AppSettings.FallbackModel,
             SystemPrompt = roleConfig.SystemInstructions,
             CreatedAt = DateTime.UtcNow,
             LastActiveAt = DateTime.UtcNow,

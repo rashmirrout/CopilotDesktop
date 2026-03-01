@@ -1324,7 +1324,9 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
                     WorkingDirectory = session.WorkingDirectory,
                     Streaming = true,
                     Hooks = CreateSessionHooks(session),
-                    McpServers = mcpServersConfig
+                    McpServers = mcpServersConfig,
+                    OnPermissionRequest = PermissionHandler.ApproveAll,
+                    ClientName = "CopilotDesktop"
                 };
 
                 var resumedSession = await client.ResumeSessionAsync(
@@ -1369,7 +1371,9 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
             Hooks = CreateSessionHooks(session),
             McpServers = mcpServersConfig,
             SkillDirectories = skillDirectories.Any() ? skillDirectories : null,
-            DisabledSkills = disabledSkills.Any() ? disabledSkills : null
+            DisabledSkills = disabledSkills.Any() ? disabledSkills : null,
+            OnPermissionRequest = PermissionHandler.ApproveAll,
+            ClientName = "CopilotDesktop"
         };
 
         _logger.LogDebug("Session config: Model={Model}, WorkingDir={WorkDir}, Streaming={Streaming}, SkillDirs={SkillDirs}, DisabledSkills={DisabledSkills}",

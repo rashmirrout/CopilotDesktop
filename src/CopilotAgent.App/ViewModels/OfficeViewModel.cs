@@ -201,11 +201,11 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
     partial void OnWorkspacePathChanged(string value) => RecalculateDirtyState();
 
     [ObservableProperty]
-    private string _selectedManagerModel = "gpt-4";
+    private string _selectedManagerModel = AppSettings.FallbackModel;
     partial void OnSelectedManagerModelChanged(string value) => RecalculateDirtyState();
 
     [ObservableProperty]
-    private string _selectedAssistantModel = "gpt-4";
+    private string _selectedAssistantModel = AppSettings.FallbackModel;
     partial void OnSelectedAssistantModelChanged(string value) => RecalculateDirtyState();
 
     [ObservableProperty]
@@ -330,10 +330,10 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
             MaxAssistants = MaxAssistants,
             RequirePlanApproval = RequirePlanApproval,
             ManagerModel = string.IsNullOrWhiteSpace(SelectedManagerModel)
-                ? activeSession?.ModelId ?? "gpt-4"
+                ? activeSession?.ModelId ?? AppSettings.FallbackModel
                 : SelectedManagerModel,
             AssistantModel = string.IsNullOrWhiteSpace(SelectedAssistantModel)
-                ? activeSession?.ModelId ?? "gpt-4"
+                ? activeSession?.ModelId ?? AppSettings.FallbackModel
                 : SelectedAssistantModel,
             AssistantTimeoutSeconds = Math.Clamp(AssistantTimeoutSeconds, 60, 3600),
             ManagerLlmTimeoutSeconds = Math.Clamp(ManagerLlmTimeoutSeconds, 10, 300),

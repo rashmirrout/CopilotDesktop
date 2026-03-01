@@ -244,7 +244,7 @@ public sealed class LlmTaskDecomposer : ITaskDecomposer
             SessionId = orchestratorSessionId,
             DisplayName = "Orchestrator",
             WorkingDirectory = config.WorkingDirectory,
-            ModelId = config.OrchestratorModelId ?? "gpt-4",
+            ModelId = config.OrchestratorModelId ?? AppSettings.FallbackModel,
             CreatedAt = DateTime.UtcNow,
             LastActiveAt = DateTime.UtcNow
         };

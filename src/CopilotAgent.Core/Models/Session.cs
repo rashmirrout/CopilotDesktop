@@ -50,7 +50,7 @@ public class Session : INotifyPropertyChanged
 
     /// <summary>Copilot model ID to use</summary>
     [JsonPropertyName("modelId")]
-    public string ModelId { get; set; } = "gpt-4";
+    public string ModelId { get; set; } = AppSettings.FallbackModel;
 
     /// <summary>Allowed commands for this session (extends global)</summary>
     [JsonPropertyName("allowedCommands")]

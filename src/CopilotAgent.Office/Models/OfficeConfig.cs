@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using CopilotAgent.Core.Models;
 
 namespace CopilotAgent.Office.Models;
 
@@ -29,11 +30,11 @@ public sealed record OfficeConfig
 
     /// <summary>Model to use for the Manager LLM session.</summary>
     [JsonPropertyName("managerModel")]
-    public string ManagerModel { get; init; } = "gpt-4";
+    public string ManagerModel { get; init; } = AppSettings.FallbackModel;
 
     /// <summary>Model to use for Assistant LLM sessions.</summary>
     [JsonPropertyName("assistantModel")]
-    public string AssistantModel { get; init; } = "gpt-4";
+    public string AssistantModel { get; init; } = AppSettings.FallbackModel;
 
     /// <summary>Timeout in seconds for individual assistant task execution.</summary>
     [JsonPropertyName("assistantTimeoutSeconds")]

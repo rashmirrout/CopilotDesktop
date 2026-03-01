@@ -259,11 +259,11 @@ public sealed partial class AgentTeamViewModel : ViewModelBase, IDisposable
     partial void OnSettingsAutoApproveReadOnlyChanged(bool value) => RecalculateDirtyState();
 
     [ObservableProperty]
-    private string _selectedManagerModel = "gpt-4";
+    private string _selectedManagerModel = AppSettings.FallbackModel;
     partial void OnSelectedManagerModelChanged(string value) => RecalculateDirtyState();
 
     [ObservableProperty]
-    private string _selectedWorkerModel = "gpt-4";
+    private string _selectedWorkerModel = AppSettings.FallbackModel;
     partial void OnSelectedWorkerModelChanged(string value) => RecalculateDirtyState();
 
     [ObservableProperty]

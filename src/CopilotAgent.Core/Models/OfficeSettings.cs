@@ -21,11 +21,11 @@ public class OfficeSettings
 
     /// <summary>Default model for the Manager LLM session.</summary>
     [JsonPropertyName("defaultManagerModel")]
-    public string DefaultManagerModel { get; set; } = "gpt-4";
+    public string DefaultManagerModel { get; set; } = AppSettings.FallbackModel;
 
     /// <summary>Default model for Assistant LLM sessions.</summary>
     [JsonPropertyName("defaultAssistantModel")]
-    public string DefaultAssistantModel { get; set; } = "gpt-4";
+    public string DefaultAssistantModel { get; set; } = AppSettings.FallbackModel;
 
     /// <summary>Default timeout in seconds for individual assistant task execution.</summary>
     [JsonPropertyName("defaultAssistantTimeoutSeconds")]

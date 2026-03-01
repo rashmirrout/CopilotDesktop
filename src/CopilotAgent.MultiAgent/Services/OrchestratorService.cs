@@ -703,7 +703,7 @@ public sealed class OrchestratorService : IOrchestratorService, IDisposable
         {
             SessionId = $"orchestrator-{Guid.NewGuid():N}",
             DisplayName = "Multi-Agent Orchestrator",
-            ModelId = config.OrchestratorModelId ?? "gpt-4",
+            ModelId = config.OrchestratorModelId ?? AppSettings.FallbackModel,
             WorkingDirectory = config.WorkingDirectory,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
