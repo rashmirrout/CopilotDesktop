@@ -299,7 +299,7 @@ public class StreamingMessageManager : IStreamingMessageManager
         }
     }
 
-    public async Task StopStreamingAsync(string sessionId)
+    public Task StopStreamingAsync(string sessionId)
     {
         if (_activeOperations.TryGetValue(sessionId, out var operation))
         {
@@ -307,19 +307,36 @@ public class StreamingMessageManager : IStreamingMessageManager
             {
                 _logger.LogInformation("Stopping streaming for session {SessionId}", sessionId);
                 
+                // 1. Mark state as cancelled immediately so IsStreaming returns false
+                operation.State = StreamingState.Cancelled;
+                
+                // 2. Cancel the CTS synchronously — this unblocks the polling loop instantly
                 try
                 {
                     operation.CancellationTokenSource.Cancel();
-                    
-                    // Also call AbortAsync on the copilot service
-                    await _copilotService.AbortAsync(sessionId);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "Error stopping streaming for session {SessionId}", sessionId);
+                    _logger.LogWarning(ex, "Error cancelling CTS for session {SessionId}", sessionId);
                 }
+                
+                // 3. Fire-and-forget: tell the SDK to abort (don't block the caller)
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await _copilotService.AbortAsync(sessionId);
+                        _logger.LogInformation("SDK AbortAsync completed for session {SessionId}", sessionId);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "SDK AbortAsync failed for session {SessionId} (non-blocking)", sessionId);
+                    }
+                });
             }
         }
+        
+        return Task.CompletedTask;
     }
 
     public bool IsStreaming(string sessionId)

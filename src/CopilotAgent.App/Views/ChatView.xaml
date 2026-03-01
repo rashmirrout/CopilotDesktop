@@ -739,7 +739,7 @@
                             Foreground="White"
                             BorderThickness="0"
                             Cursor="Hand"
-                            Command="{Binding StopAsyncCommand}"
+                            Command="{Binding StopCommand}"
                             ToolTip="Stop the current operation">
                         <Button.Style>
                             <Style TargetType="Button">

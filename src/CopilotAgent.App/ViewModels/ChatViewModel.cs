@@ -224,9 +224,21 @@ public partial class ChatViewModel : ViewModelBase
     private async Task StopAsync()
     {
         _logger.LogInformation("Stop requested for session {SessionId}", Session?.SessionId ?? "none");
-        StatusMessage = "Stopping...";
         
-        // Stop via the streaming manager - this will cancel the operation and notify via events
+        // 1. Immediately reset UI state — do NOT wait for backend
+        UpdateBusyState(false);
+        ClearAllActiveTools();
+        _activeReasoningMessages.Clear();
+        _activeToolMessages.Clear();
+        _currentTurnId = null;
+        _turnAgentWorkStartIndex = -1;
+        
+        // 2. Mark any still-streaming messages as stopped
+        MarkStreamingMessagesAsStopped();
+        
+        StatusMessage = "Stopped";
+        
+        // 3. Fire-and-forget: tell backend to abort (UI is already idle)
         if (Session != null)
         {
             try
@@ -237,6 +249,31 @@ public partial class ChatViewModel : ViewModelBase
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Failed to stop streaming for session {SessionId}", Session.SessionId);
+            }
+        }
+        
+        // Brief status then clear
+        await Task.Delay(1500);
+        if (!IsBusy)
+        {
+            StatusMessage = string.Empty;
+        }
+    }
+    
+    /// <summary>
+    /// Finds any messages still marked as streaming and marks them as stopped.
+    /// This ensures the UI doesn't show perpetual "streaming" indicators after Stop.
+    /// </summary>
+    private void MarkStreamingMessagesAsStopped()
+    {
+        for (int i = 0; i < Messages.Count; i++)
+        {
+            var msg = Messages[i];
+            if (msg.IsStreaming)
+            {
+                var clone = CloneMessageWithUpdate(msg);
+                clone.IsStreaming = false;
+                Messages[i] = clone;
             }
         }
     }
@@ -326,13 +363,17 @@ public partial class ChatViewModel : ViewModelBase
                     break;
 
                 case AbortEvent:
-                    // Abort clears all tracking
+                    // Abort clears all tracking AND resets busy state
                     _activeTools.Clear();
                     _activeReasoningMessages.Clear();
+                    _activeToolMessages.Clear();
                     _currentTurnId = null;
+                    _turnAgentWorkStartIndex = -1;
                     UpdateToolExecutionState();
+                    MarkStreamingMessagesAsStopped();
+                    UpdateBusyState(false);
                     StatusMessage = "Aborted";
-                    _logger.LogInformation("Session aborted - all tracking cleared");
+                    _logger.LogInformation("Session aborted - all tracking and busy state cleared");
                     break;
             }
         });

@@ -618,6 +618,13 @@ public class CopilotSdkService : ICopilotService, IAsyncDisposable
                     messageComplete = true;
                     break;
 
+                case AbortEvent:
+                    // Session was aborted (user clicked Stop) - exit the polling loop
+                    _logger.LogInformation("AbortEvent - marking complete (session aborted by user)");
+                    streamingContext.TransitionTo(SessionStreamingState.Completed);
+                    messageComplete = true;
+                    break;
+
                 default:
                     // Log other event types for debugging
                     _logger.LogDebug("Unhandled event type: {EventType}", eventTypeName);
