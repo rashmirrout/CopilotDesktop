@@ -823,6 +823,10 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
                 HandleRestCountdown(countdown);
                 break;
 
+            case IntervalChangedEvent intervalChanged:
+                HandleIntervalChanged(intervalChanged);
+                break;
+
             case RunStoppedEvent:
                 IsRunning = false;
                 CurrentPhaseDisplay = "Stopped";
@@ -983,6 +987,15 @@ public sealed partial class OfficeViewModel : ViewModelBase, IDisposable
             RestCountdownText = string.Empty;
             RestProgressPercent = 0;
         }
+    }
+
+    private void HandleIntervalChanged(IntervalChangedEvent evt)
+    {
+        // Reflect the dynamically extracted interval in the UI spinner
+        CheckIntervalMinutes = evt.NewIntervalMinutes;
+        _logger.LogInformation(
+            "[OfficeVM] Interval dynamically changed: {Previous}min → {New}min (source: {Source})",
+            evt.PreviousIntervalMinutes, evt.NewIntervalMinutes, evt.Source);
     }
 
     // ══════════════════════════════════════════════════════════════

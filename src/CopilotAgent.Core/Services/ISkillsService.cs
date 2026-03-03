@@ -47,8 +47,8 @@ public interface ISkillsService
     bool SetSkillEnabled(Session session, string skillName, bool enabled);
 
     /// <summary>
-    /// Initialize session's DisabledSkills list with all discovered skill names.
-    /// Call this for new sessions to ensure all skills start disabled.
+    /// Initialize session's DisabledSkills list as empty (all skills enabled by default).
+    /// Call this for new sessions.
     /// </summary>
     void InitializeSessionDisabledSkills(Session session);
 
@@ -66,10 +66,13 @@ public interface ISkillsService
     [Obsolete("SDK handles skill prompt injection. This is kept for backward compatibility.")]
     string GenerateSkillPrompt(Session session);
 
-    /// <summary>Scan and reload all skills from configured directories</summary>
-    Task ScanSkillsAsync();
+    /// <summary>
+    /// Scan and reload all skills from configured directories.
+    /// Optionally includes skills from the session's repository folder.
+    /// </summary>
+    Task ScanSkillsAsync(string? sessionFolderPath = null);
 
-    /// <summary>Get personal skills folder path (~/CopilotAgent/Skills)</summary>
+    /// <summary>Get app-specific skills folder path (~/.CopilotDesktop/skills)</summary>
     string GetPersonalSkillsFolder();
 
     /// <summary>Get SDK skills folder path (~/.copilot/skills)</summary>

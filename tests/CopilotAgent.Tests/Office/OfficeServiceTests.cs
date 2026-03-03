@@ -313,6 +313,8 @@ public sealed class OfficeManagerServiceTests : IAsyncDisposable
 {
     private readonly Mock<ICopilotService> _copilotServiceMock;
     private readonly Mock<IReasoningStream> _reasoningStreamMock;
+    private readonly Mock<IIntervalExtractionService> _intervalExtractorMock;
+    private readonly IntervalExtractionCache _intervalCache;
     private readonly OfficeEventLog _eventLog;
     private readonly IterationScheduler _scheduler;
     private readonly ILoggerFactory _loggerFactory;
@@ -331,6 +333,8 @@ public sealed class OfficeManagerServiceTests : IAsyncDisposable
     {
         _copilotServiceMock = new Mock<ICopilotService>();
         _reasoningStreamMock = new Mock<IReasoningStream>();
+        _intervalExtractorMock = new Mock<IIntervalExtractionService>();
+        _intervalCache = new IntervalExtractionCache();
         _eventLog = new OfficeEventLog();
         _scheduler = new IterationScheduler(NullLogger<IterationScheduler>.Instance);
         _loggerFactory = NullLoggerFactory.Instance;
@@ -345,11 +349,18 @@ public sealed class OfficeManagerServiceTests : IAsyncDisposable
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync("1. Step one\n2. Step two");
 
+        // Default: no interval found in text
+        _intervalExtractorMock
+            .Setup(e => e.ExtractAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ExtractionResult.NotFound);
+
         _sut = new OfficeManagerService(
             _copilotServiceMock.Object,
             _reasoningStreamMock.Object,
             _eventLog,
             _scheduler,
+            _intervalExtractorMock.Object,
+            _intervalCache,
             _loggerFactory);
     }
 
@@ -957,6 +968,8 @@ public sealed class OfficeBugFixRegressionTests : IAsyncDisposable
 {
     private readonly Mock<ICopilotService> _copilotServiceMock;
     private readonly Mock<IReasoningStream> _reasoningStreamMock;
+    private readonly Mock<IIntervalExtractionService> _intervalExtractorMock;
+    private readonly IntervalExtractionCache _intervalCache;
     private readonly OfficeEventLog _eventLog;
     private readonly IterationScheduler _scheduler;
     private readonly ILoggerFactory _loggerFactory;
@@ -975,6 +988,8 @@ public sealed class OfficeBugFixRegressionTests : IAsyncDisposable
     {
         _copilotServiceMock = new Mock<ICopilotService>();
         _reasoningStreamMock = new Mock<IReasoningStream>();
+        _intervalExtractorMock = new Mock<IIntervalExtractionService>();
+        _intervalCache = new IntervalExtractionCache();
         _eventLog = new OfficeEventLog();
         _scheduler = new IterationScheduler(NullLogger<IterationScheduler>.Instance);
         _loggerFactory = NullLoggerFactory.Instance;
@@ -989,11 +1004,18 @@ public sealed class OfficeBugFixRegressionTests : IAsyncDisposable
                 It.IsAny<CancellationToken>()))
             .ReturnsAsync("1. Step one\n2. Step two");
 
+        // Default: no interval found in text
+        _intervalExtractorMock
+            .Setup(e => e.ExtractAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ExtractionResult.NotFound);
+
         _sut = new OfficeManagerService(
             _copilotServiceMock.Object,
             _reasoningStreamMock.Object,
             _eventLog,
             _scheduler,
+            _intervalExtractorMock.Object,
+            _intervalCache,
             _loggerFactory);
     }
 

@@ -95,11 +95,11 @@ public partial class SkillsViewModel : ObservableObject
 
     public async Task InitializeAsync()
     {
-        await _skillsService.ScanSkillsAsync();
+        var session = _sessionManager.ActiveSession;
+        await _skillsService.ScanSkillsAsync(session?.WorkingDirectory);
         RefreshSkillsList();
         
         // Initialize session's disabled skills if not already done
-        var session = _sessionManager.ActiveSession;
         if (session != null && session.DisabledSkills == null)
         {
             _skillsService.InitializeSessionDisabledSkills(session);
@@ -112,7 +112,8 @@ public partial class SkillsViewModel : ObservableObject
     {
         try
         {
-            await _skillsService.ScanSkillsAsync();
+            var session = _sessionManager.ActiveSession;
+            await _skillsService.ScanSkillsAsync(session?.WorkingDirectory);
             RefreshSkillsList();
             _logger.LogInformation("Refreshed skills list. Found {Count} skills", _skillsService.GetSkills().Count);
         }

@@ -20,6 +20,8 @@ public sealed class OfficeManagerService : IOfficeManagerService
     private readonly IReasoningStream _reasoningStream;
     private readonly IOfficeEventLog _eventLog;
     private readonly IIterationScheduler _scheduler;
+    private readonly IIntervalExtractionService _intervalExtractor;
+    private readonly IIntervalExtractionCache _intervalCache;
     private readonly ILoggerFactory _loggerFactory;
     private readonly ILogger<OfficeManagerService> _logger;
 
@@ -78,6 +80,8 @@ public sealed class OfficeManagerService : IOfficeManagerService
         IReasoningStream reasoningStream,
         IOfficeEventLog eventLog,
         IIterationScheduler scheduler,
+        IIntervalExtractionService intervalExtractor,
+        IIntervalExtractionCache intervalCache,
         ILoggerFactory loggerFactory)
     {
         _copilotService = copilotService;
@@ -85,6 +89,8 @@ public sealed class OfficeManagerService : IOfficeManagerService
         _reasoningStream = reasoningStream;
         _eventLog = eventLog;
         _scheduler = scheduler;
+        _intervalExtractor = intervalExtractor;
+        _intervalCache = intervalCache;
         _loggerFactory = loggerFactory;
         _logger = loggerFactory.CreateLogger<OfficeManagerService>();
     }
@@ -113,6 +119,13 @@ public sealed class OfficeManagerService : IOfficeManagerService
         });
 
         _logger.LogInformation("Office started. Objective: {Objective}", config.Objective);
+
+        // Extract interval from objective (LLM-based, best-effort)
+        var extraction = await _intervalExtractor.ExtractAsync(config.Objective, ct).ConfigureAwait(false);
+        if (extraction.IsFound)
+        {
+            ApplyIntervalOverride(extraction.Minutes, "Objective", extraction.NormalizedExpression);
+        }
 
         // Unsubscribe any stale SDK event handler from a previous run
         UnsubscribeManagerSdkEvents();
@@ -407,6 +420,7 @@ public sealed class OfficeManagerService : IOfficeManagerService
 
         _context = new ManagerContext();
         _eventLog.Clear();
+        _intervalCache.Clear();
         while (_injectedInstructions.TryTake(out _)) { }
 
         TransitionTo(ManagerPhase.Idle);
@@ -479,7 +493,7 @@ public sealed class OfficeManagerService : IOfficeManagerService
                 EmitActivityStatus(ActivityStatusType.ManagerThinking, "Manager thinking...");
 
                 // Absorb injected instructions once (Bug #10 fix: was being drained twice)
-                var instructions = AbsorbInjectedInstructions();
+                var instructions = await AbsorbInjectedInstructionsAsync(ct).ConfigureAwait(false);
                 EmitCommentary(CommentaryType.ManagerThinking, "Manager", "🔍 Checking for events and generating tasks...");
 
                 var tasks = await FetchEventsAndCreateTasksAsync(instructions, ct).ConfigureAwait(false);
@@ -1153,7 +1167,7 @@ public sealed class OfficeManagerService : IOfficeManagerService
         _logger.LogDebug("Phase transition: {Previous} → {New}", previous, newPhase);
     }
 
-    private List<string> AbsorbInjectedInstructions()
+    private async Task<List<string>> AbsorbInjectedInstructionsAsync(CancellationToken ct)
     {
         var instructions = new List<string>();
         while (_injectedInstructions.TryTake(out var instruction))
@@ -1161,9 +1175,46 @@ public sealed class OfficeManagerService : IOfficeManagerService
             instructions.Add(instruction);
             _context.InjectedInstructions.Add(instruction);
             _logger.LogInformation("Absorbed injected instruction: {Instruction}", instruction);
+
+            // Extract interval from each injected instruction (LLM-based, best-effort)
+            var extraction = await _intervalExtractor.ExtractAsync(instruction, ct).ConfigureAwait(false);
+            if (extraction.IsFound)
+            {
+                ApplyIntervalOverride(extraction.Minutes, "Instruction", extraction.NormalizedExpression);
+
+                // If currently resting, cancel so new interval takes effect on next rest
+                if (_context.CurrentPhase == ManagerPhase.Resting)
+                {
+                    _logger.LogInformation("Cancelling rest — interval overridden by injected instruction");
+                    _scheduler.CancelRest();
+                }
+            }
         }
 
         return instructions;
+    }
+
+    /// <summary>
+    /// Applies a dynamically extracted interval override and raises an <see cref="IntervalChangedEvent"/>.
+    /// </summary>
+    private void ApplyIntervalOverride(int minutes, string source, string normalizedExpression)
+    {
+        var previous = _checkIntervalMinutes;
+        _checkIntervalMinutes = minutes;
+
+        _logger.LogInformation(
+            "Interval overridden: {Previous}min → {New}min (source: {Source}, expression: {Expression})",
+            previous, minutes, source, normalizedExpression);
+
+        RaiseEvent(new IntervalChangedEvent
+        {
+            PreviousIntervalMinutes = previous,
+            NewIntervalMinutes = minutes,
+            Source = source,
+            NormalizedExpression = normalizedExpression,
+            IterationNumber = _context.CurrentIteration,
+            Description = $"Rest interval changed to {minutes}min from {source}"
+        });
     }
 
     private void EmitCommentary(CommentaryType type, string agentName, string message)

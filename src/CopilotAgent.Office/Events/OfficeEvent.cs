@@ -154,6 +154,24 @@ public sealed class InstructionInjectedEvent : OfficeEvent
     public required string Instruction { get; init; }
 }
 
+/// <summary>Raised when the rest interval is dynamically changed based on user prompt.</summary>
+public sealed class IntervalChangedEvent : OfficeEvent
+{
+    public override OfficeEventType EventType => OfficeEventType.IntervalChanged;
+
+    /// <summary>Previous interval in minutes.</summary>
+    public int PreviousIntervalMinutes { get; init; }
+
+    /// <summary>New interval in minutes (clamped to [1, 60]).</summary>
+    public int NewIntervalMinutes { get; init; }
+
+    /// <summary>Source of the change: "Objective" or "Instruction".</summary>
+    public string Source { get; init; } = string.Empty;
+
+    /// <summary>The original expression that was interpreted (for observability).</summary>
+    public string NormalizedExpression { get; init; } = string.Empty;
+}
+
 /// <summary>Raised when the Manager requests clarification from the user.</summary>
 public sealed class ClarificationRequestedEvent : OfficeEvent
 {

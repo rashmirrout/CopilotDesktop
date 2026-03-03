@@ -84,7 +84,7 @@ public class Session : INotifyPropertyChanged
 
     /// <summary>
     /// Skill directories to search for skills.
-    /// - null: Use default directories (~/CopilotAgent/Skills and ~/.copilot/skills)
+    /// - null: Use default directories (~/.CopilotDesktop/skills and ~/.copilot/skills)
     /// - Non-empty list: Use only these directories
     /// </summary>
     [JsonPropertyName("skillDirectories")]

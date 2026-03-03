@@ -417,14 +417,28 @@ public class McpService : IMcpService, IDisposable
 
     public async Task LoadServersFromCopilotConfigAsync()
     {
+        var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        
+        // Load from both config paths — ~/.copilot takes precedence over ~/.CopilotDesktop
+        var configPaths = new[]
+        {
+            Path.Combine(homeDir, ".CopilotDesktop", "mcp-config.json"),  // app-specific (lower priority)
+            Path.Combine(homeDir, ".copilot", "mcp-config.json"),          // SDK shared (higher priority, wins on name conflict)
+        };
+
+        foreach (var configPath in configPaths)
+        {
+            await LoadServersFromConfigFileAsync(configPath);
+        }
+    }
+
+    private async Task LoadServersFromConfigFileAsync(string configPath)
+    {
         try
         {
-            var homeDir = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            var configPath = Path.Combine(homeDir, ".copilot", "mcp-config.json");
-
             if (!File.Exists(configPath))
             {
-                _logger.LogInformation("Copilot MCP config file not found at {Path}", configPath);
+                _logger.LogDebug("MCP config file not found at {Path}", configPath);
                 return;
             }
 
@@ -486,13 +500,13 @@ public class McpService : IMcpService, IDisposable
                     }
 
                     loadedServers.Add(config);
-                    _logger.LogDebug("Loaded MCP server from Copilot config: {ServerName}", serverName);
+                    _logger.LogDebug("Loaded MCP server from config {Path}: {ServerName}", configPath, serverName);
                 }
             }
 
             lock (_serversLock)
             {
-                // Merge with existing servers - Copilot config takes precedence
+                // Merge with existing servers — later config files take precedence
                 foreach (var newServer in loadedServers)
                 {
                     var existingIndex = _servers.FindIndex(s => 
@@ -511,16 +525,16 @@ public class McpService : IMcpService, IDisposable
                 }
             }
 
-            _logger.LogInformation("Loaded {Count} MCP servers from Copilot config at {Path}", 
+            _logger.LogInformation("Loaded {Count} MCP servers from config at {Path}", 
                 loadedServers.Count, configPath);
         }
         catch (JsonException ex)
         {
-            _logger.LogError(ex, "Failed to parse Copilot MCP config JSON");
+            _logger.LogError(ex, "Failed to parse MCP config JSON at {Path}", configPath);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to load MCP servers from Copilot config");
+            _logger.LogError(ex, "Failed to load MCP servers from config at {Path}", configPath);
         }
     }
 

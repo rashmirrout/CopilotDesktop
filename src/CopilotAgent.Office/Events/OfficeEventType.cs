@@ -42,5 +42,8 @@ public enum OfficeEventType
     InstructionInjected,
 
     /// <summary>Activity status changed (for live status panel).</summary>
-    ActivityStatus
+    ActivityStatus,
+
+    /// <summary>Rest interval dynamically changed based on user prompt.</summary>
+    IntervalChanged
 }

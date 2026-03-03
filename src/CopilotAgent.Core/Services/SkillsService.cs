@@ -10,7 +10,7 @@ namespace CopilotAgent.Core.Services;
 /// <summary>
 /// Implementation of skills service for managing agent skills.
 /// Supports both SDK format (skill.json) and markdown format (SKILL.md).
-/// Scans both ~/CopilotAgent/Skills and ~/.copilot/skills directories.
+/// Scans ~/.CopilotDesktop/skills, ~/.copilot/skills, and optionally the session repository folder.
 /// </summary>
 public class SkillsService : ISkillsService
 {
@@ -28,13 +28,13 @@ public class SkillsService : ISkillsService
         
         var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
         
-        // Personal skills folder (app-specific)
-        _personalSkillsFolder = Path.Combine(userProfile, "CopilotAgent", "Skills");
+        // App-specific skills folder
+        _personalSkillsFolder = Path.Combine(userProfile, ".CopilotDesktop", "skills");
         
         // SDK skills folder (shared with Copilot CLI/SDK)
         _sdkSkillsFolder = Path.Combine(userProfile, ".copilot", "skills");
         
-        // Ensure folders exist
+        // Ensure app-specific folder exists
         Directory.CreateDirectory(_personalSkillsFolder);
         // Don't create SDK folder - let user or SDK create it
     }
@@ -117,12 +117,12 @@ public class SkillsService : ISkillsService
 
     public bool IsSkillEnabled(Session session, string skillName)
     {
-        // null DisabledSkills = ALL skills are disabled (default for new sessions)
+        // null DisabledSkills = treat as empty (all enabled) for backward compat
         // Empty list = ALL skills are enabled
         // Non-empty list = specific skills disabled
         if (session.DisabledSkills == null)
         {
-            return false; // All disabled by default when not initialized
+            return true; // All enabled when not initialized (backward compat)
         }
         
         return !session.DisabledSkills.Contains(skillName, StringComparer.OrdinalIgnoreCase);
@@ -163,16 +163,11 @@ public class SkillsService : ISkillsService
 
     public void InitializeSessionDisabledSkills(Session session)
     {
-        // Initialize with ALL skill names disabled
-        lock (_skillsLock)
-        {
-            session.DisabledSkills = _skills
-                .Select(s => s.Name)
-                .ToList();
-        }
+        // Initialize with empty list — all skills enabled by default
+        session.DisabledSkills = new List<string>();
         
-        _logger.LogInformation("Initialized session {SessionId} with {Count} disabled skills (all disabled by default)", 
-            session.SessionId, session.DisabledSkills.Count);
+        _logger.LogInformation("Initialized session {SessionId} with all skills enabled by default", 
+            session.SessionId);
     }
 
     public List<string> GetDisabledSkillNames(Session session)
@@ -239,34 +234,48 @@ public class SkillsService : ISkillsService
         return sb.ToString();
     }
 
-    public async Task ScanSkillsAsync()
+    public async Task ScanSkillsAsync(string? sessionFolderPath = null)
     {
         var newSkills = new List<SkillDefinition>();
 
         try
         {
-            _logger.LogInformation("Scanning skills from {Personal} and {Sdk}", 
-                _personalSkillsFolder, _sdkSkillsFolder);
+            _logger.LogInformation("Scanning skills from {Personal}, {Sdk}, and session folder {Session}", 
+                _personalSkillsFolder, _sdkSkillsFolder, sessionFolderPath ?? "(none)");
 
-            // Scan personal skills folder
+            // Scan app-specific skills folder (~/.CopilotDesktop/skills)
             await ScanFolderAsync(_personalSkillsFolder, SkillSource.Personal, newSkills);
             
-            // Scan SDK skills folder
+            // Scan SDK skills folder (~/.copilot/skills)
             await ScanFolderAsync(_sdkSkillsFolder, SkillSource.Personal, newSkills);
+
+            // Scan session/repository folder if provided
+            if (!string.IsNullOrEmpty(sessionFolderPath) && Directory.Exists(sessionFolderPath))
+            {
+                await ScanFolderAsync(sessionFolderPath, SkillSource.Repository, newSkills);
+            }
 
             // Add built-in skills
             AddBuiltInSkills(newSkills);
 
+            // Deduplicate by skill name — later entries win (SDK > personal, repo > both)
+            var deduped = newSkills
+                .GroupBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(g => g.Last())
+                .ToList();
+
             lock (_skillsLock)
             {
                 _skills.Clear();
-                _skills.AddRange(newSkills);
+                _skills.AddRange(deduped);
             }
 
-            _logger.LogInformation("Scanned {Count} skills ({SdkFormat} SDK format, {MdFormat} markdown)", 
-                newSkills.Count, 
-                newSkills.Count(s => s.Format == SkillFormat.SdkJson),
-                newSkills.Count(s => s.Format == SkillFormat.Markdown));
+            _logger.LogInformation("Scanned {Count} skills ({SdkFormat} SDK format, {MdFormat} markdown, {RepoCount} repository, {Dupes} duplicates removed)", 
+                deduped.Count, 
+                deduped.Count(s => s.Format == SkillFormat.SdkJson),
+                deduped.Count(s => s.Format == SkillFormat.Markdown),
+                deduped.Count(s => s.Source == SkillSource.Repository),
+                newSkills.Count - deduped.Count);
             
             SkillsReloaded?.Invoke(this, EventArgs.Empty);
         }
@@ -276,6 +285,7 @@ public class SkillsService : ISkillsService
         }
     }
 
+    /// <summary>Get app-specific skills folder (~/.CopilotDesktop/skills)</summary>
     public string GetPersonalSkillsFolder() => _personalSkillsFolder;
     
     public string GetSdkSkillsFolder() => _sdkSkillsFolder;

@@ -131,7 +131,7 @@ public enum SkillFormat
 /// </summary>
 public enum SkillSource
 {
-    /// <summary>Personal skills folder (%USERPROFILE%\CopilotAgent\Skills)</summary>
+    /// <summary>Personal/app-specific skills folder (~/.CopilotDesktop/skills or ~/.copilot/skills)</summary>
     Personal,
     
     /// <summary>Repository-specific skill (e.g., SKILL.md in working directory)</summary>

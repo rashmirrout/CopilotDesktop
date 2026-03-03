@@ -195,6 +195,8 @@ public partial class App : Application
 
                     // Agent Office Services
                     services.AddSingleton<IReasoningStream, ReasoningStream>();
+                    services.AddSingleton<IIntervalExtractionService, LlmIntervalExtractionService>();
+                    services.AddSingleton<IIntervalExtractionCache, IntervalExtractionCache>();
                     services.AddSingleton<IOfficeManagerService, OfficeManagerService>();
                     services.AddSingleton<IOfficeEventLog, OfficeEventLog>();
                     services.AddSingleton<IIterationScheduler, IterationScheduler>();
