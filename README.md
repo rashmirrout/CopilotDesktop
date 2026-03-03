@@ -13,6 +13,9 @@ Got a task too big for one agent? The **Agent Team** breaks it down. An orchestr
 ### 🏢 Office — Your own AI operations center
 Set up a small office for yourself. A long-running **Manager agent** periodically scans for events — incoming tickets, support requests, PR reviews, incident alerts — and delegates tasks to a pool of ephemeral **Assistant agents**. It clarifies ambiguous instructions, schedules work, aggregates results, rests, and repeats. Pause it, change the interval, inject new priorities, or just let it run. It's like having a tireless ops team that never sleeps.
 
+### 🎙 Panel — Multi-expert AI debate for deep analysis
+Assemble a panel of AI experts — each with unique expertise and personality — to analyze, debate, and synthesize insights on any topic. A **Head Agent** clarifies your question, selects 3–8 domain specialists (Security, Performance, Architecture, QA, DevOps, UX, Devil's Advocate…), and launches a moderated discussion. A **Moderator** enforces guard rails and tracks convergence. When the experts reach consensus, the Head delivers a comprehensive synthesis report with consensus points, dissenting views, and actionable recommendations. Ask follow-up questions with full debate context retained.
+
 ### 🔄 Iterative — Self-evaluating task loops
 Define a goal and success criteria. The agent executes, evaluates its own output, and iterates until it succeeds or hits the limit. Perfect for tasks that need refinement — code generation, test fixing, quality gates.
 
@@ -55,10 +58,21 @@ Built with **.NET 8**, **WPF-UI (Fluent Design)**, and ships as a **single porta
 - 📈 **Iteration Statistics** — Track completed iterations, total tasks, success rate, and average duration
 - 🗂️ **Event Log & Scheduling Decisions** — Structured log of every phase transition, task assignment, queue event, and assistant lifecycle change
 
+### 🎙 Panel Discussion — Multi-Expert AI Debate
+- 🎓 **Head Agent + Moderator + Panelists** — A Head Agent clarifies your topic and builds a discussion plan, a Moderator enforces guard rails and tracks convergence, and 3–8 AI panelists debate with distinct expertise and personalities
+- 🗣️ **Three-Pane Layout** — Left (Head Agent chat), Center (live discussion stream with Markdown rendering), Right (Agent Inspector with per-agent stats, tool calls, and status)
+- 🎯 **Convergence Detection** — Real-time convergence percentage (0–100%) measures how much experts agree; synthesis triggers automatically when the threshold is met
+- 📊 **Synthesis Report** — Comprehensive report with executive summary, consensus points, dissenting views, and prioritized recommendations — copyable and Markdown-rendered
+- ⚡ **Discussion Depth** — Auto-detected or manually set: Quick (10 turns), Standard (30 turns), or Deep (50 turns) with matching convergence thresholds
+- 🛡️ **Guard Rails** — Turn limits, token budgets, duration caps, tool call limits, and content safety policies prevent runaway costs
+- 🔌 **Tool-Enabled Panelists** — Experts can read files, browse code, and use MCP tools with sandboxed execution and circuit breakers
+- 💬 **Follow-Up Q&A** — After synthesis, ask the Head Agent follow-up questions with full debate context retained
+- 🎭 **8 Built-In Expert Profiles** — Security Expert, Performance Engineer, Software Architect, QA Specialist, DevOps Engineer, UX Advocate, Domain Expert, Devil's Advocate
+- ⚙️ **Side Panel Settings** — Model selection (primary + panelist pool), panel configuration with dirty-state tracking, commentary mode (Detailed/Brief/Off), and event log
+
 ### 🎨 General
 - 🎨 **Modern UI** — Fluent Design with WPF-UI (Windows 11 style)
 - 📦 **Single Executable** — Self-contained deployment, no installation required
-
 
 ---
 
@@ -77,7 +91,7 @@ Built with **.NET 8**, **WPF-UI (Fluent Design)**, and ships as a **single porta
 
 4. **Start the Application** — Double-click `CopilotAgent.exe`
 
-5. **Explore Possibilities** — Create sessions, chat with Copilot, orchestrate agent teams, run autonomous office loops, configure MCP servers, and more!
+5. **Explore Possibilities** — Create sessions, chat with Copilot, orchestrate agent teams, run autonomous office loops, launch panel discussions, and more!
 
 ### Feature Quick Guide
 
@@ -86,6 +100,7 @@ Built with **.NET 8**, **WPF-UI (Fluent Design)**, and ships as a **single porta
 | **💬 Agent** | Single-session Copilot chat with tools, terminal, and MCP | Day-to-day coding tasks, file editing, debugging |
 | **👥 Team** | Multi-agent orchestration with parallel workers | Complex tasks that benefit from decomposition — multi-file refactors, cross-module analysis, parallel code reviews |
 | **🏢 Office** | Autonomous periodic manager with assistant pool | Long-running monitoring — incident management, scheduled audits, multi-repo PR reviews |
+| **🎙 Panel** | Multi-expert AI debate with convergence & synthesis | Architecture decisions, security audits, technology evaluations, design reviews, deep research |
 | **🔄 Iterative** | Self-evaluating task loop with success criteria | Tasks requiring iterative refinement until a goal is met |
 
 ---
@@ -96,7 +111,6 @@ Built with **.NET 8**, **WPF-UI (Fluent Design)**, and ships as a **single porta
 
 ---
 
-
 ## Architecture
 
 ```
@@ -106,6 +120,7 @@ CopilotAgent.sln
 │   ├── CopilotAgent.Core/            # Core services, models, and shared interfaces
 │   ├── CopilotAgent.MultiAgent/      # Agent Team orchestration engine
 │   ├── CopilotAgent.Office/          # Agent Office manager loop engine
+│   ├── CopilotAgent.Panel/           # Panel Discussion debate engine
 │   └── CopilotAgent.Persistence/     # JSON file storage
 └── tests/
     └── CopilotAgent.Tests/           # Unit tests (xUnit)
@@ -118,10 +133,12 @@ CopilotAgent.App
 ├── CopilotAgent.Core
 ├── CopilotAgent.MultiAgent
 ├── CopilotAgent.Office
+├── CopilotAgent.Panel
 └── CopilotAgent.Persistence
 
 CopilotAgent.MultiAgent ──► CopilotAgent.Core
 CopilotAgent.Office ──► CopilotAgent.Core
+CopilotAgent.Panel ──► CopilotAgent.Core
 CopilotAgent.Persistence ──► CopilotAgent.Core
 ```
 
@@ -250,6 +267,8 @@ dotnet publish src/CopilotAgent.App/CopilotAgent.App.csproj \
 | 🏢 **[Agent Office Design](docs/AGENT_OFFICE_DESIGN.md)** | Detailed design for the autonomous office manager loop |
 | 👥 **[Agent Team User Guide](docs/AGENT_TEAMS_USER_GUIDE.md)** | End-to-end guide for multi-agent orchestration — planning, execution, injection, side panel, worked examples |
 | 👥 **[Agent Team Design](docs/MULTI_AGENT_ORCHESTRATOR_DESIGN.md)** | Detailed design for the multi-agent orchestration engine |
+| 🎙 **[Panel Discussion User Guide](docs/PANEL_DISCUSSION_USER_GUIDE.md)** | End-to-end guide for multi-expert AI debate — interface walkthrough, lifecycle, depth modes, worked examples |
+| 🎙 **[Panel Architecture Design](docs/PANEL_ARCHITECTURE_DESIGN.md)** | Detailed design for the panel discussion engine — state machine, agents, convergence, guard rails |
 
 ---
 
@@ -292,6 +311,17 @@ Manage saved rules in Settings → Manage Tool Approvals.
 5. **Inject instructions** — Send new instructions mid-run; the Manager may ask clarifying questions inline before queuing the refined instruction
 6. **Use the side panel** — Live commentary stream, configuration controls (interval, pool size), event log, and iteration statistics
 
+### Panel Discussion (🎙)
+
+1. **Submit a topic** — Describe a decision, architecture question, or analysis task (e.g., "Should we migrate from REST to gRPC for our internal services?")
+2. **Answer clarifications** — The Head Agent may ask questions to narrow scope
+3. **Review the plan** — See selected panelists, discussion depth, focus areas, and estimated turns
+4. **Approve & watch** — Panelists debate in real time in the center pane; convergence % rises in the header
+5. **Read the synthesis** — When convergence meets the threshold, a comprehensive report is generated with consensus, dissenting views, and recommendations
+6. **Ask follow-ups** — Continue the conversation with the Head Agent, who retains full debate context
+
+**Side panel** (⚙️ gear icon) provides model selection (primary + panelist pool), panel configuration (depth, turns, convergence threshold, commentary mode), and an event log.
+
 ### MCP Servers Tab
 
 - View **live MCP servers** from the active SDK session
@@ -302,7 +332,8 @@ Manage saved rules in Settings → Manage Tool Approvals.
 ### Skills (SKILL.md)
 
 Place skill definitions in:
-- `%USERPROFILE%\CopilotAgent\Skills\` (personal)
+- `%USERPROFILE%\.CopilotDesktop\skills\` (personal)
+- `%USERPROFILE%\.copilot\skills\` (SDK shared)
 - `<working-directory>\SKILL.md` (repo-specific)
 
 ### Iterative Agent Mode
@@ -348,17 +379,21 @@ All first-party Copilot tools are enabled, including file system operations, Git
 
 ### What models are supported?
 
-All models available via Copilot CLI are supported. The SDK exposes a method to list available models at runtime. In Agent Team and Agent Office, you can select different models for the manager/orchestrator and workers/assistants.
+All models available via Copilot CLI are supported. The SDK exposes a method to list available models at runtime. In Agent Team, Agent Office, and Panel Discussion, you can select different models for the manager/orchestrator and workers/assistants/panelists.
 
-### What's the difference between Agent Team and Agent Office?
+### What's the difference between Agent Team, Agent Office, and Panel Discussion?
 
-| Aspect | Agent Team | Agent Office |
-|--------|-----------|--------------|
-| Lifecycle | One-shot: submit → plan → execute → done | Continuous loop: check → delegate → report → rest → repeat |
-| Task Source | User provides the full task upfront | Manager discovers tasks from events/data sources |
-| Worker Lifetime | Workers live for the batch duration | Assistants are ephemeral: spawn → work → report → dispose |
-| Scheduling | All chunks dispatched at once (parallel stages) | Queue-based: if tasks > pool size, pending tasks wait |
-| User Interaction | Approval before execution, optional injection | Ongoing: change prompt, interval, pause/resume mid-run |
+| Aspect | Agent Team | Agent Office | Panel Discussion |
+|--------|-----------|--------------|-----------------|
+| Purpose | Parallel task execution | Continuous monitoring & delegation | Multi-expert debate & synthesis |
+| Lifecycle | One-shot: submit → plan → execute → done | Continuous loop: check → delegate → report → rest → repeat | Single discussion: topic → debate → synthesize → done |
+| Agents | Workers with specialized roles | Manager + ephemeral assistants | Head + Moderator + expert panelists |
+| Agent Communication | Workers work independently | Assistants report to Manager only | Panelists see and critique each other |
+| Output | Consolidated work product | Iteration reports with recommendations | Synthesis report with consensus + dissent |
+| User Interaction | Approval before execution, optional injection | Ongoing: change prompt, interval, pause/resume mid-run | Submit topic, approve plan, read synthesis, follow-up Q&A |
+| Best For | Multi-file refactors, parallel code changes | Incident monitoring, PR review, triage | Architecture decisions, security audits, research |
+| Duration | 5–60 minutes | Hours to days | 2–30 minutes |
+| Key Metric | Task completion % | Iteration count + success rate | Convergence % |
 
 ---
 
